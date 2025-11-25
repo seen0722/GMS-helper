@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GMS Certification Analyzer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#2563eb',
+                        secondary: '#475569',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar for code blocks */
+        .code-scroll::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        .code-scroll::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+
+        .code-scroll::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+
+        .code-scroll::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-50 text-slate-900 h-screen flex overflow-hidden">
+
+    <!-- Sidebar -->
+    <aside class="w-64 bg-slate-900 text-white flex-shrink-0 flex flex-col">
+        <div class="p-6 border-b border-slate-800">
+            <h1 class="text-xl font-bold flex items-center gap-2">
+                <svg class="w-6 h-6 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                GMS Analyzer
+            </h1>
+        </div>
+        <nav class="flex-1 p-4 space-y-2">
+            <a href="#" onclick="router.navigate('dashboard')"
+                class="nav-item block px-4 py-2 rounded hover:bg-slate-800 transition-colors" id="nav-dashboard">
+                Dashboard
+            </a>
+            <a href="#" onclick="router.navigate('upload')"
+                class="nav-item block px-4 py-2 rounded hover:bg-slate-800 transition-colors" id="nav-upload">
+                Upload Result
+            </a>
+            <a href="#" onclick="router.navigate('settings')"
+                class="nav-item block px-4 py-2 rounded hover:bg-slate-800 transition-colors" id="nav-settings">
+                Settings
+            </a>
+        </nav>
+        <div class="p-4 border-t border-slate-800">
+            <button id="btn-reset" type="button"
+                class="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-900/30 text-red-400 hover:bg-red-900/50 rounded transition-colors text-sm font-medium">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Reset Data
+            </button>
+            <div class="mt-4 text-xs text-slate-500 text-center">v1.0.0</div>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex flex-col overflow-hidden">
+        <!-- Header -->
+        <header class="bg-white shadow-sm border-b border-slate-200 p-4 flex justify-between items-center">
+            <h2 id="page-title" class="text-lg font-semibold text-slate-800">Dashboard</h2>
+            <div class="flex items-center gap-4">
+                <span class="text-sm text-slate-500">System Ready</span>
+            </div>
+        </header>
+
+        <!-- Content Area -->
+        <div id="app-content" class="flex-1 overflow-auto p-6">
+            <!-- Dynamic Content Loaded Here -->
+        </div>
+    </main>
+
+    <!-- Templates -->
+    <template id="tmpl-dashboard">
+        <div class="space-y-6">
+            <!-- Stats Cards -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <div class="text-sm text-slate-500 mb-1">Total Runs</div>
+                    <div class="text-3xl font-bold text-slate-800" id="stat-total-runs">-</div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <div class="text-sm text-slate-500 mb-1">Avg Pass Rate</div>
+                    <div class="text-3xl font-bold text-green-600" id="stat-avg-pass">-</div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <div class="text-sm text-slate-500 mb-1">Total Failures</div>
+                    <div class="text-3xl font-bold text-red-600" id="stat-total-failures">-</div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                    <div class="text-sm text-slate-500 mb-1">Total Clusters</div>
+                    <div class="text-3xl font-bold text-purple-600" id="stat-clusters">-</div>
+                </div>
+            </div>
+
+            <!-- Recent Runs Table -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                <div class="p-6 border-b border-slate-100 flex flex-col gap-4">
+                    <div class="flex justify-between items-center">
+                        <h3 class="font-semibold text-slate-800">Recent Test Runs</h3>
+                        <button onclick="router.navigate('upload')"
+                            class="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors">New
+                            Upload</button>
+                    </div>
+                    <div class="flex gap-4">
+                        <div class="relative flex-1">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg class="h-5 w-5 text-slate-400" fill="none" stroke="currentColor"
+                                    viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                </svg>
+                            </div>
+                            <input type="text" id="runs-search" placeholder="Search suite, device, or ID..."
+                                class="w-full pl-10 px-4 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead class="bg-slate-50 text-slate-500 font-medium">
+                            <tr>
+                                <th class="px-6 py-3">ID</th>
+                                <th class="px-6 py-3">Suite</th>
+                                <th class="px-6 py-3">Device</th>
+                                <th class="px-6 py-3">Date</th>
+                                <th class="px-6 py-3 text-center">Pass Rate</th>
+                                <th class="px-6 py-3 text-center">Failures & Clusters</th>
+                                <th class="px-6 py-3 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="runs-table-body" class="divide-y divide-slate-100">
+                            <!-- Rows injected via JS -->
+                        </tbody>
+                    </table>
+                </div>
+                <!-- Pagination -->
+                <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-between bg-slate-50">
+                    <div class="text-sm text-slate-500">
+                        Showing <span id="runs-start">0</span> to <span id="runs-end">0</span> of <span
+                            id="runs-total">0</span> results
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="runs-prev" disabled
+                            class="px-3 py-1 border border-slate-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors">
+                            Previous
+                        </button>
+                        <button id="runs-next" disabled
+                            class="px-3 py-1 border border-slate-300 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white transition-colors">
+                            Next
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="tmpl-upload">
+        <div class="max-w-2xl mx-auto mt-10">
+            <div class="bg-white p-8 rounded-xl shadow-sm border border-slate-100 text-center">
+                <div class="mb-6">
+                    <div
+                        class="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12">
+                            </path>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-semibold text-slate-800">Upload Test Result</h3>
+                    <p class="text-slate-500 mt-2">Drag and drop your XML file here, or click to browse</p>
+                </div>
+
+                <input type="file" id="file-input" class="hidden" accept=".xml">
+                <label for="file-input"
+                    class="cursor-pointer inline-block bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                    Select File
+                </label>
+
+                <div id="upload-status" class="mt-6 hidden">
+                    <div class="w-full bg-slate-100 rounded-full h-2.5 mb-2">
+                        <div class="bg-blue-600 h-2.5 rounded-full" style="width: 0%" id="upload-progress"></div>
+                    </div>
+                    <p class="text-sm text-slate-600" id="upload-message">Uploading...</p>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <template id="tmpl-run-details">
+        <div class="space-y-6">
+            <!-- Header Info -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex justify-between items-start">
+                <div>
+                    <h3 class="text-xl font-bold text-slate-800" id="detail-suite-name">CTS</h3>
+                    <div class="text-slate-500" id="detail-device">Device: Pixel 6</div>
+                    <p class="text-xs text-slate-400 mt-1" id="detail-date">2023-10-27 10:00:00</p>
+                </div>
+                <div class="text-right">
+                    <div class="text-3xl font-bold text-slate-800" id="detail-pass-rate">98.5%</div>
+                    <div class="text-sm text-slate-500">Pass Rate</div>
+                </div>
+            </div>
+
+            <!-- Tab Navigation -->
+            <div class="border-b border-slate-200">
+                <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                    <button onclick="switchTab('overview')" id="tab-btn-overview"
+                        class="tab-btn border-blue-500 text-blue-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        Overview
+                    </button>
+                    <button onclick="switchTab('analysis')" id="tab-btn-analysis"
+                        class="tab-btn border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        AI Analysis
+                    </button>
+                    <button onclick="switchTab('failures')" id="tab-btn-failures"
+                        class="tab-btn border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                        All Failures
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Tab Content: Overview -->
+            <div id="tab-overview" class="tab-content space-y-6">
+                <!-- System Info Placeholder -->
+                <div id="system-info-container"></div>
+
+                <!-- Test Statistics Placeholder -->
+                <div id="test-stats-container"></div>
+
+                <!-- Actions -->
+
+            </div>
+
+            <!-- Tab Content: Analysis -->
+            <div id="tab-analysis" class="tab-content hidden space-y-6">
+
+                <!-- Layer 1: AI-Driven Quality Summary -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <!-- AI Predicted Severity -->
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                        <div class="text-xs text-slate-500 uppercase tracking-wider mb-1">AI Predicted Severity</div>
+                        <div class="text-2xl font-bold text-slate-800" id="kpi-severity">-</div>
+                        <div class="text-xs text-slate-400 mt-1">Based on failure patterns</div>
+                    </div>
+                    <!-- Root Cause Distribution -->
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                        <div class="text-xs text-slate-500 uppercase tracking-wider mb-1">Top Category</div>
+                        <div class="text-2xl font-bold text-slate-800" id="kpi-top-category">-</div>
+                        <div class="text-xs text-slate-400 mt-1" id="kpi-category-dist">-</div>
+                    </div>
+                    <!-- To-Do List -->
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                        <div class="text-xs text-slate-500 uppercase tracking-wider mb-1">Action Items</div>
+                        <div class="text-2xl font-bold text-red-600" id="kpi-todo-count">-</div>
+                        <div class="text-xs text-slate-400 mt-1">High priority, no issue</div>
+                    </div>
+                    <!-- Stability Tracker (Placeholder) -->
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                        <div class="text-xs text-slate-500 uppercase tracking-wider mb-1">Stability Trend</div>
+                        <div class="text-2xl font-bold text-green-600">Stable</div>
+                        <div class="text-xs text-slate-400 mt-1">Cluster count decreasing</div>
+                    </div>
+                </div>
+
+                <!-- Layer 2: AI Cluster & Action List -->
+                <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                    <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                        <h4 class="font-semibold text-slate-800">AI Cluster & Action List</h4>
+                        <div class="flex items-center gap-4">
+                            <!-- Action Bar -->
+                            <div class="flex items-center gap-2">
+                                <!-- Delete Button (Ghost) -->
+                                <button id="btn-delete"
+                                    class="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                        </path>
+                                    </svg>
+                                    Delete
+                                </button>
+
+                                <!-- Export Button (Secondary) -->
+                                <button onclick="exportRunReport()"
+                                    class="bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1 text-sm font-medium">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                    </svg>
+                                    Export
+                                </button>
+
+                                <!-- Create Issues Button (Secondary) -->
+                                <button id="btn-bulk-create-issues" onclick="openBulkCreateModal()"
+                                    class="hidden bg-white border border-blue-200 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-1 text-sm font-medium">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                        </path>
+                                    </svg>
+                                    Create All Issues
+                                </button>
+
+                                <!-- Analyze Button (Primary) -->
+                                <button id="btn-analyze"
+                                    class="bg-purple-600 text-white px-4 py-1.5 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2 text-sm font-medium shadow-sm">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                    </svg>
+                                    Run AI Analysis
+                                </button>
+                            </div>
+
+                            <div class="h-6 w-px bg-slate-200"></div>
+
+                            <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+                                <input type="checkbox" id="filter-no-redmine"
+                                    class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                <span>Show only without Redmine Issue</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
+                                <tr>
+                                    <th class="px-4 py-3 w-16">ID</th>
+                                    <th class="px-4 py-3">AI Summary</th>
+                                    <th class="px-4 py-3 w-24">Impact</th>
+                                    <th class="px-4 py-3 w-24">Confidence</th>
+                                    <th class="px-4 py-3 w-32">Assignment</th>
+                                    <th class="px-4 py-3 w-32">Redmine</th>
+                                    <th class="px-4 py-3 w-20">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="clusters-table-body" class="divide-y divide-slate-100">
+                                <!-- Rows injected via JS -->
+                                <tr>
+                                    <td colspan="7" class="px-4 py-8 text-center text-slate-500">
+                                        No analysis data found. Click "Run AI Analysis" to start.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Layer 3: Deep Analysis & Fix Suggestion -->
+                <div id="analysis-detail-view"
+                    class="hidden bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                    <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
+                        <h4 class="font-semibold text-slate-800" id="detail-title">Cluster Analysis</h4>
+                        <div class="flex gap-2">
+                            <button onclick="openRedmineModal()" id="btn-assign-redmine"
+                                class="px-3 py-1.5 bg-orange-600 text-white text-sm rounded-lg hover:bg-orange-700 transition-colors flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M12 4v16m8-8H4"></path>
+                                </svg>
+                                Assign to Redmine
+                            </button>
+                            <button onclick="unlinkRedmineIssue()" id="btn-unlink-redmine-detail"
+                                class="hidden px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                                <span id="btn-unlink-redmine-text">Unlink</span>
+                            </button>
+                            <button onclick="document.getElementById('analysis-detail-view').classList.add('hidden')"
+                                class="text-slate-400 hover:text-slate-600">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="p-6">
+                        <!-- AI Summary Body -->
+                        <div id="detail-summary-body"
+                            class="mb-6 text-slate-600 text-sm leading-relaxed bg-slate-50 p-4 rounded-lg border border-slate-100">
+                        </div>
+
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <!-- Left: Root Cause & Code -->
+                            <div class="space-y-6">
+                                <div>
+                                    <h5 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">Root
+                                        Cause Analysis</h5>
+                                    <div class="bg-purple-50 p-4 rounded-lg border border-purple-100 text-slate-800 text-sm leading-relaxed"
+                                        id="detail-root-cause">
+                                        -
+                                    </div>
+                                </div>
+                                <div>
+                                    <h5 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">Code
+                                        Context Hint</h5>
+                                    <div class="bg-slate-800 p-4 rounded-lg text-slate-200 font-mono text-xs overflow-x-auto"
+                                        id="detail-code-hint">
+                                        No specific code context detected.
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Right: Fix & Raw Data -->
+                            <div class="space-y-6">
+                                <div>
+                                    <h5 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">🛠️
+                                        Fix
+                                        Suggestion</h5>
+                                    <div class="bg-green-50 p-4 rounded-lg border border-green-100 text-slate-800 text-sm leading-relaxed"
+                                        id="detail-solution">
+                                        -
+                                    </div>
+                                </div>
+                                <div>
+                                    <h5 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">Raw
+                                        Data
+                                    </h5>
+                                    <details class="group">
+                                        <summary
+                                            class="flex items-center gap-2 cursor-pointer text-sm text-blue-600 hover:text-blue-700 font-medium">
+                                            <span>View Stack Trace & Failures</span>
+                                            <svg class="w-4 h-4 transition-transform group-open:rotate-180" fill="none"
+                                                stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                    d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        </summary>
+                                        <div class="mt-4 space-y-2">
+                                            <div class="text-xs text-slate-500 mb-2">Representative Stack Trace:</div>
+                                            <pre class="bg-slate-50 p-3 rounded border border-slate-200 text-xs text-slate-600 overflow-x-auto whitespace-pre-wrap code-scroll max-h-60"
+                                                id="detail-stack-trace">-</pre>
+                                            <div class="text-xs text-slate-500 mt-4 mb-2">Affected Test Cases (<span
+                                                    id="detail-failure-count">0</span>):</div>
+                                            <div class="max-h-40 overflow-y-auto border border-slate-100 rounded"
+                                                id="detail-failure-list">
+                                                <!-- List items -->
+                                            </div>
+                                        </div>
+                                    </details>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Tab Content: Failures -->
+            </div>
+            <div id="tab-failures" class="tab-content hidden space-y-4">
+                <!-- Search/Filter -->
+                <div class="flex gap-4 mb-4">
+                    <div class="flex-1 relative">
+                        <input type="text" id="failures-search"
+                            placeholder="Search failures (module, test case, error)..."
+                            class="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            onkeyup="filterFailures()">
+                        <svg class="w-5 h-5 text-slate-400 absolute left-3 top-2.5" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                        </svg>
+                    </div>
+                    <div class="w-48">
+                        <select id="failures-group-by" onchange="renderFailuresTable()"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                            <option value="module">Group by Module</option>
+                            <option value="cluster">Group by Cluster</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Failures List Container -->
+                <div id="failures-list-container" class="space-y-4">
+                    <!-- Groups will be injected here -->
+                </div>
+
+                <!-- Pagination -->
+                <div class="flex items-center justify-between border-t border-slate-200 pt-4">
+                    <div class="text-sm text-slate-500">
+                        Showing <span id="failures-start" class="font-medium text-slate-900">0</span> to <span
+                            id="failures-end" class="font-medium text-slate-900">0</span> of <span id="failures-total"
+                            class="font-medium text-slate-900">0</span> modules
+                    </div>
+                    <div class="flex gap-2">
+                        <button id="failures-prev" onclick="changeFailuresPage(-1)"
+                            class="px-3 py-1 border border-slate-300 rounded hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                            Previous
+                        </button>
+                        <button id="failures-next" onclick="changeFailuresPage(1)"
+                            class="px-3 py-1 border border-slate-300 rounded hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                            Next
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Delete Confirmation Modal -->
+        <div id="delete-modal"
+            class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">Confirm Deletion</h3>
+                <div id="delete-modal-message" class="text-sm text-slate-600 mb-6"></div>
+                <div class="flex gap-3 justify-end">
+                    <button id="modal-cancel"
+                        class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors">
+                        Cancel
+                    </button>
+                    <button id="modal-confirm"
+                        class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Reset Confirmation Modal -->
+        <div id="reset-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">Confirm Reset</h3>
+                <div id="reset-modal-message" class="text-sm text-slate-600 mb-6">
+                    Are you sure you want to reset all data? This action cannot be undone.
+                </div>
+                <div class="flex gap-3 justify-end">
+                    <button id="reset-modal-cancel"
+                        class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors">
+                        Cancel
+                    </button>
+                    <button id="reset-modal-confirm"
+                        class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+                        Reset System
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Unlink Confirmation Modal -->
+        <div id="unlink-modal" style="z-index: 60;"
+            class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">Confirm Unlink</h3>
+                <div id="unlink-modal-message" class="text-sm text-slate-600 mb-6"></div>
+                <div class="flex gap-3 justify-end">
+                    <button id="unlink-modal-cancel"
+                        class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors">
+                        Cancel
+                    </button>
+                    <button id="unlink-modal-confirm"
+                        class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+                        Unlink
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- Redmine Issue Modal -->
+        <div id="redmine-modal"
+            class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold text-slate-800">Assign to Redmine</h3>
+                    <button onclick="closeRedmineModal()" class="text-slate-400 hover:text-slate-600">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M6 18L18 6M6 6l12 12"></path>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Tab Selection -->
+                <div class="border-b border-slate-200 mb-4">
+                    <nav class="-mb-px flex space-x-8">
+                        <button onclick="switchRedmineTab('link')" id="redmine-tab-link"
+                            class="redmine-tab border-blue-500 text-blue-600 whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm">
+                            Link Existing Issue
+                        </button>
+                        <button onclick="switchRedmineTab('create')" id="redmine-tab-create"
+                            class="redmine-tab border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300 whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm">
+                            Create New Issue
+                        </button>
+                    </nav>
+                </div>
+
+                <!-- Link Tab -->
+                <div id="redmine-content-link" class="redmine-content">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Search Issues</label>
+                            <div class="flex gap-2">
+                                <input type="text" id="redmine-search-query" placeholder="Enter keywords..."
+                                    class="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <button onclick="searchRedmineIssues()"
+                                    class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                                    Search
+                                </button>
+                            </div>
+                        </div>
+                        <div id="redmine-search-results"
+                            class="max-h-60 overflow-y-auto border border-slate-200 rounded-lg">
+                            <div class="p-4 text-center text-slate-500 text-sm">Enter keywords and click Search
+                            </div>
+                        </div>
+                        <button onclick="unlinkRedmineIssue()" id="btn-unlink-issue"
+                            class="hidden w-full px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 border border-red-200">
+                            Unlink Issue
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Create Tab -->
+                <div id="redmine-content-create" class="redmine-content hidden">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Project</label>
+                            <select id="redmine-project" onchange="loadRedmineUsers(this.value)"
+                                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Loading projects...</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Assignee</label>
+                            <select id="redmine-assignee"
+                                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Unassigned</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Subject</label>
+                            <input type="text" id="redmine-subject" placeholder="Brief description of the issue"
+                                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Description</label>
+                            <textarea id="redmine-description" rows="6" placeholder="Detailed description..."
+                                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input type="checkbox" id="redmine-create-children"
+                                class="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500">
+                            <label for="redmine-create-children" class="text-sm text-slate-700">Create child issues
+                                for
+                                individual failures</label>
+                        </div>
+                        <button onclick="createRedmineIssue(event)"
+                            class="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+                            Create Issue
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Bulk Create Issues Modal -->
+    <div id="bulk-create-modal"
+        class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Create Issues for All Clusters</h3>
+            <p class="text-sm text-slate-600 mb-4">This will create Redmine issues for all clusters that don't have one
+                yet.</p>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-2">Project</label>
+                    <select id="bulk-create-project"
+                        class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="">Loading projects...</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="bulk-create-children"
+                        class="w-4 h-4 text-blue-600 border-slate-300 rounded-focus:ring-blue-500">
+                    <label for="bulk-create-children" class="text-sm text-slate-700">Create child issues</label>
+                </div>
+
+                <div id="bulk-create-status" class="hidden mt-2 text-sm"></div>
+
+                <div class="flex gap-3 justify-end">
+                    <button onclick="closeBulkCreateModal()"
+                        class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors">
+                        Cancel
+                    </button>
+                    <button onclick="executeBulkCreate()" id="btn-execute-bulk"
+                        class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors">
+                        Create Issues
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Template -->
+    <template id="tmpl-settings">
+        <div class="max-w-2xl mx-auto space-y-6">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 class="text-xl font-bold text-slate-800 mb-6">OpenAI API Key</h3>
+
+                <div class="space-y-4">
+                    <!-- Current Key Display -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-2">Current API Key</label>
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="current-api-key" readonly
+                                class="flex-1 px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-slate-600 font-mono text-sm"
+                                placeholder="No API key set">
+                            <button onclick="toggleAPIKeyVisibility()" id="btn-toggle-key"
+                                class="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors">
+                                Show
+                            </button>
+                            <button onclick="deleteAPIKey()" id="btn-delete-key"
+                                class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
+                                Delete
+                            </button>
+                        </div>
+                        <p class="mt-1 text-xs text-slate-500">The key is encrypted and stored securely on the server.
+                        </p>
+                    </div>
+
+                    <!-- Update Key -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-2">Update API Key</label>
+                        <div class="flex items-center gap-2">
+                            <input type="password" id="new-api-key" placeholder="sk-proj-..."
+                                class="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <button onclick="saveAPIKey()" id="btn-save-key"
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                                Save
+                            </button>
+                        </div>
+                        <p class="mt-1 text-xs text-slate-500">Enter your OpenAI API key. It will be encrypted before
+                            storage.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Redmine Integration -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 class="text-xl font-bold text-slate-800 mb-6">Redmine Integration</h3>
+
+                <div class="space-y-4">
+                    <!-- Current Settings Display -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-2">Redmine URL</label>
+                        <input type="text" id="current-redmine-url" readonly
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-slate-600 text-sm"
+                            placeholder="Not configured">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-2">Current API Key</label>
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="current-redmine-key" readonly
+                                class="flex-1 px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-slate-600 font-mono text-sm"
+                                placeholder="No API key set">
+                            <button onclick="testRedmineConnection()" id="btn-test-redmine"
+                                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                                Test
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Update Settings -->
+                    <div class="border-t border-slate-200 pt-4">
+                        <label class="block text-sm font-medium text-slate-700 mb-2">Update Redmine URL</label>
+                        <input type="text" id="new-redmine-url" placeholder="https://redmine.example.com"
+                            class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-3">
+
+                        <label class="block text-sm font-medium text-slate-700 mb-2">Update API Key</label>
+                        <div class="flex items-center gap-2">
+                            <input type="password" id="new-redmine-key" placeholder="Enter Redmine API key"
+                                class="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <button onclick="saveRedmineSettings()" id="btn-save-redmine"
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                                Save
+                            </button>
+                        </div>
+                        <p class="mt-1 text-xs text-slate-500">Enter your Redmine URL and API key. The key will be
+                            encrypted.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info Box -->
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div class="flex gap-3">
+                    <svg class="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor"
+                        viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <div class="text-sm text-blue-800">
+                        <p class="font-medium mb-1">About API Key Storage</p>
+                        <ul class="list-disc list-inside space-y-1 text-blue-700">
+                            <li>Your API key is encrypted using industry-standard encryption (Fernet)</li>
+                            <li>The key is stored securely in the database</li>
+                            <li>It will be used automatically for all AI analysis requests</li>
+                            <li>You can update or delete it at any time</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script src="/static/app.js?v=67"></script>
+</body>
+
+</html>
