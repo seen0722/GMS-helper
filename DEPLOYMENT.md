@@ -134,14 +134,14 @@ sudo apt install -y certbot python3-certbot-nginx
 ### 2. Update Nginx for Domain
 Edit the Nginx config:
 ```bash
-nano /etc/nginx/sites-available/gms-analyzer
+sudo nano /etc/nginx/sites-available/gms-analyzer
 ```
 
-Find `server_name _;` and change it to your domain:
+Find `server_name _;` and change it to your domain (e.g., `gms.zmlab.io`):
 ```nginx
 server {
     listen 80;
-    server_name gms.yourdomain.com;  # <--- Update this
+    server_name gms.zmlab.io;  # <--- Update this
     
     # ... rest of config ...
 }
@@ -150,14 +150,51 @@ Save: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
 ### 3. Generate SSL Certificate
 ```bash
-sudo certbot --nginx -d gms.yourdomain.com
+sudo certbot --nginx -d gms.zmlab.io
 ```
 - Enter your email.
 - Agree to terms (Y).
 - Select **2** to Redirect HTTP to HTTPS.
 
-### 4. Verify
-Open `https://gms.yourdomain.com` in your browser. You should see the GMS Analyzer!
+### 4. Verify Nginx Configuration
+After Certbot finishes, your Nginx configuration should automatically update. You can verify it matches the following secure configuration:
+
+```bash
+sudo nano /etc/nginx/sites-available/gms-analyzer
+```
+
+**Final Configuration Reference:**
+```nginx
+server {
+    listen 80;
+    server_name gms.zmlab.io;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+
+    server_name gms.zmlab.io;
+    client_max_body_size 1000M;
+
+    ssl_certificate /etc/letsencrypt/live/gms.zmlab.io/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/gms.zmlab.io/privkey.pem;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+### 5. Verify Access
+Open `https://gms.zmlab.io` in your browser. You should see the GMS Analyzer!
 
 ---
 
