@@ -20,7 +20,7 @@ This is the simplest setup for testing - bypasses Cloudflare's 100MB upload limi
 ### 1. Add Your Domain to Cloudflare
 1. Go to https://dash.cloudflare.com/
 2. Click "Add a Site"
-3. Enter your domain: `yourdomain.com`
+3. Enter your domain: `zmlab.io`
 4. Choose **Free** plan
 5. Click "Continue"
 
@@ -67,7 +67,7 @@ SSH into your VPS and set up Let's Encrypt:
 sudo apt install -y certbot python3-certbot-nginx
 
 # Get SSL certificate
-sudo certbot --nginx -d gms.yourdomain.com
+sudo certbot --nginx -d gms.zmlab.io
 
 # Follow prompts:
 # - Enter your email
@@ -86,7 +86,7 @@ Update the `server_name`:
 ```nginx
 server {
     listen 80;
-    server_name gms.yourdomain.com;  # ← Update this
+    server_name gms.zmlab.io;  # ← Update this
     
     # ... rest stays the same
 }
@@ -105,7 +105,7 @@ sudo systemctl reload nginx
 
 2. **Access your app**:
    ```
-   https://gms.yourdomain.com
+   https://gms.zmlab.io
    ```
 
 3. **Test file upload**:
@@ -126,16 +126,16 @@ If you want to add Cloudflare protection later, you'll need to:
 When you're ready for production:
 
 1. **Create upload subdomain**:
-   - Add DNS record: `upload.yourdomain.com` (DNS only)
+   - Add DNS record: `upload.zmlab.io` (DNS only)
    
 2. **Update app code** (1 line):
    ```javascript
    // In app.js, line 329:
-   const response = await fetch(`https://upload.yourdomain.com/api/upload`, {
+   const response = await fetch(`https://upload.zmlab.io/api/upload`, {
    ```
 
 3. **Enable proxy for main domain**:
-   - Change `gms.yourdomain.com` to Proxied (orange cloud)
+   - Change `gms.zmlab.io` to Proxied (orange cloud)
 
 ---
 
@@ -185,7 +185,7 @@ sudo apt update && sudo apt upgrade -y
 ## 🆘 Troubleshooting
 
 ### DNS Not Resolving
-**Problem**: Can't access `gms.yourdomain.com`
+**Problem**: Can't access `gms.zmlab.io`
 
 **Solution**:
 1. Check DNS propagation: https://dnschecker.org/
@@ -198,7 +198,7 @@ sudo apt update && sudo apt upgrade -y
 **Solution**:
 ```bash
 # Re-run Certbot
-sudo certbot --nginx -d gms.yourdomain.com --force-renewal
+sudo certbot --nginx -d gms.zmlab.io --force-renewal
 ```
 
 ### Upload Still Fails
@@ -219,7 +219,7 @@ sudo certbot --nginx -d gms.yourdomain.com --force-renewal
 - [ ] VPS deployed with `deploy_vultr.sh`
 - [ ] SSL certificate installed with Certbot
 - [ ] Nginx configured with domain name
-- [ ] Can access `https://gms.yourdomain.com`
+- [ ] Can access `https://gms.zmlab.io`
 - [ ] File upload tested successfully
 
 ---

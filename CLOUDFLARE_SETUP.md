@@ -12,7 +12,7 @@ This guide will help you configure Cloudflare as your DNS provider for the GMS C
 
 ## Prerequisites
 
-- A domain name (e.g., `gms-analyzer.yourdomain.com`)
+- A domain name (e.g., `gms-analyzer.zmlab.io`)
 - Cloudflare account (free tier is sufficient)
 - Vultr VPS deployed and running
 
@@ -22,7 +22,7 @@ This guide will help you configure Cloudflare as your DNS provider for the GMS C
 
 1. Log in to [Cloudflare](https://dash.cloudflare.com/)
 2. Click "Add a Site"
-3. Enter your domain name (e.g., `yourdomain.com`)
+3. Enter your domain name (e.g., `zmlab.io`)
 4. Select the **Free** plan
 5. Click "Continue"
 
@@ -57,7 +57,7 @@ IPv4: 123.45.67.89
 Proxy: Proxied
 ```
 
-This will make your app accessible at `gms.yourdomain.com`
+This will make your app accessible at `gms.zmlab.io`
 
 ### 4. Configure SSL/TLS Settings
 
@@ -78,7 +78,7 @@ Update the `server_name` line:
 ```nginx
 server {
     listen 80;
-    server_name gms.yourdomain.com;  # Update this line
+    server_name gms.zmlab.io;  # Update this line
     
     # ... rest of configuration
 }
@@ -99,7 +99,7 @@ Even though Cloudflare provides SSL, it's best practice to have SSL on your serv
 sudo apt install -y certbot python3-certbot-nginx
 
 # Get SSL certificate
-sudo certbot --nginx -d gms.yourdomain.com
+sudo certbot --nginx -d gms.zmlab.io
 
 # Follow the prompts
 # Choose option 2: Redirect HTTP to HTTPS
@@ -112,7 +112,7 @@ After this, update Cloudflare SSL mode to **Full (strict)**.
 #### Page Rules (Optional - Free tier allows 3 rules)
 
 1. Go to **Rules** → **Page Rules**
-2. Create rule for `gms.yourdomain.com/*`:
+2. Create rule for `gms.zmlab.io/*`:
    - **Browser Cache TTL**: 4 hours
    - **Security Level**: Medium
    - **Cache Level**: Standard
@@ -142,7 +142,7 @@ After this, update Cloudflare SSL mode to **Full (strict)**.
 ### 9. Test Your Setup
 
 1. **DNS Propagation**: Check at https://dnschecker.org/
-2. **SSL**: Visit `https://gms.yourdomain.com` - should show secure padlock
+2. **SSL**: Visit `https://gms.zmlab.io` - should show secure padlock
 3. **Application**: Verify all features work correctly
 
 ## Cloudflare Configuration for Large File Uploads
@@ -157,7 +157,7 @@ Cloudflare Free tier has a **100MB upload limit**. For larger files:
 - Supports up to 500MB uploads
 
 **Option B: Bypass Cloudflare for Uploads**
-1. Create a separate subdomain: `upload.yourdomain.com`
+1. Create a separate subdomain: `upload.zmlab.io`
 2. Point it directly to your VPS IP (grey cloud, not proxied)
 3. Update your app to use this subdomain for uploads
 
@@ -248,7 +248,7 @@ cloudflared tunnel login
 cloudflared tunnel create gms-analyzer
 
 # Configure tunnel
-cloudflared tunnel route dns gms-analyzer gms.yourdomain.com
+cloudflared tunnel route dns gms-analyzer gms.zmlab.io
 
 # Run tunnel
 cloudflared tunnel run gms-analyzer
@@ -283,4 +283,4 @@ For GMS Analyzer, **Free tier is recommended** unless you need larger uploads.
 6. 🔐 Configure OpenAI and Redmine settings in the app
 
 Your GMS Certification Analyzer will now be accessible at:
-**https://gms.yourdomain.com** 🚀
+**https://gms.zmlab.io** 🚀

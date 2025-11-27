@@ -25,7 +25,7 @@ curl -X POST \
 ```bash
 curl -X POST \
   -F "file=@sample_cts.xml" \
-  https://gms.yourdomain.com/api/upload/
+  https://gms.zmlab.io/api/upload/
 ```
 
 ### With Progress Bar

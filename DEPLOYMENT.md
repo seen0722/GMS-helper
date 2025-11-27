@@ -17,7 +17,7 @@ This comprehensive guide will help you deploy the GMS Certification Analyzer to 
 
 1. **Vultr Account**: [Create account](https://www.vultr.com/)
 2. **Cloudflare Account**: [Create account](https://dash.cloudflare.com/)
-3. **Domain Name**: You need a domain (e.g., `yourdomain.com`)
+3. **Domain Name**: You need a domain (e.g., `zmlab.io`)
 4. **GitHub Account**: To access the repository
 
 ---
@@ -59,7 +59,7 @@ Click **Deploy Now** and wait for the server to start. Copy the **IP Address**.
 ### 1. Add Site to Cloudflare
 1. Log in to Cloudflare.
 2. Click **Add a Site**.
-3. Enter your domain (e.g., `yourdomain.com`).
+3. Enter your domain (e.g., `zmlab.io`).
 4. Select the **Free** plan.
 5. Update your domain registrar's nameservers to the ones Cloudflare provides.
 
