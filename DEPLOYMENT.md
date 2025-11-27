@@ -1,171 +1,183 @@
-# Vultr VPS Deployment Guide
+# Vultr + Cloudflare Deployment Guide
 
-This guide will help you deploy the GMS Certification Analyzer to a Vultr VPS.
+This comprehensive guide will help you deploy the GMS Certification Analyzer to a Vultr VPS using Cloudflare for DNS and security.
 
-## Prerequisites
+## 🏗️ Architecture Overview
 
-- A Vultr account
-- SSH access to your VPS
-- Your GitHub SSH key added to the VPS
+- **Host**: Vultr VPS (Ubuntu 22.04 LTS)
+- **DNS & Security**: Cloudflare
+- **Web Server**: Nginx (Reverse Proxy)
+- **App Server**: Uvicorn + FastAPI
+- **Process Manager**: Supervisor
+- **Database**: SQLite (Embedded)
 
-## Quick Deployment
+---
 
-### 1. Create a Vultr VPS
+## ✅ Prerequisites
 
-1. Log in to [Vultr](https://my.vultr.com/)
-2. Click "Deploy New Server"
+1. **Vultr Account**: [Create account](https://www.vultr.com/)
+2. **Cloudflare Account**: [Create account](https://dash.cloudflare.com/)
+3. **Domain Name**: You need a domain (e.g., `yourdomain.com`)
+4. **GitHub Account**: To access the repository
+
+---
+
+## 🚀 Phase 1: Vultr VPS Setup
+
+### 1. Deploy New Server
+1. Log in to Vultr.
+2. Click **Deploy New Server**.
 3. Choose:
    - **Server Type**: Cloud Compute - Shared CPU
-   - **Location**: Choose closest to you
+   - **Location**: Choose closest to you (e.g., Tokyo, Singapore)
    - **Server Image**: Ubuntu 22.04 LTS x64
-   - **Server Size**: At least 2GB RAM (recommended: 4GB for better performance)
-   - **SSH Keys**: Add your SSH key
-4. Click "Deploy Now"
+   - **Server Size**: 
+     - Minimum: 2GB RAM / 1 vCPU
+     - **Recommended**: 4GB RAM / 2 vCPU (for better AI analysis performance)
+4. **SSH Keys**: Click "Add New" if you don't have one.
 
-### 2. Connect to Your VPS
+### 2. Generate SSH Key (If needed)
+If you need to generate a new SSH key on your local machine:
 
+**Mac/Linux Terminal:**
+```bash
+# IMPORTANT: Use straight quotes ("), not curly quotes (“)
+ssh-keygen -t ed25519 -C "your_email@example.com"
+```
+- Press Enter to save to default location.
+- Press Enter for no passphrase (or set one if preferred).
+- Copy the public key: `cat ~/.ssh/id_ed25519.pub`
+- Paste this key into Vultr.
+
+### 3. Deploy
+Click **Deploy Now** and wait for the server to start. Copy the **IP Address**.
+
+---
+
+## ☁️ Phase 2: Cloudflare DNS Setup
+
+### 1. Add Site to Cloudflare
+1. Log in to Cloudflare.
+2. Click **Add a Site**.
+3. Enter your domain (e.g., `yourdomain.com`).
+4. Select the **Free** plan.
+5. Update your domain registrar's nameservers to the ones Cloudflare provides.
+
+### 2. Configure DNS Records
+Go to **DNS** > **Records** and add an A record:
+
+| Type | Name | Content (IPv4) | Proxy Status | Purpose |
+|------|------|----------------|--------------|---------|
+| A | `gms` | `YOUR_VPS_IP` | ⚪ **DNS Only** (Grey Cloud) | Main App |
+
+> **⚠️ IMPORTANT:** Set Proxy Status to **DNS Only (Grey Cloud)** initially.
+> This bypasses Cloudflare's 100MB upload limit, allowing you to upload large XML test files directly.
+> You can enable Proxy (Orange Cloud) later if you set up a separate upload subdomain.
+
+---
+
+## 💻 Phase 3: Server Configuration
+
+### 1. Connect to VPS
 ```bash
 ssh root@YOUR_VPS_IP
 ```
 
-### 3. Add GitHub SSH Key to VPS
+### 2. Add GitHub Access
+To clone the private repository, generate an SSH key on the VPS and add it to GitHub:
 
 ```bash
-# Generate SSH key on VPS
-ssh-keygen -t ed25519 -C "your_email@example.com"
+# Generate key on VPS
+ssh-keygen -t ed25519 -C "vps-key"
+# (Press Enter for all prompts)
 
-# Display the public key
+# Show public key
 cat ~/.ssh/id_ed25519.pub
 ```
+1. Copy the output.
+2. Go to GitHub > Settings > SSH and GPG keys > **New SSH key**.
+3. Title: "Vultr VPS", Key: Paste the key.
+4. Click **Add SSH key**.
 
-Copy the output and add it to GitHub:
-- Go to https://github.com/settings/ssh/new
-- Paste the key and save
-
-### 4. Run Deployment Script
+### 3. Run Automated Deployment
+We have a script that sets up everything (Python, Nginx, Supervisor, Firewall).
 
 ```bash
-# Download and run the deployment script
+# Download deployment script
 curl -o deploy.sh https://raw.githubusercontent.com/seen0722/GMS-helper/main/deploy_vultr.sh
+
+# Make executable
 chmod +x deploy.sh
+
+# Run it
 ./deploy.sh
 ```
 
-The script will automatically:
-- Install all dependencies (Python, Nginx, Supervisor)
-- Clone your repository
-- Set up the virtual environment
-- Configure Nginx as reverse proxy
-- Set up Supervisor for process management
-- Configure firewall rules
+The script will:
+- Install Python 3.10+, Nginx, Supervisor, Git
+- Clone the repository to `/var/www/gms-analyzer`
+- Create a virtual environment and install dependencies
+- Configure Nginx to listen on port 80
 - Start the application
 
-### 5. Access Your Application
+---
 
-After deployment completes, access your application at:
-```
-http://YOUR_VPS_IP
-```
+## 🔒 Phase 4: SSL & Domain Configuration
 
-## Manual Deployment (Alternative)
+Now that the app is running on IP, let's switch to your domain with SSL.
 
-If you prefer to deploy manually, follow these steps:
-
-### 1. Update System
+### 1. Install Certbot (SSL Tool)
 ```bash
-sudo apt update && sudo apt upgrade -y
+sudo apt install -y certbot python3-certbot-nginx
 ```
 
-### 2. Install Dependencies
+### 2. Update Nginx for Domain
+Edit the Nginx config:
 ```bash
-sudo apt install -y python3 python3-pip python3-venv nginx supervisor git
+nano /etc/nginx/sites-available/gms-analyzer
 ```
 
-### 3. Clone Repository
-```bash
-sudo mkdir -p /var/www/gms-analyzer
-sudo chown -R $USER:$USER /var/www/gms-analyzer
-cd /var/www/gms-analyzer
-git clone git@github.com:seen0722/GMS-helper.git .
-```
-
-### 4. Set Up Python Environment
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 5. Configure Supervisor
-Create `/etc/supervisor/conf.d/gms-analyzer.conf`:
-```ini
-[program:gms-analyzer]
-directory=/var/www/gms-analyzer
-command=/var/www/gms-analyzer/.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
-user=YOUR_USERNAME
-autostart=true
-autorestart=true
-stderr_logfile=/var/log/gms-analyzer.err.log
-stdout_logfile=/var/log/gms-analyzer.out.log
-```
-
-### 6. Configure Nginx
-Create `/etc/nginx/sites-available/gms-analyzer`:
+Find `server_name _;` and change it to your domain:
 ```nginx
 server {
     listen 80;
-    server_name YOUR_DOMAIN_OR_IP;
-    client_max_body_size 1000M;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    }
+    server_name gms.yourdomain.com;  # <--- Update this
+    
+    # ... rest of config ...
 }
 ```
+Save: `Ctrl+O`, `Enter`, `Ctrl+X`.
 
-Enable the site:
+### 3. Generate SSL Certificate
 ```bash
-sudo ln -s /etc/nginx/sites-available/gms-analyzer /etc/nginx/sites-enabled/
-sudo rm /etc/nginx/sites-enabled/default
-sudo nginx -t
-sudo systemctl restart nginx
+sudo certbot --nginx -d gms.yourdomain.com
 ```
+- Enter your email.
+- Agree to terms (Y).
+- Select **2** to Redirect HTTP to HTTPS.
 
-### 7. Start Services
-```bash
-sudo supervisorctl reread
-sudo supervisorctl update
-sudo supervisorctl start gms-analyzer
-```
+### 4. Verify
+Open `https://gms.yourdomain.com` in your browser. You should see the GMS Analyzer!
 
-## Post-Deployment Configuration
+---
 
-### Set Up SSL (Recommended for Production)
+## ⚙️ Phase 5: Application Setup
 
-```bash
-# Install Certbot
-sudo apt install -y certbot python3-certbot-nginx
+### 1. Configure API Keys
+1. Go to **Settings** in the web interface.
+2. Enter your **OpenAI API Key** (required for AI analysis).
+3. (Optional) Enter Redmine URL and API Key.
 
-# Get SSL certificate (replace with your domain)
-sudo certbot --nginx -d your-domain.com
+### 2. Test Large File Upload
+1. Upload a large XML file (>100MB).
+2. Since we used **DNS Only** (Grey Cloud) in Cloudflare, it should work perfectly.
 
-# Auto-renewal is set up automatically
-```
+---
 
-### Configure Application Settings
+## 🛠️ Maintenance & Troubleshooting
 
-1. Access your application at `http://YOUR_VPS_IP`
-2. Go to Settings
-3. Configure:
-   - OpenAI API key (for AI analysis)
-   - Redmine URL and API key (if using Redmine integration)
-
-## Maintenance
-
-### Update Application
+### Update Code
+To update the app with the latest code from GitHub:
 ```bash
 cd /var/www/gms-analyzer
 git pull
@@ -174,85 +186,40 @@ sudo supervisorctl restart gms-analyzer
 
 ### View Logs
 ```bash
-# Application logs
-sudo tail -f /var/log/gms-analyzer.out.log
+# App logs
+tail -f /var/log/gms-analyzer.out.log
 
 # Error logs
-sudo tail -f /var/log/gms-analyzer.err.log
-
-# Nginx logs
-sudo tail -f /var/log/nginx/access.log
-sudo tail -f /var/log/nginx/error.log
+tail -f /var/log/gms-analyzer.err.log
 ```
 
 ### Restart Services
 ```bash
-# Restart application
 sudo supervisorctl restart gms-analyzer
-
-# Restart Nginx
 sudo systemctl restart nginx
 ```
 
-### Backup Database
-```bash
-# Create backup
-cp /var/www/gms-analyzer/gms_analysis.db ~/gms_backup_$(date +%Y%m%d).db
+### "Database Locked" Error
+If you see database errors, ensure only one process is accessing it. Supervisor handles this, but if you run manual scripts, be careful.
 
-# Download to local machine
-scp root@YOUR_VPS_IP:~/gms_backup_*.db ./
-```
+### SSH Key Issues
+If `ssh-keygen` fails with "Too many arguments" or similar:
+- Check your quotes! Use `"` (straight), not `“` (curly).
+- Type the command manually instead of pasting.
 
-## Troubleshooting
+---
 
-### Application Not Starting
-```bash
-# Check Supervisor status
-sudo supervisorctl status
+## 🛡️ Security Best Practices
 
-# Check logs
-sudo tail -100 /var/log/gms-analyzer.err.log
-```
-
-### Nginx Issues
-```bash
-# Test configuration
-sudo nginx -t
-
-# Check status
-sudo systemctl status nginx
-```
-
-### Port Already in Use
-```bash
-# Check what's using port 8000
-sudo lsof -i :8000
-
-# Kill the process if needed
-sudo kill -9 PID
-```
-
-## Security Recommendations
-
-1. **Change default SSH port** (optional but recommended)
-2. **Set up fail2ban** to prevent brute force attacks
-3. **Enable SSL/HTTPS** using Let's Encrypt
-4. **Regular backups** of the database
-5. **Keep system updated**: `sudo apt update && sudo apt upgrade`
-6. **Use strong passwords** for all accounts
-7. **Restrict SSH access** to specific IPs if possible
-
-## Resource Requirements
-
-- **Minimum**: 2GB RAM, 1 CPU, 25GB SSD
-- **Recommended**: 4GB RAM, 2 CPU, 50GB SSD
-- **For large test files**: 8GB RAM, 4 CPU, 100GB SSD
-
-## Cost Estimate
-
-Vultr pricing (as of 2024):
-- **2GB RAM**: ~$12/month
-- **4GB RAM**: ~$24/month
-- **8GB RAM**: ~$48/month
-
-Choose based on your expected usage and test file sizes.
+1. **Firewall (UFW)**: The deployment script enables UFW allowing ports 22, 80, 443.
+2. **Fail2Ban**: Recommended to prevent brute-force SSH attacks.
+   ```bash
+   sudo apt install -y fail2ban
+   sudo systemctl enable fail2ban
+   sudo systemctl start fail2ban
+   ```
+3. **Backups**: Regularly backup `gms_analysis.db`.
+   ```bash
+   # Copy to local machine
+   scp root@YOUR_IP:/var/www/gms-analyzer/gms_analysis.db ./backup.db
+   ```
