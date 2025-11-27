@@ -79,7 +79,7 @@ sudo certbot --nginx -d gms.yourdomain.com
 
 Edit Nginx config:
 ```bash
-sudo nano /etc/nginx/sites-available/gms-analyzer
+sudo vim /etc/nginx/sites-available/gms-analyzer
 ```
 
 Update the `server_name`:

@@ -71,7 +71,7 @@ This will make your app accessible at `gms.yourdomain.com`
 SSH into your VPS and update the Nginx configuration:
 
 ```bash
-sudo nano /etc/nginx/sites-available/gms-analyzer
+sudo vim /etc/nginx/sites-available/gms-analyzer
 ```
 
 Update the `server_name` line:

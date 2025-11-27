@@ -134,7 +134,7 @@ sudo apt install -y certbot python3-certbot-nginx
 ### 2. Update Nginx for Domain
 Edit the Nginx config:
 ```bash
-sudo nano /etc/nginx/sites-available/gms-analyzer
+sudo vim /etc/nginx/sites-available/gms-analyzer
 ```
 
 Find `server_name _;` and change it to your domain (e.g., `gms.zmlab.io`):
@@ -160,7 +160,7 @@ sudo certbot --nginx -d gms.zmlab.io
 After Certbot finishes, your Nginx configuration should automatically update. You can verify it matches the following secure configuration:
 
 ```bash
-sudo nano /etc/nginx/sites-available/gms-analyzer
+sudo vim /etc/nginx/sites-available/gms-analyzer
 ```
 
 **Final Configuration Reference:**
