@@ -114,10 +114,24 @@ GMS-helper/
 │   ├── static/            # Frontend files (HTML, CSS, JS)
 │   ├── utils/             # Utility functions (encryption, etc.)
 │   └── main.py            # FastAPI application entry point
+├── docs/                  # Documentation
+│   ├── DEPLOYMENT.md      # Deployment guide
+│   ├── API_USAGE.md       # API usage guide
+│   ├── AI_ANALYSIS.md     # AI engine details
+│   ├── ARCHITECTURE.md    # System architecture
+│   └── ...
 ├── tests/                 # Test scripts and utilities
 ├── requirements.txt       # Python dependencies
 └── README.md             # This file
 ```
+
+## 📚 Documentation
+
+- [Deployment Guide](docs/DEPLOYMENT.md) - Vultr + Cloudflare setup
+- [API Usage](docs/API_USAGE.md) - API endpoints and examples
+- [AI Analysis](docs/AI_ANALYSIS.md) - How the AI engine works
+- [Architecture](docs/ARCHITECTURE.md) - System design diagrams
+- [Walkthrough](docs/WALKTHROUGH.md) - Recent changes and verification
 
 ## API Endpoints
 
