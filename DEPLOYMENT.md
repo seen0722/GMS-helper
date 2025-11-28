@@ -143,11 +143,7 @@ stdout_logfile=/var/log/gms-analyzer.out.log
 ```bash
 sudo supervisorctl reread
 sudo supervisorctl update
-sudo supervisorctl status gms-analyzer
-```
 
-sudo supervisorctl status gms-analyzer
-```
 
 ### 5. Manual Nginx Configuration (If needed)
 If you need to manually enable the Nginx site:
