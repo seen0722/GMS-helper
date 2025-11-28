@@ -120,6 +120,32 @@ The script will:
 - Configure Nginx to listen on port 80
 - Start the application
 
+### 4. Manual Supervisor Configuration (If needed)
+If the automated script fails or you need to configure Supervisor manually, create the configuration file:
+
+```bash
+sudo vim /etc/supervisor/conf.d/gms-analyzer.conf
+```
+
+**Configuration Content:**
+```ini
+[program:gms-analyzer]
+directory=/var/www/gms-analyzer
+command=/var/www/gms-analyzer/.venv/bin/uvicorn backend.main:app --host 0.0.0.0 --port 8000
+user=root
+autostart=true
+autorestart=true
+stderr_logfile=/var/log/gms-analyzer.err.log
+stdout_logfile=/var/log/gms-analyzer.out.log
+```
+
+**Apply Changes:**
+```bash
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl status gms-analyzer
+```
+
 ---
 
 ## 🔒 Phase 4: SSL & Domain Configuration
