@@ -288,7 +288,8 @@ If `ssh-keygen` fails with "Too many arguments" or similar:
 ## 🛡️ Security Best Practices
 
 1. **Firewall (UFW)**: The deployment script enables UFW allowing ports 22, 80, 443.
-2. **Fail2Ban**: Recommended to prevent brute-force SSH attacks.
+2. **Cloudflare Access (Zero Trust)**: Strongly recommended for authentication. See [Cloudflare Setup Guide](CLOUDFLARE_SETUP.md#10-secure-access-with-cloudflare-zero-trust-recommended).
+3. **Fail2Ban**: Recommended to prevent brute-force SSH attacks.
    ```bash
    sudo apt install -y fail2ban
    sudo systemctl enable fail2ban

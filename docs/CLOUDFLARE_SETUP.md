@@ -205,6 +205,25 @@ proxy_read_timeout 600;
    - DDoS attacks
    - High error rates
 
+### 10. Secure Access with Cloudflare Zero Trust (Recommended)
+Since the application doesn't have built-in user management, it's highly recommended to use **Cloudflare Access** to protect your site. This adds a login page before anyone can reach your app.
+
+1.  Go to **Zero Trust** on Cloudflare Dashboard.
+2.  Navigate to **Access** > **Applications**.
+3.  Click **Add an Application** and select **Self-hosted**.
+4.  **Configure Application**:
+    - **Application Name**: GMS Analyzer
+    - **Session Duration**: 24 hours
+    - **Domain**: `gms.zmlab.io` (or your domain)
+5.  **Configure Policy**:
+    - **Rule Name**: Allow Team
+    - **Action**: Allow
+    - **Configure Rules**:
+        - **Include**: Emails ending in `@zmlab.io` (or specific emails)
+6.  Click **Next** and **Add Application**.
+
+Now, only authorized users can access your application! 🔒
+
 ## Troubleshooting
 
 ### "Too Many Redirects" Error
