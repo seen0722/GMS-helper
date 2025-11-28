@@ -224,6 +224,28 @@ Since the application doesn't have built-in user management, it's highly recomme
 
 Now, only authorized users can access your application! 🔒
 
+### 10.1 Option: Use Google Account for Login
+Instead of email codes (OTP), you can let users log in with their Google accounts.
+
+1.  **Google Cloud Console**:
+    - Create a new project.
+    - Configure **OAuth Consent Screen** (User Type: External or Internal).
+    - Create **Credentials** > **OAuth Client ID** (Web Application).
+    - **Authorized Redirect URI**: `https://<your-team-name>.cloudflareaccess.com/cdn-cgi/access/callback`
+        - *Find your team name in Cloudflare Zero Trust > Settings > Custom Pages.*
+    - Copy **Client ID** and **Client Secret**.
+
+2.  **Cloudflare Zero Trust**:
+    - Go to **Settings** > **Authentication**.
+    - Click **Add new** under **Login methods**.
+    - Select **Google**.
+    - Paste App ID (Client ID) and Client Secret.
+    - Click **Save**.
+
+3.  **Update Application**:
+    - Go back to your Application (GMS Analyzer).
+    - In **Identity Providers**, select **Google**.
+
 ## Troubleshooting
 
 ### "Too Many Redirects" Error
