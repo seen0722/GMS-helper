@@ -146,6 +146,23 @@ sudo supervisorctl update
 sudo supervisorctl status gms-analyzer
 ```
 
+sudo supervisorctl status gms-analyzer
+```
+
+### 5. Manual Nginx Configuration (If needed)
+If you need to manually enable the Nginx site:
+
+```bash
+# Enable Nginx site
+echo "✅ Enabling Nginx site..."
+sudo ln -sf /etc/nginx/sites-available/gms-analyzer /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# Test and restart Nginx
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
 ---
 
 ## 🔒 Phase 4: SSL & Domain Configuration
