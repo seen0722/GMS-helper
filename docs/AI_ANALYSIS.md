@@ -81,12 +81,22 @@ graph TB
 ```
 
 **Adaptive Clustering:**
-```python
-if n_samples < n_clusters:
-    n_clusters = max(1, n_samples // 2)
-```
 
-If you have fewer failures than clusters, it automatically reduces the number of clusters.
+The system dynamically determines the number of clusters ($k$) based on the volume of failures. This happens in two stages:
+
+1. **Initial Calculation (Router Level):**
+   The system scales the number of clusters based on the total number of failures, capped at 20.
+   ```python
+   # 1 cluster for every 5 failures, max 20
+   n_clusters = min(20, len(failures) // 5 + 1)
+   ```
+
+2. **Safety Adjustment (Clusterer Level):**
+   If the calculated cluster count exceeds the number of actual samples (rare, but possible), it is reduced to ensure valid clustering.
+   ```python
+   if n_samples < n_clusters:
+       n_clusters = max(1, n_samples // 2)
+   ```
 
 ### **Input Format**
 
