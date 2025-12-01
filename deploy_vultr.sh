@@ -81,7 +81,7 @@ server {
     listen 80;
     server_name _;
 
-    client_max_body_size 1000M;  # Allow large XML file uploads
+    client_max_body_size 2000M;  # Allow large XML file uploads (2GB)
 
     location / {
         proxy_pass http://127.0.0.1:8000;
@@ -95,11 +95,11 @@ server {
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         
-        # Timeouts for large file uploads
-        proxy_connect_timeout 600;
-        proxy_send_timeout 600;
-        proxy_read_timeout 600;
-        send_timeout 600;
+        # Timeouts for large file uploads (1 hour)
+        proxy_connect_timeout 3600;
+        proxy_send_timeout 3600;
+        proxy_read_timeout 3600;
+        send_timeout 3600;
     }
 }
 EOF
