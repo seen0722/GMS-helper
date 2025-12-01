@@ -344,7 +344,14 @@ function setupUpload() {
                 }, 1000);
                 router.cleanup = () => clearTimeout(timeoutId);
             } else {
-                throw new Error('Upload failed');
+                let errorMsg = 'Upload failed';
+                try {
+                    const errorData = await response.json();
+                    errorMsg = errorData.detail || errorData.message || `Upload failed with status ${response.status}`;
+                } catch (e) {
+                    errorMsg = `Upload failed with status ${response.status}`;
+                }
+                throw new Error(errorMsg);
             }
         } catch (e) {
             progressBar.style.width = '100%';

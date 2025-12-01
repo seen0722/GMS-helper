@@ -120,8 +120,13 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
     file_id = str(uuid.uuid4())
     file_path = os.path.join(UPLOAD_DIR, f"{file_id}_{file.filename}")
     
+    print(f"Starting upload for file: {file.filename}")
+    
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+    
+    file_size = os.path.getsize(file_path)
+    print(f"File saved: {file_path}, Size: {file_size} bytes")
         
     # 2. Create Initial TestRun Record
     test_run = models.TestRun(

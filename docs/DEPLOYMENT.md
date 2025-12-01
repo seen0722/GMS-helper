@@ -207,6 +207,8 @@ sudo vim /etc/nginx/sites-available/gms-analyzer
 server {
     listen 80;
     server_name gms.zmlab.io;
+
+    # Redirect all HTTP to HTTPS
     return 301 https://$host$request_uri;
 }
 
@@ -215,11 +217,12 @@ server {
     listen [::]:443 ssl;
 
     server_name gms.zmlab.io;
-    client_max_body_size 1000M;
+    client_max_body_size 2000M;
 
     ssl_certificate /etc/letsencrypt/live/gms.zmlab.io/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/gms.zmlab.io/privkey.pem;
 
+    # Strong SSL settings (安全強化)
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers on;
 
@@ -228,6 +231,12 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # Timeouts for large file uploads (1 hour)
+        proxy_connect_timeout 3600;
+        proxy_send_timeout 3600;
+        proxy_read_timeout 3600;
+        send_timeout 3600;
     }
 }
 ```
