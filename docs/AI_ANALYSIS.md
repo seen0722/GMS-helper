@@ -494,6 +494,59 @@ Cluster 3 (General Permission): Tests 7, 8
 
 ---
 
+
+## 📊 Example 3: Real Data (Run #2)
+
+### **Input: 8 Failed Tests (GTS)**
+
+```
+1. GtsPermissionTestCases: PreloadAppsTargetSdkVersionTest.testPreloadedAppsTargetSdkVersion
+2. GtsPermissionTestCases: PreloadAppsTargetSdkVersionTest.testPreloadedAppsTargetSdkVersion
+3. GtsPermissionUiTestCases: PermissionHistoryTest.permissionTimelineShowsMicUsage
+4. GtsPermissionUiTestCases: PermissionHistoryTest.permissionTimelineShowsMicUsage
+5. GtsPermissionTestCases: DefaultPermissionGrantPolicyTest.testDefaultGrantsWithRemoteExceptions
+6. GtsPermissionTestCases: DefaultPermissionGrantPolicyTest.testPreGrantsWithRemoteExceptions
+7. GtsPermissionTestCases: DefaultPermissionGrantPolicyTest.testDefaultGrantsWithRemoteExceptions
+8. GtsPermissionTestCases: DefaultPermissionGrantPolicyTest.testDefaultGrantsWithRemoteExceptions
+```
+
+### **Clustering Result: 2 Clusters**
+
+```
+Cluster 0 (Configuration Issue): Tests 1, 2, 3, 4
+Cluster 1 (Permission Issue): Tests 5, 6, 7, 8
+```
+
+### **LLM Analysis Output**
+
+**Cluster 0 (Configuration Issue):**
+```json
+{
+  "title": "Preloaded app targets incorrect API level for Android version",
+  "severity": "High",
+  "category": "Configuration Issue",
+  "root_cause": "The app 'com.android.inputmethod.latin' does not comply with the required target SDK version policy for preloaded apps on Android 14 devices, resulting in a runtime exception.",
+  "solution": "Update the targetSdkVersion in the build.gradle file of 'com.android.inputmethod.latin' to at least 33, and rebuild the application to meet compliance with Android 14 requirements.",
+  "confidence_score": 5,
+  "suggested_assignment": "Permission Team"
+}
+```
+
+**Cluster 1 (Permission Issue):**
+```json
+{
+  "title": "Assertion failure due to incorrect default permissions for Bluetooth package",
+  "severity": "Medium",
+  "category": "Permission Issue",
+  "root_cause": "The failure occurred because the Bluetooth package is not set up to receive certain permissions by default, which are deemed essential for its functionality.",
+  "solution": "Review the permission grant policies for the Bluetooth package and ensure that required permissions like POST_NOTIFICATIONS, ACCESS_FINE_LOCATION, and BLUETOOTH_CONNECT are properly defined in the manifest and their default grant strategies are appropriately set.",
+  "confidence_score": 4,
+  "suggested_assignment": "Permission Team"
+}
+```
+
+---
+
 ## 🚀 Future Enhancements
 
 ### **Potential Improvements**
