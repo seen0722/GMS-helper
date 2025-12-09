@@ -440,7 +440,7 @@ Cluster 3 (General Permission): Tests 7, 8
 
 ### **LLM Analysis Output**
 
-**Cluster 0:**
+**Cluster 0 (Media Codec Issues):**
 ```json
 {
   "title": "MediaCodec lifecycle state management issues",
@@ -453,7 +453,20 @@ Cluster 3 (General Permission): Tests 7, 8
 }
 ```
 
-**Cluster 2:**
+**Cluster 1 (Audio Issues):**
+```json
+{
+  "title": "NullPointerException in AudioManager volume methods",
+  "severity": "Medium",
+  "category": "Framework Issue",
+  "root_cause": "AudioManager service not properly initialized or context is null",
+  "solution": "Ensure valid Context is used to obtain AudioManager instance",
+  "confidence_score": 5,
+  "suggested_assignment": "Audio Team"
+}
+```
+
+**Cluster 2 (Camera Permission):**
 ```json
 {
   "title": "Missing CAMERA permission in test manifest",
@@ -463,6 +476,19 @@ Cluster 3 (General Permission): Tests 7, 8
   "solution": "Add <uses-permission android:name=\"CAMERA\"/> to manifest",
   "confidence_score": 5,
   "suggested_assignment": "Camera Team"
+}
+```
+
+**Cluster 3 (General Permission):**
+```json
+{
+  "title": "SecurityException due to missing permissions",
+  "severity": "High",
+  "category": "Permission Issue",
+  "root_cause": "Required permissions not granted to the test package",
+  "solution": "Verify AndroidManifest.xml includes all required <uses-permission> tags",
+  "confidence_score": 5,
+  "suggested_assignment": "Security/Framework Team"
 }
 ```
 
