@@ -1,0 +1,166 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no' ?><?xml-stylesheet type="text/xsl" href="compatibility_result.xsl"?>
+<Result start="1754633920975" end="1754634854235" start_display="Fri Aug 08 14:18:40 CST 2025" end_display="Fri Aug 08 14:34:14 CST 2025" devices="DBB252400017" host_name="pega103" java_vendor="N/A" java_version="21.0.1" os_arch="amd64" os_name="Linux" os_version="6.8.0-65-generic" report_version="5.0" suite_build_number="13813184" suite_name="CTS" suite_plan="cts" suite_variant="CTS" suite_version="15_r6" command_line_args="cts -m MctsMediaDrmFrameworkTestCases">
+  <Build device_kernel_info="Linux localhost 5.4.289-qgki-g958ce39a6415 #1 SMP PREEMPT Sat Aug 2 07:34:15 CST 2025 aarch64 Toybox" system_img_info="qti/qssi/qssi:15/AQ3A.250408.001/02.00.07.250802:user/release-keys" vendor_img_info="Trimble/T70/thorpe:11/RKQ1.240423.001/02.00.07.250802:user/release-keys" build_abi="arm64-v8a" build_abi2="" build_abis="arm64-v8a,armeabi-v7a,armeabi" build_abis_32="armeabi-v7a,armeabi" build_abis_64="arm64-v8a" build_board="lahaina" build_bootimage_fingerprint="Trimble/T70/thorpe:11/RKQ1.240423.001/02.00.07.250802:user/release-keys" build_brand="Trimble" build_device="thorpe" build_fingerprint="Trimble/T70/thorpe:15/AQ3A.250408.001/02.00.07.250802:user/release-keys" build_id="AQ3A.250408.001" build_manufacturer="Trimble Inc" build_model="T70" build_product="T70" build_reference_fingerprint="" build_serial="DBB252400017" build_tags="release-keys" build_type="user" build_vendor_fingerprint="Trimble/T70/thorpe:11/RKQ1.240423.001/02.00.07.250802:user/release-keys" build_version_base_os="" build_version_incremental="02.00.07.250802" build_version_release="15" build_version_sdk="35" build_version_security_patch="2025-07-01" />
+  <Summary pass="24" failed="4" modules_done="3" modules_total="3" />
+  <Module name="MctsMediaDrmFrameworkTestCases" abi="arm64-v8a" runtime="112598" done="true" pass="14" total_tests="14">
+    <TestCase name="android.media.drmframework.cts.CodecDecoderBlockModelMultiAccessUnitDrmTest">
+      <Test result="pass" name="testSimpleDecode[0_c2.android.aac.decoder_audio/mp4a-latm]" />
+      <Test result="pass" name="testSimpleDecode[1_c2.android.flac.decoder_audio/flac]" />
+      <Test result="pass" name="testSimpleDecode[2_c2.android.mp3.decoder_audio/mpeg]" />
+      <Test result="pass" name="testSimpleDecode[3_c2.android.opus.decoder_audio/opus]" />
+    </TestCase>
+    <TestCase name="android.media.drmframework.cts.CodecDecoderDrmTest">
+      <Test result="pass" name="testSimpleDecode[0_c2.android.aac.decoder_audio/mp4a-latm]" />
+      <Test result="pass" name="testSimpleDecode[1_c2.android.flac.decoder_audio/flac]" />
+      <Test result="pass" name="testSimpleDecode[2_c2.android.mp3.decoder_audio/mpeg]" />
+      <Test result="pass" name="testSimpleDecode[3_c2.android.opus.decoder_audio/opus]" />
+    </TestCase>
+    <TestCase name="android.media.drmframework.cts.CodecDecoderMultiAccessUnitDrmTest">
+      <Test result="pass" name="testSimpleDecode[0_c2.android.aac.decoder_audio/mp4a-latm]" />
+      <Test result="pass" name="testSimpleDecode[1_c2.android.flac.decoder_audio/flac]" />
+      <Test result="pass" name="testSimpleDecode[2_c2.android.mp3.decoder_audio/mpeg]" />
+      <Test result="pass" name="testSimpleDecode[3_c2.android.opus.decoder_audio/opus]" />
+    </TestCase>
+    <TestCase name="android.media.drmframework.cts.MediaDrmClearkeyTest">
+      <Test result="pass" name="testClearKeyPlaybackMpeg2ts" />
+      <Test result="pass" name="testPlaybackMpeg2ts" />
+    </TestCase>
+  </Module>
+  <Module name="MctsMediaDrmFrameworkTestCases" abi="armeabi-v7a" runtime="93309" done="true" pass="10" total_tests="14">
+    <TestCase name="android.media.drmframework.cts.CodecDecoderBlockModelMultiAccessUnitDrmTest">
+      <Test result="fail" name="testSimpleDecode[0_c2.android.aac.decoder_audio/mp4a-latm]">
+        <Failure message="java.lang.AssertionError: Output timestamps are not strictly increasing">
+          <StackTrace>java.lang.AssertionError: Output timestamps are not strictly increasing 
+
+##################       Test Details        ####################
+Test Name :- testSimpleDecode[0_c2.android.aac.decoder_audio/mp4a-latm]
+Test Parameters :- [  c2.android.aac.decoder, audio/mp4a-latm, bbb_stereo_48kHz_192kbps_aac_cenc.mp4  ]
+###################      Test Environment       #####################
+Component under test :- c2.android.aac.decoder 
+Format under test :- {max-bitrate=234125, sample-rate=48000, crypto-mode=1, track-id=1, mime=audio/mp4a-latm, profile=2, bitrate=192001, language=und, aac-profile=2, crypto-skip-byte-block=0, buffer-batch-max-output-size=192000, buffer-batch-threshold-output-size=48000, crypto-encrypted-byte-block=0, durationUs=15018666, channel-count=2, crypto-default-iv-size=8, max-input-size=144179, crypto-key=java.nio.HeapByteBuffer[pos=0 lim=16 cap=16], csd-0=java.nio.HeapByteBuffer[pos=0 lim=2 cap=2]}
+Component operating in :- asynchronous mode 
+Component received input eos :- with full buffer 
+Component is :- decoder 
+Component configure flags :- 2
+##################       Error Details         ####################
+Timestamp values are not strictly increasing. 
+Frame indices around which timestamp values decreased :- 
+pts of frame idx -1 is 4294924630 
+pts of frame idx 0 is 4294924630 
+pts of frame idx 1 is 213333 
+pts of frame idx 2 is 469333 
+pts of frame idx 3 is 725333 
+
+	at org.junit.Assert.fail(Assert.java:89)
+	at android.mediav2.common.cts.CodecDecoderTestBase.validateTestState(CodecDecoderTestBase.java:375)
+	at android.mediav2.common.cts.CodecDecoderBlockModelMultiAccessUnitTestBase.waitForAllOutputs(CodecDecoderBlockModelMultiAccessUnitTestBase.java:246)
+	at android.media.drmframework.cts.CodecDecoderBlockModelMultiAccessUnitDrmTest.testSimpleDecode(CodecDecoderBlockModelMultiAccessUnitDrmTest.java:170)</StackTrace>
+        </Failure>
+      </Test>
+      <Test result="pass" name="testSimpleDecode[1_c2.android.flac.decoder_audio/flac]" />
+      <Test result="pass" name="testSimpleDecode[2_c2.android.mp3.decoder_audio/mpeg]" />
+      <Test result="fail" name="testSimpleDecode[3_c2.android.opus.decoder_audio/opus]">
+        <Failure message="java.lang.AssertionError: Output timestamps are not strictly increasing">
+          <StackTrace>java.lang.AssertionError: Output timestamps are not strictly increasing 
+
+##################       Test Details        ####################
+Test Name :- testSimpleDecode[3_c2.android.opus.decoder_audio/opus]
+Test Parameters :- [  c2.android.opus.decoder, audio/opus, bbb_stereo_48kHz_192kbps_opus_cenc.mp4  ]
+###################      Test Environment       #####################
+Component under test :- c2.android.opus.decoder 
+Format under test :- {sample-rate=48000, crypto-mode=1, track-id=1, mime=audio/opus, language=und, crypto-skip-byte-block=0, csd-1=java.nio.HeapByteBuffer[pos=0 lim=8 cap=8], csd-2=java.nio.HeapByteBuffer[pos=0 lim=8 cap=8], buffer-batch-max-output-size=192000, buffer-batch-threshold-output-size=48000, crypto-encrypted-byte-block=0, durationUs=15000000, channel-count=2, crypto-default-iv-size=8, max-input-size=144179, crypto-key=java.nio.HeapByteBuffer[pos=0 lim=16 cap=16], csd-0=java.nio.HeapByteBuffer[pos=0 lim=19 cap=19]}
+Component operating in :- asynchronous mode 
+Component received input eos :- with full buffer 
+Component is :- decoder 
+Component configure flags :- 2
+##################       Error Details         ####################
+Timestamp values are not strictly increasing. 
+Frame indices around which timestamp values decreased :- 
+pts of frame idx -1 is 4294960796 
+pts of frame idx 0 is 4294960796 
+pts of frame idx 1 is 253500 
+pts of frame idx 2 is 513500 
+pts of frame idx 3 is 773500 
+
+	at org.junit.Assert.fail(Assert.java:89)
+	at android.mediav2.common.cts.CodecDecoderTestBase.validateTestState(CodecDecoderTestBase.java:375)
+	at android.mediav2.common.cts.CodecDecoderBlockModelMultiAccessUnitTestBase.waitForAllOutputs(CodecDecoderBlockModelMultiAccessUnitTestBase.java:246)
+	at android.media.drmframework.cts.CodecDecoderBlockModelMultiAccessUnitDrmTest.testSimpleDecode(CodecDecoderBlockModelMultiAccessUnitDrmTest.java:170)</StackTrace>
+        </Failure>
+      </Test>
+    </TestCase>
+    <TestCase name="android.media.drmframework.cts.CodecDecoderDrmTest">
+      <Test result="pass" name="testSimpleDecode[0_c2.android.aac.decoder_audio/mp4a-latm]" />
+      <Test result="pass" name="testSimpleDecode[1_c2.android.flac.decoder_audio/flac]" />
+      <Test result="pass" name="testSimpleDecode[2_c2.android.mp3.decoder_audio/mpeg]" />
+      <Test result="pass" name="testSimpleDecode[3_c2.android.opus.decoder_audio/opus]" />
+    </TestCase>
+    <TestCase name="android.media.drmframework.cts.CodecDecoderMultiAccessUnitDrmTest">
+      <Test result="fail" name="testSimpleDecode[0_c2.android.aac.decoder_audio/mp4a-latm]">
+        <Failure message="java.lang.AssertionError: Output timestamps are not strictly increasing">
+          <StackTrace>java.lang.AssertionError: Output timestamps are not strictly increasing 
+
+##################       Test Details        ####################
+Test Name :- testSimpleDecode[0_c2.android.aac.decoder_audio/mp4a-latm]
+Test Parameters :- [  c2.android.aac.decoder, audio/mp4a-latm, bbb_stereo_48kHz_192kbps_aac_cenc.mp4  ]
+###################      Test Environment       #####################
+Component under test :- c2.android.aac.decoder 
+Format under test :- {max-bitrate=234125, sample-rate=48000, crypto-mode=1, track-id=1, mime=audio/mp4a-latm, profile=2, bitrate=192001, language=und, aac-profile=2, crypto-skip-byte-block=0, buffer-batch-max-output-size=192000, buffer-batch-threshold-output-size=48000, crypto-encrypted-byte-block=0, durationUs=15018666, channel-count=2, crypto-default-iv-size=8, max-input-size=144179, crypto-key=java.nio.HeapByteBuffer[pos=0 lim=16 cap=16], csd-0=java.nio.HeapByteBuffer[pos=0 lim=2 cap=2]}
+Component operating in :- asynchronous mode 
+Component received input eos :- with full buffer 
+Component is :- decoder 
+Component configure flags :- 0
+##################       Error Details         ####################
+Timestamp values are not strictly increasing. 
+Frame indices around which timestamp values decreased :- 
+pts of frame idx -1 is 4294924630 
+pts of frame idx 0 is 4294924630 
+pts of frame idx 1 is 213333 
+pts of frame idx 2 is 469333 
+pts of frame idx 3 is 725333 
+
+	at org.junit.Assert.fail(Assert.java:89)
+	at android.mediav2.common.cts.CodecDecoderTestBase.validateTestState(CodecDecoderTestBase.java:375)
+	at android.mediav2.common.cts.CodecDecoderMultiAccessUnitTestBase.waitForAllOutputs(CodecDecoderMultiAccessUnitTestBase.java:244)
+	at android.media.drmframework.cts.CodecDecoderMultiAccessUnitDrmTest.testSimpleDecode(CodecDecoderMultiAccessUnitDrmTest.java:166)</StackTrace>
+        </Failure>
+      </Test>
+      <Test result="pass" name="testSimpleDecode[1_c2.android.flac.decoder_audio/flac]" />
+      <Test result="pass" name="testSimpleDecode[2_c2.android.mp3.decoder_audio/mpeg]" />
+      <Test result="fail" name="testSimpleDecode[3_c2.android.opus.decoder_audio/opus]">
+        <Failure message="java.lang.AssertionError: Output timestamps are not strictly increasing">
+          <StackTrace>java.lang.AssertionError: Output timestamps are not strictly increasing 
+
+##################       Test Details        ####################
+Test Name :- testSimpleDecode[3_c2.android.opus.decoder_audio/opus]
+Test Parameters :- [  c2.android.opus.decoder, audio/opus, bbb_stereo_48kHz_192kbps_opus_cenc.mp4  ]
+###################      Test Environment       #####################
+Component under test :- c2.android.opus.decoder 
+Format under test :- {sample-rate=48000, crypto-mode=1, track-id=1, mime=audio/opus, language=und, crypto-skip-byte-block=0, csd-1=java.nio.HeapByteBuffer[pos=0 lim=8 cap=8], csd-2=java.nio.HeapByteBuffer[pos=0 lim=8 cap=8], buffer-batch-max-output-size=192000, buffer-batch-threshold-output-size=48000, crypto-encrypted-byte-block=0, durationUs=15000000, channel-count=2, crypto-default-iv-size=8, max-input-size=144179, crypto-key=java.nio.HeapByteBuffer[pos=0 lim=16 cap=16], csd-0=java.nio.HeapByteBuffer[pos=0 lim=19 cap=19]}
+Component operating in :- asynchronous mode 
+Component received input eos :- with full buffer 
+Component is :- decoder 
+Component configure flags :- 0
+##################       Error Details         ####################
+Timestamp values are not strictly increasing. 
+Frame indices around which timestamp values decreased :- 
+pts of frame idx -1 is 4294960796 
+pts of frame idx 0 is 4294960796 
+pts of frame idx 1 is 253500 
+pts of frame idx 2 is 513500 
+pts of frame idx 3 is 773500 
+
+	at org.junit.Assert.fail(Assert.java:89)
+	at android.mediav2.common.cts.CodecDecoderTestBase.validateTestState(CodecDecoderTestBase.java:375)
+	at android.mediav2.common.cts.CodecDecoderMultiAccessUnitTestBase.waitForAllOutputs(CodecDecoderMultiAccessUnitTestBase.java:244)
+	at android.media.drmframework.cts.CodecDecoderMultiAccessUnitDrmTest.testSimpleDecode(CodecDecoderMultiAccessUnitDrmTest.java:166)</StackTrace>
+        </Failure>
+      </Test>
+    </TestCase>
+    <TestCase name="android.media.drmframework.cts.MediaDrmClearkeyTest">
+      <Test result="pass" name="testClearKeyPlaybackMpeg2ts" />
+      <Test result="pass" name="testPlaybackMpeg2ts" />
+    </TestCase>
+  </Module>
+  <Module name="MctsMediaDrmFrameworkTestCases[instant]" abi="arm64-v8a" runtime="0" done="true" pass="0" total_tests="0" />
+</Result>

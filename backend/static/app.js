@@ -319,48 +319,137 @@ function setupUpload() {
         if (!file) return;
 
         statusDiv.classList.remove('hidden');
-        progressBar.style.width = '10%';
-        message.textContent = `Uploading ${file.name}...`;
+        progressBar.style.width = '0%';
+        progressBar.classList.remove('bg-red-600');
+        progressBar.classList.add('bg-blue-600');
+        message.classList.remove('text-red-600', 'text-green-600');
 
-        const formData = new FormData();
-        formData.append('file', file);
+        // Check if it's an XML file for local parsing
+        const isXML = file.name.toLowerCase().endsWith('.xml');
 
-        try {
-            const response = await fetch(`${API_BASE}/upload`, {
-                method: 'POST',
-                body: formData
-            });
-
-            progressBar.style.width = '80%';
-
-            if (response.ok) {
-                const result = await response.json();
+        if (isXML) {
+            // Use browser-side parsing
+            message.textContent = `Parsing ${file.name} locally...`;
+            
+            try {
+                const worker = new Worker('/static/xml-parser.worker.js');
+                
+                worker.onmessage = async (event) => {
+                    const data = event.data;
+                    
+                    if (data.type === 'progress') {
+                        progressBar.style.width = `${Math.min(data.percent * 0.9, 90)}%`;
+                        const mbProcessed = (data.bytesRead / 1024 / 1024).toFixed(1);
+                        const mbTotal = (data.totalBytes / 1024 / 1024).toFixed(1);
+                        message.textContent = `Parsing... ${data.percent}% (${mbProcessed}/${mbTotal} MB, ${data.testsProcessed.toLocaleString()} tests)`;
+                    } else if (data.type === 'complete') {
+                        progressBar.style.width = '95%';
+                        message.textContent = `Uploading results (${data.result.failures.length} failures)...`;
+                        
+                        try {
+                            // Upload parsed JSON
+                            const response = await fetch(`${API_BASE}/import`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(data.result)
+                            });
+                            
+                            if (response.ok) {
+                                const result = await response.json();
+                                progressBar.style.width = '100%';
+                                message.textContent = 'Import complete!';
+                                message.classList.add('text-green-600');
+                                
+                                const timeoutId = setTimeout(() => {
+                                    router.navigate('run-details', { id: result.test_run_id });
+                                }, 1000);
+                                router.cleanup = () => clearTimeout(timeoutId);
+                            } else {
+                                let errorMsg = 'Import failed';
+                                try {
+                                    const errorData = await response.json();
+                                    errorMsg = errorData.detail || errorData.message || `Import failed with status ${response.status}`;
+                                } catch (e) {
+                                    errorMsg = `Import failed with status ${response.status}`;
+                                }
+                                throw new Error(errorMsg);
+                            }
+                        } catch (uploadError) {
+                            throw uploadError;
+                        }
+                        
+                        worker.terminate();
+                    } else if (data.type === 'error') {
+                        throw new Error(data.error);
+                    }
+                };
+                
+                worker.onerror = (error) => {
+                    console.error('Worker error:', error);
+                    progressBar.style.width = '100%';
+                    progressBar.classList.remove('bg-blue-600');
+                    progressBar.classList.add('bg-red-600');
+                    message.textContent = `Parsing error: ${error.message || 'Unknown error'}`;
+                    message.classList.add('text-red-600');
+                    worker.terminate();
+                };
+                
+                // Start parsing
+                worker.postMessage(file);
+                
+            } catch (e) {
                 progressBar.style.width = '100%';
-                message.textContent = 'Upload complete! Processing...';
-                message.classList.add('text-green-600');
-
-                const timeoutId = setTimeout(() => {
-                    router.navigate('run-details', { id: result.test_run_id });
-                }, 1000);
-                router.cleanup = () => clearTimeout(timeoutId);
-            } else {
-                let errorMsg = 'Upload failed';
-                try {
-                    const errorData = await response.json();
-                    errorMsg = errorData.detail || errorData.message || `Upload failed with status ${response.status}`;
-                } catch (e) {
-                    errorMsg = `Upload failed with status ${response.status}`;
-                }
-                throw new Error(errorMsg);
+                progressBar.classList.remove('bg-blue-600');
+                progressBar.classList.add('bg-red-600');
+                message.textContent = `Error: ${e.message}`;
+                message.classList.add('text-red-600');
+                console.error('Local parsing failed', e);
             }
-        } catch (e) {
-            progressBar.style.width = '100%';
-            progressBar.classList.remove('bg-blue-600');
-            progressBar.classList.add('bg-red-600');
-            message.textContent = `Error: ${e.message}`;
-            message.classList.add('text-red-600');
-            console.error('Upload failed', e);
-            alert(`Upload failed: ${e.message}`);
+        } else {
+            // Fallback to server-side upload for non-XML files
+            message.textContent = `Uploading ${file.name}...`;
+            progressBar.style.width = '10%';
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch(`${API_BASE}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                progressBar.style.width = '80%';
+
+                if (response.ok) {
+                    const result = await response.json();
+                    progressBar.style.width = '100%';
+                    message.textContent = 'Upload complete! Processing...';
+                    message.classList.add('text-green-600');
+
+                    const timeoutId = setTimeout(() => {
+                        router.navigate('run-details', { id: result.test_run_id });
+                    }, 1000);
+                    router.cleanup = () => clearTimeout(timeoutId);
+                } else {
+                    let errorMsg = 'Upload failed';
+                    try {
+                        const errorData = await response.json();
+                        errorMsg = errorData.detail || errorData.message || `Upload failed with status ${response.status}`;
+                    } catch (e) {
+                        errorMsg = `Upload failed with status ${response.status}`;
+                    }
+                    throw new Error(errorMsg);
+                }
+            } catch (e) {
+                progressBar.style.width = '100%';
+                progressBar.classList.remove('bg-blue-600');
+                progressBar.classList.add('bg-red-600');
+                message.textContent = `Error: ${e.message}`;
+                message.classList.add('text-red-600');
+                console.error('Upload failed', e);
+                alert(`Upload failed: ${e.message}`);
+            }
         }
     });
 }
