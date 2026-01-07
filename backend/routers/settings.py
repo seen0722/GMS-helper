@@ -17,6 +17,12 @@ class RedmineSettingsUpdate(BaseModel):
     api_key: str
 
 
+class LLMProviderUpdate(BaseModel):
+    provider: str  # openai | internal
+    internal_url: Optional[str] = None
+    internal_model: Optional[str] = "llama3.1:8b"
+
+
 def get_or_create_settings(db: Session) -> models.Settings:
     settings = db.query(models.Settings).first()
     if not settings:
@@ -130,3 +136,82 @@ def update_redmine_settings(data: RedmineSettingsUpdate, db: Session = Depends(g
         db.rollback()
         print(f"Error saving Redmine settings: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save Redmine settings: {str(e)}")
+
+
+@router.get("/llm-provider")
+def get_llm_provider(db: Session = Depends(get_db)):
+    """Get the current LLM provider settings."""
+    settings = get_or_create_settings(db)
+    
+    return {
+        "provider": settings.llm_provider or "openai",
+        "internal_url": settings.internal_llm_url,
+        "internal_model": settings.internal_llm_model or "llama3.1:8b",
+        "openai_configured": bool(settings.openai_api_key)
+    }
+
+
+@router.put("/llm-provider")
+def update_llm_provider(data: LLMProviderUpdate, db: Session = Depends(get_db)):
+    """Update the LLM provider settings."""
+    if data.provider not in ["openai", "internal"]:
+        raise HTTPException(status_code=400, detail="Provider must be 'openai' or 'internal'")
+    
+    if data.provider == "internal" and not data.internal_url:
+        raise HTTPException(status_code=400, detail="Internal URL is required when using internal provider")
+    
+    try:
+        settings = get_or_create_settings(db)
+        settings.llm_provider = data.provider
+        
+        if data.provider == "internal":
+            settings.internal_llm_url = data.internal_url.strip() if data.internal_url else None
+            settings.internal_llm_model = data.internal_model or "llama3.1:8b"
+        
+        db.commit()
+        return {"message": f"LLM provider updated to {data.provider}"}
+    except Exception as e:
+        db.rollback()
+        print(f"Error saving LLM provider settings: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save LLM provider settings: {str(e)}")
+
+
+@router.post("/test-llm-connection")
+def test_llm_connection(db: Session = Depends(get_db)):
+    """Test the LLM connection based on current settings."""
+    from backend.analysis.llm_client import get_llm_client, MockLLMClient, InternalLLMClient, OpenAILLMClient
+    
+    try:
+        client = get_llm_client()
+        
+        # Check client type
+        if isinstance(client, MockLLMClient):
+            return {"success": False, "provider": "mock", "message": "No LLM configured - using mock client"}
+        
+        provider_name = "internal" if isinstance(client, InternalLLMClient) else "openai"
+        
+        # Simple test - try to make a minimal request
+        if isinstance(client, InternalLLMClient):
+            # For Ollama/vLLM, try listing models
+            import httpx
+            base_url = client.base_url.rstrip('/v1').rstrip('/')
+            response = httpx.get(f"{base_url}/api/tags", timeout=5.0)
+            if response.status_code == 200:
+                models = response.json().get('models', [])
+                model_names = [m.get('name', 'unknown') for m in models[:5]]
+                return {
+                    "success": True, 
+                    "provider": provider_name,
+                    "url": client.base_url,
+                    "model": client.model,
+                    "available_models": model_names,
+                    "message": f"Connected! {len(models)} models available"
+                }
+            else:
+                return {"success": False, "provider": provider_name, "message": f"Server responded with status {response.status_code}"}
+        else:
+            # For OpenAI, just return configured status
+            return {"success": True, "provider": provider_name, "message": "OpenAI API key configured"}
+            
+    except Exception as e:
+        return {"success": False, "provider": "unknown", "message": f"Connection failed: {str(e)}"}

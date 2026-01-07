@@ -755,6 +755,61 @@
                         <p class="mt-1 text-xs text-slate-500">Enter your OpenAI API key. It will be encrypted before
                             storage.</p>
                     </div>
+            </div>
+
+            <!-- LLM Provider Settings -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 class="text-xl font-bold text-slate-800 mb-6">LLM Provider</h3>
+                
+                <div class="space-y-4">
+                    <!-- Provider Selection -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-2">AI Provider</label>
+                        <div class="flex gap-4">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="llm-provider" value="openai" id="provider-openai" 
+                                    class="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
+                                    onchange="toggleLLMProvider('openai')">
+                                <span class="text-sm text-slate-700">OpenAI</span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name="llm-provider" value="internal" id="provider-internal"
+                                    class="w-4 h-4 text-blue-600 border-slate-300 focus:ring-blue-500"
+                                    onchange="toggleLLMProvider('internal')">
+                                <span class="text-sm text-slate-700">Internal (Ollama/vLLM)</span>
+                            </label>
+                        </div>
+                        <p class="mt-1 text-xs text-slate-500">Choose which LLM backend to use for AI analysis.</p>
+                    </div>
+
+                    <!-- Internal LLM Settings -->
+                    <div id="internal-llm-settings" class="hidden border-t border-slate-200 pt-4 space-y-3">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Server URL</label>
+                            <input type="text" id="internal-llm-url" placeholder="http://localhost:11434/v1"
+                                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <p class="mt-1 text-xs text-slate-500">Ollama: http://localhost:11434/v1 | vLLM: http://server:8000/v1</p>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-2">Model Name</label>
+                            <input type="text" id="internal-llm-model" placeholder="llama3.1:8b"
+                                class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                            <p class="mt-1 text-xs text-slate-500">e.g., llama3.1:8b, qwen2.5:7b, mistral:7b</p>
+                        </div>
+                    </div>
+
+                    <!-- Save Button -->
+                    <div class="pt-2 flex items-center gap-3">
+                        <button onclick="saveLLMProvider()" id="btn-save-llm-provider"
+                            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                            Save Provider Settings
+                        </button>
+                        <button onclick="testLLMConnection()" id="btn-test-llm"
+                            class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                            Test Connection
+                        </button>
+                        <span id="llm-provider-status" class="text-sm text-slate-500"></span>
+                    </div>
                 </div>
             </div>
 

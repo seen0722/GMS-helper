@@ -1484,6 +1484,123 @@ async function loadSettings() {
 
     // Load Redmine settings
     loadRedmineSettings();
+    
+    // Load LLM Provider settings
+    loadLLMProviderSettings();
+}
+
+// LLM Provider Functions
+async function loadLLMProviderSettings() {
+    try {
+        const res = await fetch(`${API_BASE}/settings/llm-provider`);
+        const data = await res.json();
+        
+        const providerOpenAI = document.getElementById('provider-openai');
+        const providerInternal = document.getElementById('provider-internal');
+        const internalSettings = document.getElementById('internal-llm-settings');
+        const urlInput = document.getElementById('internal-llm-url');
+        const modelInput = document.getElementById('internal-llm-model');
+        
+        if (data.provider === 'internal') {
+            if (providerInternal) providerInternal.checked = true;
+            if (internalSettings) internalSettings.classList.remove('hidden');
+        } else {
+            if (providerOpenAI) providerOpenAI.checked = true;
+            if (internalSettings) internalSettings.classList.add('hidden');
+        }
+        
+        if (urlInput && data.internal_url) urlInput.value = data.internal_url;
+        if (modelInput && data.internal_model) modelInput.value = data.internal_model;
+        
+    } catch (e) {
+        console.error("Failed to load LLM provider settings", e);
+    }
+}
+
+function toggleLLMProvider(provider) {
+    const internalSettings = document.getElementById('internal-llm-settings');
+    if (provider === 'internal') {
+        internalSettings.classList.remove('hidden');
+    } else {
+        internalSettings.classList.add('hidden');
+    }
+}
+
+async function saveLLMProvider() {
+    const providerInternal = document.getElementById('provider-internal');
+    const urlInput = document.getElementById('internal-llm-url');
+    const modelInput = document.getElementById('internal-llm-model');
+    const statusSpan = document.getElementById('llm-provider-status');
+    const saveBtn = document.getElementById('btn-save-llm-provider');
+    
+    const provider = providerInternal?.checked ? 'internal' : 'openai';
+    const internal_url = urlInput?.value.trim() || null;
+    const internal_model = modelInput?.value.trim() || 'llama3.1:8b';
+    
+    if (provider === 'internal' && !internal_url) {
+        alert('Please enter the internal LLM server URL');
+        return;
+    }
+    
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    
+    try {
+        const res = await fetch(`${API_BASE}/settings/llm-provider`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ provider, internal_url, internal_model })
+        });
+        
+        if (res.ok) {
+            statusSpan.textContent = '✓ Saved';
+            statusSpan.className = 'ml-3 text-sm text-green-600';
+            setTimeout(() => {
+                statusSpan.textContent = '';
+            }, 3000);
+        } else {
+            const error = await res.json();
+            alert(`Failed to save: ${error.detail || 'Unknown error'}`);
+        }
+    } catch (e) {
+        console.error("Failed to save LLM provider", e);
+        alert('Error saving LLM provider settings');
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save Provider Settings';
+    }
+}
+
+async function testLLMConnection() {
+    const testBtn = document.getElementById('btn-test-llm');
+    const statusSpan = document.getElementById('llm-provider-status');
+    
+    testBtn.disabled = true;
+    testBtn.textContent = 'Testing...';
+    statusSpan.textContent = '';
+    
+    try {
+        const res = await fetch(`${API_BASE}/settings/test-llm-connection`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.success) {
+            statusSpan.textContent = `✓ ${data.message}`;
+            statusSpan.className = 'text-sm text-green-600';
+            if (data.available_models && data.available_models.length > 0) {
+                statusSpan.textContent += ` (${data.available_models.join(', ')})`;
+            }
+        } else {
+            statusSpan.textContent = `✗ ${data.message}`;
+            statusSpan.className = 'text-sm text-red-600';
+        }
+    } catch (e) {
+        console.error("Test connection failed", e);
+        statusSpan.textContent = '✗ Connection failed';
+        statusSpan.className = 'text-sm text-red-600';
+    } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = 'Test Connection';
+    }
 }
 
 async function toggleAPIKeyVisibility() {

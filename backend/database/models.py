@@ -98,3 +98,8 @@ class Settings(Base):
     openai_api_key = Column(String, nullable=True)
     redmine_url = Column(String, nullable=True)
     redmine_api_key = Column(String, nullable=True)
+    
+    # LLM Provider Settings
+    llm_provider = Column(String, default="openai")  # openai | internal
+    internal_llm_url = Column(String, nullable=True)  # e.g., http://localhost:11434/v1
+    internal_llm_model = Column(String, default="llama3.1:8b")  # Model name for internal LLM
