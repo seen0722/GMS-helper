@@ -1495,27 +1495,19 @@ async function loadLLMProviderSettings() {
         const res = await fetch(`${API_BASE}/settings/llm-provider`);
         const data = await res.json();
         
-        const providerOpenAI = document.getElementById('provider-openai');
-        const providerInternal = document.getElementById('provider-internal');
         const internalSettings = document.getElementById('internal-llm-settings');
         const urlInput = document.getElementById('internal-llm-url');
         const modelSelect = document.getElementById('internal-llm-model');
         
-        if (data.provider === 'internal') {
-            if (providerInternal) providerInternal.checked = true;
-            if (internalSettings) internalSettings.classList.remove('hidden');
-        } else {
-            if (providerOpenAI) providerOpenAI.checked = true;
-            if (internalSettings) internalSettings.classList.add('hidden');
-        }
+        // Update Segmented Control visual state
+        selectProvider(data.provider === 'internal' ? 'internal' : 'openai', false);
         
         if (urlInput && data.internal_url) urlInput.value = data.internal_url;
         
         // For dropdown: add saved model as an option if it exists
         if (modelSelect && data.internal_model) {
-            // Clear and add the saved model as an option
             modelSelect.innerHTML = `
-                <option value="">-- Select Model --</option>
+                <option value="">Select a model...</option>
                 <option value="${data.internal_model}" selected>${data.internal_model}</option>
             `;
         }
@@ -1525,13 +1517,42 @@ async function loadLLMProviderSettings() {
     }
 }
 
-function toggleLLMProvider(provider) {
+// Apple-style Segmented Control handler
+function selectProvider(provider, animate = true) {
+    const segOpenAI = document.getElementById('seg-openai');
+    const segInternal = document.getElementById('seg-internal');
     const internalSettings = document.getElementById('internal-llm-settings');
+    
+    // Active styles
+    const activeClass = 'bg-white text-slate-800 shadow-sm';
+    const inactiveClass = 'text-slate-600 hover:text-slate-800';
+    
+    // Get settings sections
+    const openaiSettings = document.getElementById('openai-settings');
+    
     if (provider === 'internal') {
-        internalSettings.classList.remove('hidden');
+        // Update segmented control
+        segInternal.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${activeClass}`;
+        segOpenAI.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${inactiveClass}`;
+        // Show internal settings, hide OpenAI
+        if (internalSettings) {
+            internalSettings.classList.remove('hidden');
+            if (animate) internalSettings.classList.add('animate-fadeIn');
+        }
+        if (openaiSettings) openaiSettings.classList.add('hidden');
     } else {
-        internalSettings.classList.add('hidden');
+        // Update segmented control
+        segOpenAI.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${activeClass}`;
+        segInternal.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${inactiveClass}`;
+        // Hide internal settings, show OpenAI
+        if (internalSettings) internalSettings.classList.add('hidden');
+        if (openaiSettings) openaiSettings.classList.remove('hidden');
     }
+}
+
+// Legacy function for backward compatibility
+function toggleLLMProvider(provider) {
+    selectProvider(provider);
 }
 
 async function refreshModelList() {
@@ -1599,10 +1620,9 @@ async function refreshModelList() {
             
             if (refreshBtn) {
                 refreshBtn.innerHTML = `
-                    <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                     </svg>
-                    Failed
                 `;
                 setTimeout(() => resetRefreshButton(), 2000);
             }
@@ -1612,10 +1632,9 @@ async function refreshModelList() {
         modelSelect.innerHTML = '<option value="">-- Error loading models --</option>';
         if (refreshBtn) {
             refreshBtn.innerHTML = `
-                <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
                 </svg>
-                Error
             `;
             setTimeout(() => resetRefreshButton(), 2000);
         }
@@ -1628,26 +1647,27 @@ function resetRefreshButton() {
     const refreshBtn = document.getElementById('btn-refresh-models');
     if (refreshBtn) {
         refreshBtn.innerHTML = `
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
                 </path>
             </svg>
-            Refresh
         `;
     }
 }
 
 async function saveLLMProvider() {
-    const providerInternal = document.getElementById('provider-internal');
+    const segInternal = document.getElementById('seg-internal');
     const urlInput = document.getElementById('internal-llm-url');
-    const modelInput = document.getElementById('internal-llm-model');
+    const modelSelect = document.getElementById('internal-llm-model');
     const statusSpan = document.getElementById('llm-provider-status');
     const saveBtn = document.getElementById('btn-save-llm-provider');
     
-    const provider = providerInternal?.checked ? 'internal' : 'openai';
+    // Check if internal is selected by checking the button class
+    const isInternal = segInternal?.className.includes('bg-white');
+    const provider = isInternal ? 'internal' : 'openai';
     const internal_url = urlInput?.value.trim() || null;
-    const internal_model = modelInput?.value.trim() || 'llama3.1:8b';
+    const internal_model = modelSelect?.value.trim() || 'llama3.1:8b';
     
     if (provider === 'internal' && !internal_url) {
         alert('Please enter the internal LLM server URL');
@@ -1665,11 +1685,15 @@ async function saveLLMProvider() {
         });
         
         if (res.ok) {
-            statusSpan.textContent = '✓ Saved';
-            statusSpan.className = 'ml-3 text-sm text-green-600';
-            setTimeout(() => {
-                statusSpan.textContent = '';
-            }, 3000);
+            statusSpan.innerHTML = `
+                <span class="inline-flex items-center gap-1 text-green-600">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    Saved
+                </span>
+            `;
+            setTimeout(() => { statusSpan.innerHTML = ''; }, 3000);
         } else {
             const error = await res.json();
             alert(`Failed to save: ${error.detail || 'Unknown error'}`);
@@ -1679,23 +1703,32 @@ async function saveLLMProvider() {
         alert('Error saving LLM provider settings');
     } finally {
         saveBtn.disabled = false;
-        saveBtn.textContent = 'Save Provider Settings';
+        saveBtn.textContent = 'Save Settings';
     }
 }
 
 async function testLLMConnection() {
     const testBtn = document.getElementById('btn-test-llm');
+    const testIcon = document.getElementById('test-icon');
+    const testText = document.getElementById('test-text');
     const statusSpan = document.getElementById('llm-provider-status');
-    const providerInternal = document.getElementById('provider-internal');
+    const segInternal = document.getElementById('seg-internal');
     const urlInput = document.getElementById('internal-llm-url');
     const modelSelect = document.getElementById('internal-llm-model');
     
+    // Show loading state with spinner
     testBtn.disabled = true;
-    testBtn.textContent = 'Testing...';
-    statusSpan.textContent = '';
+    if (testIcon) testIcon.innerHTML = `
+        <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+    `;
+    if (testText) testText.textContent = 'Testing...';
+    statusSpan.innerHTML = '';
     
-    // Build request body with current form values
-    const isInternal = providerInternal?.checked;
+    // Check if internal is selected by checking the button class
+    const isInternal = segInternal?.className.includes('bg-white');
     const body = {};
     
     if (isInternal) {
@@ -1703,10 +1736,15 @@ async function testLLMConnection() {
         const model = modelSelect?.value;
         
         if (!url) {
-            statusSpan.textContent = '✗ Please enter Server URL first';
-            statusSpan.className = 'text-sm text-red-600';
-            testBtn.disabled = false;
-            testBtn.textContent = 'Test Connection';
+            statusSpan.innerHTML = `
+                <span class="inline-flex items-center gap-1 text-red-500">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                    Enter Server URL first
+                </span>
+            `;
+            resetTestButton();
             return;
         }
         
@@ -1724,25 +1762,64 @@ async function testLLMConnection() {
         
         if (data.success) {
             if (data.model_valid === false) {
-                // Connection OK but model not found
-                statusSpan.textContent = `⚠ ${data.message}`;
-                statusSpan.className = 'text-sm text-yellow-600';
+                // Connection OK but model not found - yellow warning
+                statusSpan.innerHTML = `
+                    <span class="inline-flex items-center gap-1 text-yellow-600">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                        </svg>
+                        ${data.message}
+                    </span>
+                `;
             } else {
-                statusSpan.textContent = `✓ ${data.message}`;
-                statusSpan.className = 'text-sm text-green-600';
+                // Full success - green checkmark
+                statusSpan.innerHTML = `
+                    <span class="inline-flex items-center gap-1 text-green-600">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        </svg>
+                        ${data.message}
+                    </span>
+                `;
             }
         } else {
-            statusSpan.textContent = `✗ ${data.message}`;
-            statusSpan.className = 'text-sm text-red-600';
+            // Failure - red X
+            statusSpan.innerHTML = `
+                <span class="inline-flex items-center gap-1 text-red-500">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                    ${data.message}
+                </span>
+            `;
         }
     } catch (e) {
         console.error("Test connection failed", e);
-        statusSpan.textContent = '✗ Connection failed';
-        statusSpan.className = 'text-sm text-red-600';
+        statusSpan.innerHTML = `
+            <span class="inline-flex items-center gap-1 text-red-500">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+                Connection failed
+            </span>
+        `;
     } finally {
-        testBtn.disabled = false;
-        testBtn.textContent = 'Test Connection';
+        resetTestButton();
     }
+}
+
+function resetTestButton() {
+    const testBtn = document.getElementById('btn-test-llm');
+    const testIcon = document.getElementById('test-icon');
+    const testText = document.getElementById('test-text');
+    
+    if (testBtn) testBtn.disabled = false;
+    if (testIcon) testIcon.innerHTML = `
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+        </svg>
+    `;
+    if (testText) testText.textContent = 'Test Connection';
 }
 
 async function toggleAPIKeyVisibility() {
