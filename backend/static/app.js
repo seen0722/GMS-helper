@@ -569,11 +569,10 @@ async function loadRunDetails(runId) {
             deviceHtml += `<span class="text-xs text-slate-500">(${product})</span>`;
         }
         
-        // Truncated Fingerprint (Phase 4)
-        const displayFingerprint = fingerprint.length > 40 ? fingerprint.substring(0, 40) + '...' : fingerprint;
+        // Full Fingerprint Display (removed truncation)
         deviceHtml += `
             <div class="flex items-center gap-2 mt-0.5">
-                <div class="text-[10px] text-slate-400 font-mono" title="${fingerprint}">${displayFingerprint}</div>
+                <div class="text-[10px] text-slate-400 font-mono break-all">${fingerprint}</div>
                 ${fingerprint ? `
                 <button onclick="copyToClipboard('${fingerprint}')" class="text-slate-400 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-slate-100" title="Copy Fingerprint">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
