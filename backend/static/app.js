@@ -1185,6 +1185,30 @@ function escapeHtml(text) {
 }
 
 async function loadClusters(runId) {
+    // Show Skeleton for Clusters Table
+    const tbody = document.getElementById('clusters-table-body');
+    if (tbody) {
+        tbody.innerHTML = `
+            ${[1, 2, 3, 4].map(() => `
+                <tr>
+                    <td class="px-6 py-4"><div class="h-4 w-8 skeleton rounded"></div></td>
+                    <td class="px-6 py-4"><div class="h-4 w-48 skeleton rounded"></div></td>
+                    <td class="px-6 py-4"><div class="h-4 w-24 skeleton rounded"></div></td>
+                    <td class="px-6 py-4"><div class="h-4 w-16 skeleton rounded"></div></td>
+                    <td class="px-6 py-4"><div class="h-4 w-20 skeleton rounded"></div></td>
+                    <td class="px-6 py-4 text-right"><div class="h-6 w-16 skeleton rounded ml-auto"></div></td>
+                </tr>
+            `).join('')}
+        `;
+    }
+
+    // Show Skeleton for KPIs
+    const kpiIds = ['kpi-high-severity', 'kpi-medium-severity', 'kpi-low-severity', 'kpi-top-category', 'kpi-category-dist', 'kpi-todo-count'];
+    kpiIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = '<div class="h-6 w-12 skeleton rounded inline-block"></div>';
+    });
+
     try {
         const res = await fetch(`${API_BASE}/analysis/run/${runId}/clusters`);
         const clusters = await res.json();
