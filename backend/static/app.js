@@ -48,6 +48,35 @@ function toggleFilter(el) {
     }
 }
 
+async function updateLLMStatus() {
+    try {
+        const response = await fetch(`${API_BASE}/settings/llm-provider`);
+        const data = await response.json();
+        
+        const badge = document.getElementById('llm-status-badge');
+        const providerText = document.getElementById('llm-provider-text');
+        const modelText = document.getElementById('llm-model-text');
+        
+        if (badge && data.provider) {
+            providerText.textContent = data.provider_display || data.provider.toUpperCase();
+            modelText.textContent = data.active_model;
+            badge.classList.remove('hidden');
+            
+            // Apply different accent color if it's internal
+            const icon = badge.querySelector('.llm-badge-icon');
+            if (data.provider === 'internal') {
+                icon.classList.remove('bg-blue-500', 'shadow-[0_0_8px_rgba(59,130,246,0.5)]');
+                icon.classList.add('bg-purple-500', 'shadow-[0_0_8px_rgba(168,85,247,0.5)]');
+            } else {
+                icon.classList.remove('bg-purple-500', 'shadow-[0_0_8px_rgba(168,85,247,0.5)]');
+                icon.classList.add('bg-blue-500', 'shadow-[0_0_8px_rgba(59,130,246,0.5)]');
+            }
+        }
+    } catch (err) {
+        console.error('Failed to update LLM status:', err);
+    }
+}
+
 
 const router = {
     cleanup: null,
@@ -2037,6 +2066,7 @@ async function resetSystem() {
 
 // Init
 document.addEventListener('DOMContentLoaded', () => {
+    updateLLMStatus();
     // Reset Data button handling
     const resetBtn = document.getElementById('btn-reset');
     const resetModal = document.getElementById('reset-modal');

@@ -41,7 +41,7 @@
             }
         }
     </script>
-    <style>
+    <style type="text/tailwindcss">
         :root {
             --apple-blur: blur(20px);
         }
@@ -108,6 +108,18 @@
         .code-scroll::-webkit-scrollbar-thumb:hover {
             background: #555;
         }
+        /* LLM Status Badge */
+        .llm-badge {
+            @apply flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-full border border-slate-200 transition-all duration-300;
+        }
+        
+        .llm-badge:hover {
+            @apply bg-white shadow-sm border-slate-300 scale-[1.02];
+        }
+
+        .llm-badge-icon {
+            @apply w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)];
+        }
     </style>
 </head>
 
@@ -162,6 +174,15 @@
         <header class="glass sticky top-0 z-10 border-b border-slate-200/50 px-8 py-4 flex justify-between items-center">
             <h2 id="page-title" class="text-xl font-display font-bold text-slate-900">Dashboard</h2>
             <div class="flex items-center gap-4">
+                <!-- LLM Status Badge Container -->
+                <div id="llm-status-badge" class="hidden llm-badge">
+                    <span class="llm-badge-icon"></span>
+                    <div class="flex flex-col leading-none">
+                        <span id="llm-provider-text" class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">AI Provider</span>
+                        <span id="llm-model-text" class="text-xs font-semibold text-slate-700">Loading...</span>
+                    </div>
+                </div>
+
                 <div class="flex items-center gap-2 px-3 py-1.5 bg-green-50 rounded-full border border-green-100">
                     <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                     <span class="text-xs font-semibold text-green-700">System Ready</span>

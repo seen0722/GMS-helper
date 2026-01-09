@@ -143,10 +143,18 @@ def get_llm_provider(db: Session = Depends(get_db)):
     """Get the current LLM provider settings."""
     settings = get_or_create_settings(db)
     
+    provider = settings.llm_provider or "openai"
+    internal_model = settings.internal_llm_model or "llama3.1:8b"
+    
+    active_model = internal_model if provider == "internal" else "gpt-4o-mini"
+    provider_display = "Internal AI" if provider == "internal" else "OpenAI"
+    
     return {
-        "provider": settings.llm_provider or "openai",
+        "provider": provider,
+        "provider_display": provider_display,
         "internal_url": settings.internal_llm_url,
-        "internal_model": settings.internal_llm_model or "llama3.1:8b",
+        "internal_model": internal_model,
+        "active_model": active_model,
         "openai_configured": bool(settings.openai_api_key)
     }
 
