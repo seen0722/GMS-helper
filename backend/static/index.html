@@ -34,8 +34,13 @@
                         }
                     },
                     boxShadow: {
-                        'apple': '0 8px 30px rgba(0, 0, 0, 0.04)',
-                        'apple-hover': '0 20px 40px rgba(0, 0, 0, 0.08)',
+                        'apple': '0 1px 3px rgba(0, 0, 0, 0.04), 0 8px 30px rgba(0, 0, 0, 0.06)',
+                        'apple-hover': '0 2px 6px rgba(0, 0, 0, 0.06), 0 20px 40px rgba(0, 0, 0, 0.10)',
+                        'apple-elevated': '0 4px 12px rgba(0, 0, 0, 0.08), 0 24px 48px rgba(0, 0, 0, 0.12)',
+                    },
+                    spacing: {
+                        '18': '4.5rem',
+                        '22': '5.5rem',
                     }
                 }
             }
@@ -202,6 +207,38 @@
 
         .btn-press:active {
             transform: scale(0.97);
+        }
+
+        /* Card Hover Elevation */
+        .card-hover {
+            transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+        }
+
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06), 0 20px 40px rgba(0, 0, 0, 0.10);
+        }
+
+        /* Stat Number Typography */
+        .stat-number {
+            font-feature-settings: "tnum";
+            letter-spacing: -0.02em;
+        }
+
+        /* Modal Backdrop Blur */
+        .modal-backdrop {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        /* Toast HUD Style */
+        .toast-hud {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
     </style>

@@ -8,18 +8,36 @@ let currentFailuresPage = 1;
 let currentFailuresQuery = '';
 const failuresPerPage = 50;
 
-// Notification helper
+// Notification helper (HUD-style Toast)
 function showNotification(message, type = 'info') {
+    const icons = {
+        success: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
+        error: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
+        info: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
+    };
+    const colors = {
+        success: 'text-green-400',
+        error: 'text-red-400',
+        info: 'text-blue-400'
+    };
+    
     const notification = document.createElement('div');
-    notification.className = `fixed top-4 right-4 z-50 px-6 py-4 rounded-lg shadow-lg transition-all duration-300 ${type === 'success' ? 'bg-green-600 text-white' :
-        type === 'error' ? 'bg-red-600 text-white' :
-            'bg-blue-600 text-white'
-        }`;
-    notification.textContent = message;
+    notification.className = 'fixed top-6 right-6 z-50 toast-hud px-5 py-4 flex items-center gap-3 text-white text-sm font-medium transform translate-x-0 transition-all duration-300';
+    notification.innerHTML = `
+        <span class="${colors[type] || colors.info}">${icons[type] || icons.info}</span>
+        <span>${message}</span>
+    `;
     document.body.appendChild(notification);
+
+    // Animate in
+    requestAnimationFrame(() => {
+        notification.style.opacity = '1';
+        notification.style.transform = 'translateX(0)';
+    });
 
     setTimeout(() => {
         notification.style.opacity = '0';
+        notification.style.transform = 'translateX(20px)';
         setTimeout(() => notification.remove(), 300);
     }, 4000);
 }
