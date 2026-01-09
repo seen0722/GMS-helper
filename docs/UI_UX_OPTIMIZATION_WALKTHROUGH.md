@@ -37,8 +37,8 @@ I have completed the Apple-inspired UI/UX overhaul for the GMS Certification Ana
 ### 6. AI Architecture Visibility (Phase 6)
 - **LLM Status Badge**: Added a persistent badge in the header to show the active LLM provider and model (e.g., OpenAI gpt-4o-mini).
 - **Dynamic Context**: The badge updates in real-time as soon as settings are saved, providing immediate visibility without page refreshes.
-- **Visual Hierarchy**: Styled with a subtle glow and secondary positioning to complement the main system status.
-![LLM Status Badge](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/llm_badge_verification_1767966965584.png)
+- **Visual Hierarchy**: Styled with a dynamic glow that changes color (Blue for OpenAI, Purple for Internal) to match the provider identity.
+![LLM Status Badge (Purple)](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/llm_badge_purple_verification_1767970100153.png)
 
 ### 7. Detailed Triage & Refined PRD
 - **Confidence Heat-map**: Cluster confidence levels are now color-coded (5-stars = Green, 1-star = Red) for instant priority assessment.
@@ -50,7 +50,7 @@ I have completed the Apple-inspired UI/UX overhaul for the GMS Certification Ana
 ````carousel
 ![Phase 3 Depth & Scaling](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/.system_generated/click_feedback/click_feedback_1767964944744.png)
 <!-- slide -->
-![Phase 6 LLM Status Badge](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/llm_badge_verification_1767966965584.png)
+![Phase 6 LLM Status Badge (Purple)](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/llm_badge_purple_verification_1767970100153.png)
 <!-- slide -->
 ![Phase 5 Refined Button Row](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/refined_button_row_1767966127420.png)
 <!-- slide -->
