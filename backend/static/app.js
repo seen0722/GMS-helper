@@ -1809,6 +1809,7 @@ async function saveLLMProvider() {
                 </span>
             `;
             setTimeout(() => { statusSpan.innerHTML = ''; }, 3000);
+            updateLLMStatus();
         } else {
             const error = await res.json();
             alert(`Failed to save: ${error.detail || 'Unknown error'}`);
@@ -1999,6 +2000,7 @@ async function saveAPIKey() {
             newKeyInput.value = '';
             // Remove from localStorage since we're using server-side storage now
             localStorage.removeItem('openai_api_key');
+            updateLLMStatus();
             loadSettings(); // Reload to show masked key
         } else {
             const error = await res.json();
@@ -2033,6 +2035,7 @@ async function deleteAPIKey(event) {
 
         if (res.ok) {
             alert('API key deleted successfully');
+            updateLLMStatus();
             loadSettings(); // Reload to clear display
         } else {
             alert('Failed to delete API key');

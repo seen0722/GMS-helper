@@ -36,7 +36,7 @@ I have completed the Apple-inspired UI/UX overhaul for the GMS Certification Ana
 
 ### 6. AI Architecture Visibility (Phase 6)
 - **LLM Status Badge**: Added a persistent badge in the header to show the active LLM provider and model (e.g., OpenAI gpt-4o-mini).
-- **Dynamic Context**: The badge updates based on the current settings, providing clear visibility into the analysis backend.
+- **Dynamic Context**: The badge updates in real-time as soon as settings are saved, providing immediate visibility without page refreshes.
 - **Visual Hierarchy**: Styled with a subtle glow and secondary positioning to complement the main system status.
 ![LLM Status Badge](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/llm_badge_verification_1767966965584.png)
 
