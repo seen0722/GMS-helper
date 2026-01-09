@@ -49,47 +49,11 @@
     <style type="text/tailwindcss">
         :root {
             --apple-blur: blur(20px);
-            /* Light Mode Colors */
-            --bg-primary: #f8fafc;
-            --bg-card: #ffffff;
-            --bg-elevated: #ffffff;
-            --text-primary: #0f172a;
-            --text-secondary: #64748b;
-            --text-tertiary: #94a3b8;
-            --border-color: #e2e8f0;
-            --border-subtle: #f1f5f9;
-        }
-
-        .dark {
-            --bg-primary: #0f172a;
-            --bg-card: #1e293b;
-            --bg-elevated: #334155;
-            --text-primary: #f8fafc;
-            --text-secondary: #94a3b8;
-            --text-tertiary: #64748b;
-            --border-color: #334155;
-            --border-subtle: #1e293b;
-        }
-
-        @media (prefers-color-scheme: dark) {
-            :root:not(.light) {
-                --bg-primary: #0f172a;
-                --bg-card: #1e293b;
-                --bg-elevated: #334155;
-                --text-primary: #f8fafc;
-                --text-secondary: #94a3b8;
-                --text-tertiary: #64748b;
-                --border-color: #334155;
-                --border-subtle: #1e293b;
-            }
         }
 
         body {
             font-feature-settings: "cv02", "cv03", "cv04", "cv11";
             -webkit-font-smoothing: antialiased;
-            background-color: var(--bg-primary);
-            color: var(--text-primary);
-            transition: background-color 0.3s ease, color 0.3s ease;
         }
 
         .glass {

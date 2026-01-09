@@ -238,7 +238,7 @@ This document outlines UI/UX optimization opportunities for GMS Analyzer, design
 - [x] 8px grid spacing alignment
 
 ### Phase 3: Advanced (v1.3.0)
-- [x] Dark mode support
+- [ ] Dark mode support
 - [ ] Empty state illustrations
 - [ ] Onboarding tour
 
