@@ -164,6 +164,46 @@
             border-radius: 9999px;
         }
 
+        /* Page Transition Animations */
+        @keyframes page-fade-in {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes page-fade-out {
+            from {
+                opacity: 1;
+                transform: translateY(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+        }
+
+        .page-enter {
+            animation: page-fade-in 0.3s ease-out forwards;
+        }
+
+        .page-exit {
+            animation: page-fade-out 0.15s ease-in forwards;
+        }
+
+        /* Button Press States */
+        .btn-press {
+            transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+        }
+
+        .btn-press:active {
+            transform: scale(0.97);
+        }
+
     </style>
 </head>
 

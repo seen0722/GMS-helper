@@ -229,8 +229,8 @@ This document outlines UI/UX optimization opportunities for GMS Analyzer, design
 
 ### Phase 1: Foundation (v1.1.0)
 - [x] Skeleton Loading for all data-heavy pages
-- [ ] Page transition animations
-- [ ] Button press states
+- [x] Page transition animations
+- [x] Button press states
 
 ### Phase 2: Polish (v1.2.0)
 - [ ] Multi-layer shadow system

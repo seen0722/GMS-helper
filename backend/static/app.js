@@ -118,18 +118,38 @@ const router = {
             navItem.classList.add('text-white');
         }
 
-        // Render
-        content.innerHTML = '';
-        content.appendChild(tmpl.content.cloneNode(true));
+        // Page Transition: Fade out existing content
+        const existingContent = content.firstElementChild;
+        if (existingContent) {
+            existingContent.classList.add('page-exit');
+            setTimeout(() => {
+                renderNewPage();
+            }, 150); // Match page-exit animation duration
+        } else {
+            renderNewPage();
+        }
 
-        // Page specific logic
-        if (page === 'dashboard') loadDashboard();
-        if (page === 'upload') setupUpload();
-        if (page === 'run-details') loadRunDetails(params.id);
-        if (page === 'settings') loadSettings();
+        function renderNewPage() {
+            // Render new content
+            content.innerHTML = '';
+            const newContent = tmpl.content.cloneNode(true);
+            content.appendChild(newContent);
+            
+            // Apply fade-in animation to the new page wrapper
+            const wrapper = content.firstElementChild;
+            if (wrapper) {
+                wrapper.classList.add('page-enter');
+            }
 
-        // Update Title
-        title.textContent = page.charAt(0).toUpperCase() + page.slice(1).replace('-', ' ');
+            // Page specific logic
+            if (page === 'dashboard') loadDashboard();
+            if (page === 'upload') setupUpload();
+            if (page === 'run-details') loadRunDetails(params.id);
+            if (page === 'settings') loadSettings();
+
+            // Update Title
+            title.textContent = page.charAt(0).toUpperCase() + page.slice(1).replace('-', ' ');
+        }
     }
 };
 
