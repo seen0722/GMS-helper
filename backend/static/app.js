@@ -35,6 +35,19 @@ async function copyToClipboard(text) {
     }
 }
 
+function toggleFilter(el) {
+    const isChecked = el.getAttribute('aria-checked') === 'true';
+    const nextState = !isChecked;
+    el.setAttribute('aria-checked', nextState.toString());
+    
+    // Sync with hidden checkbox
+    const checkbox = document.getElementById('filter-no-redmine');
+    if (checkbox) {
+        checkbox.checked = nextState;
+        checkbox.dispatchEvent(new Event('change'));
+    }
+}
+
 
 const router = {
     cleanup: null,

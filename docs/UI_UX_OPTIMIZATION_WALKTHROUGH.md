@@ -24,32 +24,41 @@ I have completed the Apple-inspired UI/UX overhaul for the GMS Certification Ana
 - **Spring Physics**: All transitions now use refined `cubic-bezier` curves (Spring & Bounce) for a more "elastic" and alive feel.
 - **Micro-Transitions**: Coordinated slide/fade transitions when switching between Run Detail tabs.
 - **Background Recession**: When a modal (like Delete) is opened, the main container slightly scales down (0.98x) and dims to create focus.
-![Background Scaling](./assets/ui_ux_optim/background_scaling.png)
+![Background Scaling](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/.system_generated/click_feedback/click_feedback_1767964944744.png)
 - **Skeleton Loaders**: Added for all KPI cards and data tables to improve perceived performance.
 
-### 5. Detailed Triage & Refined PRD (Phase 4)
+### 5. Premium Button Row & iOS Toggles (Phase 5)
+- **iOS-style Toggle**: Replaced standard checkboxes with a premium iOS Toggle Switch for "Unsynced only" filtering, including smooth translation animations.
+- **Action Grouping**: Grouped secondary actions (Export, Sync All) into a cohesive "Action Pill" for better information hierarchy.
+- **Primary Affordance**: Enhanced the "Analyze" button with an indigo color and distinct shadow to mark it as the clear primary action.
+- **Header Refinement**: Applied the `shadow-apple` and refined padding to the cluster action bar.
+![Refined Button Row](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/refined_button_row_1767966127420.png)
+
+### 6. Detailed Triage & Refined PRD
 - **Confidence Heat-map**: Cluster confidence levels are now color-coded (5-stars = Green, 1-star = Red) for instant priority assessment.
 - **Fingerprint Optimization**: Long build fingerprints are truncated in the header, with a one-click copy icon.
 - **Premium Empty States**: Added custom Apple-style 3D illustrations for search and data-empty views.
-![Empty State Illustration](./assets/ui_ux_optim/empty_state_illustration.png)
+![Empty State Illustration](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/apple_empty_state_illustration_1767964789889.png)
 
 ## Visual & Motion Proof
 ````carousel
-![Phase 3 Depth & Scaling](./assets/ui_ux_optim/background_scaling.png)
+![Phase 3 Depth & Scaling](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/.system_generated/click_feedback/click_feedback_1767964944744.png)
 <!-- slide -->
-![Phase 4 Cluster Improvements](./assets/ui_ux_optim/cluster_improvements.png)
+![Phase 5 Refined Button Row](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/refined_button_row_1767966127420.png)
 <!-- slide -->
-![Apple-style Empty State](./assets/ui_ux_optim/empty_state_example.png)
+![Phase 4 Cluster Improvements](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/cluster_table_improvements_1767965542782.png)
+<!-- slide -->
+![Apple-style Empty State](/Users/chenzeming/.gemini/antigravity/brain/14584e23-7914-4f1f-974e-335272ff56ba/apple_style_empty_state_1767965009231.png)
 ````
 
 ## Changes Made
 
 ### UI Overhaul
-- [index.html](../backend/static/index.html)
+- [index.html](file:///Users/chenzeming/dev/GMS-helper/backend/static/index.html)
     - Injected Google Fonts and updated Tailwind configuration.
     - Added `glass` and `glass-dark` utility classes.
     - Refactored Sidebar, Header, and main template structures.
-- [app.js](../backend/static/app.js)
+- [app.js](file:///Users/chenzeming/dev/GMS-helper/backend/static/app.js)
     - Updated `router.navigate` to apply premium active states.
     - Refactored `switchTab` to support Segmented Control active logic.
 

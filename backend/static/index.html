@@ -402,62 +402,67 @@
                 </div>
 
                 <!-- Layer 2: AI Cluster & Action List -->
-                <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-                    <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                        <h4 class="font-semibold text-slate-800">AI Cluster & Action List</h4>
+                <div class="bg-white rounded-2xl shadow-apple border border-slate-100 overflow-hidden mt-8">
+                    <div class="px-6 py-4 border-b border-slate-100 bg-white flex justify-between items-center transition-all">
                         <div class="flex items-center gap-4">
-                            <!-- Action Bar -->
-                            <div class="flex items-center gap-2">
-                                <!-- Delete Button (Ghost) -->
-                                <button id="btn-delete"
-                                    class="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
-                                        </path>
-                                    </svg>
-                                    Delete
-                                </button>
+                            <h4 class="font-bold text-slate-900 tracking-tight">AI Cluster & Action List</h4>
+                            <div class="h-4 w-px bg-slate-200"></div>
+                            <!-- Delete Button (Ghost) -->
+                            <button id="btn-delete"
+                                class="btn-danger-ghost px-2 py-1 rounded-lg flex items-center gap-1.5 text-xs font-semibold">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16">
+                                    </path>
+                                </svg>
+                                Delete run
+                            </button>
+                        </div>
 
-                                <!-- Export Button (Secondary) -->
-                                <button onclick="exportRunReport()"
-                                    class="bg-white border border-slate-200 text-slate-600 px-3 py-1.5 rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-1 text-sm font-medium">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                                    </svg>
-                                    Export
+                        <div class="flex items-center gap-6">
+                            <!-- Toggle for Filtering -->
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Unsynced only</span>
+                                <button type="button" id="toggle-no-redmine" class="ios-toggle" role="switch" aria-checked="false" onclick="toggleFilter(this)">
+                                    <span class="ios-toggle-dot"></span>
                                 </button>
-
-                                <!-- Create Issues Button (Secondary) -->
-                                <button id="btn-bulk-create-issues" onclick="openBulkCreateModal()"
-                                    class="hidden bg-white border border-blue-200 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-1 text-sm font-medium">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
-                                        </path>
-                                    </svg>
-                                    Create All Issues
-                                </button>
-
-                                <!-- Analyze Button (Primary) -->
-                                <button id="btn-analyze"
-                                    class="bg-purple-600 text-white px-4 py-1.5 rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2 text-sm font-medium shadow-sm">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                    </svg>
-                                    Run AI Analysis
-                                </button>
+                                <!-- Hidden original checkbox for logic compatibility -->
+                                <input type="checkbox" id="filter-no-redmine" class="hidden">
                             </div>
 
                             <div class="h-6 w-px bg-slate-200"></div>
 
-                            <label class="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
-                                <input type="checkbox" id="filter-no-redmine"
-                                    class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                                <span>Show only without Redmine Issue</span>
-                            </label>
+                            <!-- Action Group -->
+                            <div class="action-group-pill">
+                                <button onclick="exportRunReport()"
+                                    class="btn-secondary text-slate-600 hover:bg-white hover:shadow-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-bold transition-all">
+                                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                                    </svg>
+                                    Export
+                                </button>
+                                <div class="w-px h-4 bg-slate-200 mx-1"></div>
+                                <button id="btn-bulk-create-issues" onclick="openBulkCreateModal()"
+                                    class="hidden btn-secondary text-blue-600 hover:bg-white hover:shadow-sm px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-bold transition-all">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z">
+                                        </path>
+                                    </svg>
+                                    Sync All
+                                </button>
+                            </div>
+
+                            <!-- Analyze Button (Primary) -->
+                            <button id="btn-analyze"
+                                class="btn-primary bg-indigo-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-xs font-bold ring-offset-2">
+                                <svg class="w-4 h-4 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+                                        d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                </svg>
+                                Analyze
+                            </button>
                         </div>
                     </div>
                     <div class="overflow-x-auto">
