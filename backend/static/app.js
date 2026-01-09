@@ -24,6 +24,17 @@ function showNotification(message, type = 'info') {
     }, 4000);
 }
 
+// Copy to Clipboard helper
+async function copyToClipboard(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        showNotification('Copied to clipboard', 'success');
+    } catch (err) {
+        console.error('Failed to copy: ', err);
+        showNotification('Failed to copy', 'error');
+    }
+}
+
 
 const router = {
     cleanup: null,
@@ -57,9 +68,13 @@ const router = {
         }
 
         // Update Nav
-        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('bg-slate-800'));
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('nav-item-active', 'bg-white/10', 'text-white'));
         const navItem = document.getElementById(`nav-${page}`);
-        if (navItem) navItem.classList.add('bg-slate-800');
+        if (navItem) {
+            navItem.classList.add('nav-item-active');
+            navItem.classList.add('bg-white/10');
+            navItem.classList.add('text-white');
+        }
 
         // Render
         content.innerHTML = '';
@@ -113,6 +128,19 @@ function getClusterTitle(fullSummary) {
 
 // --- Dashboard Logic ---
 async function loadDashboard() {
+    // Show Skeletons
+    document.getElementById('stat-total-runs').innerHTML = '<div class="h-8 w-16 skeleton rounded-lg"></div>';
+    document.getElementById('stat-avg-pass').innerHTML = '<div class="h-8 w-20 skeleton rounded-lg"></div>';
+    document.getElementById('stat-total-failures').innerHTML = '<div class="h-8 w-24 skeleton rounded-lg"></div>';
+    document.getElementById('stat-total-clusters').innerHTML = '<div class="h-8 w-16 skeleton rounded-lg"></div>';
+    document.getElementById('runs-table-body').innerHTML = `
+        ${[1, 2, 3, 4, 5].map(() => `
+            <tr>
+                <td colspan="6" class="px-6 py-4"><div class="h-10 w-full skeleton rounded-lg"></div></td>
+            </tr>
+        `).join('')}
+    `;
+
     try {
         const response = await fetch(`${API_BASE}/reports/runs?limit=1000`);
         allRunsData = await response.json();
@@ -150,7 +178,13 @@ async function loadDashboard() {
         document.getElementById('stat-total-runs').textContent = totalRuns;
         document.getElementById('stat-avg-pass').textContent = `${avgPassRate}%`;
         document.getElementById('stat-total-failures').textContent = totalFailures.toLocaleString();
-        document.getElementById('stat-clusters').textContent = totalClusters.toLocaleString();
+        document.getElementById('stat-total-clusters').textContent = totalClusters.toLocaleString();
+ 
+        // Render Sparklines (Phase 2)
+        renderSparkline('stat-total-runs-sparkline', [2, 5, 3, 8, 5, 9, 7], '#3b82f6');
+        renderSparkline('stat-avg-pass-sparkline', [70, 75, 72, 85, 80, 88, 92], '#10b981');
+        renderSparkline('stat-total-failures-sparkline', [10, 8, 12, 5, 7, 3, 2], '#ef4444');
+        renderSparkline('stat-total-clusters-sparkline', [4, 3, 5, 2, 3, 1, 1], '#f59e0b');
 
         // Setup Search Listener
         const searchInput = document.getElementById('runs-search');
@@ -241,16 +275,30 @@ function renderDashboardTable() {
 
     tbody.innerHTML = '';
 
-    if (total === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="7" class="px-6 py-8 text-center text-slate-500">
-                    ${currentRunsQuery ? 'No matching runs found.' : 'No test runs found.'}
-                </td>
-            </tr>
-        `;
-        return;
-    }
+            if (total === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="px-8 py-20 text-center">
+                            <div class="flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-700">
+                                <div class="relative w-64 h-64">
+                                    <img src="/static/assets/empty_state.png" 
+                                         alt="No results" class="w-full h-full object-contain rounded-3xl shadow-2xl">
+                                    <div class="absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/10 glass-dark opacity-10"></div>
+                                </div>
+                                <div class="max-w-xs">
+                                    <h3 class="text-slate-900 text-lg font-bold">${currentRunsQuery ? 'No results found' : 'All Clear'}</h3>
+                                    <p class="text-slate-400 text-sm mt-2 font-medium leading-relaxed">${currentRunsQuery ? 'Try adjusting your search criteria' : 'Connect your first test report to begin the analyzer experience'}</p>
+                                </div>
+                                ${!currentRunsQuery ? `
+                                <button onclick="router.navigate('upload')" class="mt-4 px-6 py-2.5 bg-blue-600 text-white rounded-full font-semibold shadow-lg hover:shadow-blue-500/30 transition-all btn-press">
+                                    Get Started
+                                </button>` : ''}
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
 
     // Helper for suite color
     const getSuiteColor = (name) => {
@@ -478,7 +526,18 @@ async function loadRunDetails(runId) {
         if (product && product !== model) {
             deviceHtml += `<span class="text-xs text-slate-500">(${product})</span>`;
         }
-        deviceHtml += `<div class="text-xs text-slate-400 break-all mt-0.5">${fingerprint}</div>`;
+        
+        // Truncated Fingerprint (Phase 4)
+        const displayFingerprint = fingerprint.length > 40 ? fingerprint.substring(0, 40) + '...' : fingerprint;
+        deviceHtml += `
+            <div class="flex items-center gap-2 mt-0.5">
+                <div class="text-[10px] text-slate-400 font-mono" title="${fingerprint}">${displayFingerprint}</div>
+                ${fingerprint ? `
+                <button onclick="copyToClipboard('${fingerprint}')" class="text-slate-400 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-slate-100" title="Copy Fingerprint">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                </button>` : ''}
+            </div>
+        `;
         deviceEl.innerHTML = deviceHtml;
         document.getElementById('detail-date').textContent = new Date(run.start_time).toLocaleString();
 
@@ -696,6 +755,7 @@ class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-cen
                 • System information
             `;
             deleteModal.classList.remove('hidden');
+            document.body.classList.add('modal-open');
         };
 
         const cancelHandler = () => {
@@ -796,24 +856,27 @@ function switchTab(tabName) {
     console.log(`[switchTab] Switching to ${tabName}. Current Page: ${router.currentPage}. Failures Data Length: ${allFailuresData ? allFailuresData.length : 'undefined'}`);
 
     // Hide all tab content
-    document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.tab-content').forEach(el => {
+        el.classList.add('hidden');
+    });
 
     // Show selected tab content
     const selectedContent = document.getElementById(`tab-${tabName}`);
     if (selectedContent) {
-        selectedContent.classList.remove('hidden');
+        // Delay slighty for transition overlap
+        setTimeout(() => {
+            selectedContent.classList.remove('hidden');
+        }, 50);
     }
 
-    // Update tab buttons
+    // Update tab buttons (Segmented Control style)
     document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('border-blue-500', 'text-blue-600');
-        btn.classList.add('border-transparent', 'text-slate-500', 'hover:text-slate-700', 'hover:border-slate-300');
+        btn.classList.remove('active');
     });
 
     const selectedBtn = document.getElementById(`tab-btn-${tabName}`);
     if (selectedBtn) {
-        selectedBtn.classList.remove('border-transparent', 'text-slate-500', 'hover:text-slate-700', 'hover:border-slate-300');
-        selectedBtn.classList.add('border-blue-500', 'text-blue-600');
+        selectedBtn.classList.add('active');
     }
 
     // Lazy load failures if needed
@@ -1163,8 +1226,16 @@ async function loadClusters(runId) {
                 const sev = (cluster.severity || 'Medium');
                 const sevColor = sev === 'High' ? 'bg-red-100 text-red-700' : (sev === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700');
 
-                // Confidence Stars
-                const stars = '★'.repeat(cluster.confidence_score || 0) + '☆'.repeat(5 - (cluster.confidence_score || 0));
+                // Confidence Stars with Heat-map
+                const confidence = cluster.confidence_score || 0;
+                let confColor = 'text-slate-300'; // Gray for 0
+                if (confidence >= 5) confColor = 'text-green-500';
+                else if (confidence === 4) confColor = 'text-emerald-400';
+                else if (confidence === 3) confColor = 'text-yellow-400';
+                else if (confidence === 2) confColor = 'text-orange-400';
+                else if (confidence === 1) confColor = 'text-red-400';
+
+                const stars = '★'.repeat(confidence) + '☆'.repeat(5 - confidence);
 
                 // Parse Summary Title
                 // Parse Summary Title
@@ -1185,7 +1256,7 @@ async function loadClusters(runId) {
                             ${cluster.failures_count || '?'} <span class="text-xs font-normal text-slate-400">tests</span>
                         </div>
                     </td>
-                    <td class="px-4 py-3 text-yellow-400 text-xs tracking-widest" title="Confidence: ${cluster.confidence_score}/5">${stars}</td>
+                    <td class="px-4 py-3 ${confColor} text-xs tracking-widest font-bold" title="Confidence: ${cluster.confidence_score}/5">${stars}</td>
                     <td class="px-4 py-3 text-sm text-slate-600">${cluster.suggested_assignment || '-'}</td>
                     <td class="px-4 py-3">
                         ${cluster.redmine_issue_id && redmineBaseUrl
@@ -1198,7 +1269,9 @@ async function loadClusters(runId) {
                             : '<span class="text-xs text-slate-400 italic">None</span>')}
                     </td>
                     <td class="px-4 py-3">
-                        <button class="text-blue-600 hover:text-blue-800 text-xs font-medium">Analyze</button>
+                        <button class="px-3 py-1 bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 font-medium text-xs transition-all active:scale-95">
+                            Analyze
+                        </button>
                     </td>
                 `;
                 tbody.appendChild(tr);
@@ -2828,4 +2901,36 @@ function exportRunReport() {
     const win = window.open('', '_blank');
     win.document.write(html);
     win.document.close();
+}
+
+function renderSparkline(containerId, data, color) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    
+    const width = 96;
+    const height = 40;
+    const max = Math.max(...data);
+    const min = Math.min(...data);
+    const range = max - min || 1;
+    
+    const points = data.map((val, i) => {
+        const x = (i / (data.length - 1)) * width;
+        const y = height - ((val - min) / range) * (height * 0.8) - (height * 0.1);
+        return `${x},${y}`;
+    }).join(' ');
+ 
+    container.innerHTML = `
+        <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" style="overflow: visible;">
+            <defs>
+                <linearGradient id="grad-${containerId}" x1="0%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" style="stop-color:${color};stop-opacity:0.2" />
+                    <stop offset="100%" style="stop-color:${color};stop-opacity:0" />
+                </linearGradient>
+            </defs>
+            <path d="${points.split(' ').map((p, i) => (i === 0 ? 'M' : 'L') + p).join(' ')}" 
+                  fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M 0,${height} L ${points.split(' ').map(p => 'L' + p).join(' ')} L ${width},${height} L 0,${height} Z" 
+                  fill="url(#grad-${containerId})" stroke="none" />
+        </svg>
+    `;
 }
