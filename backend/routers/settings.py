@@ -176,42 +176,106 @@ def update_llm_provider(data: LLMProviderUpdate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Failed to save LLM provider settings: {str(e)}")
 
 
-@router.post("/test-llm-connection")
-def test_llm_connection(db: Session = Depends(get_db)):
-    """Test the LLM connection based on current settings."""
-    from backend.analysis.llm_client import get_llm_client, MockLLMClient, InternalLLMClient, OpenAILLMClient
+@router.get("/list-models")
+def list_available_models(url: Optional[str] = None, db: Session = Depends(get_db)):
+    """Fetch available models from the internal LLM server (Ollama/vLLM).
+    
+    Args:
+        url: Optional URL to query. If not provided, uses the saved internal_llm_url.
+    """
+    import httpx
+    
+    settings = get_or_create_settings(db)
+    base_url = url or settings.internal_llm_url
+    
+    if not base_url:
+        return {"models": [], "error": "No internal LLM URL configured"}
+    
+    # Normalize URL - remove trailing /v1 if present for Ollama API
+    clean_url = base_url.rstrip('/').rstrip('/v1').rstrip('/')
+    
+    models = []
     
     try:
-        client = get_llm_client()
+        # Try Ollama format first: GET /api/tags
+        response = httpx.get(f"{clean_url}/api/tags", timeout=5.0)
+        if response.status_code == 200:
+            data = response.json()
+            ollama_models = data.get('models', [])
+            models = [m.get('name', 'unknown') for m in ollama_models]
+            return {"models": models, "source": "ollama"}
+    except Exception as e:
+        print(f"Ollama API failed: {e}")
+    
+    try:
+        # Try OpenAI-compatible format: GET /v1/models
+        response = httpx.get(f"{clean_url}/v1/models", timeout=5.0)
+        if response.status_code == 200:
+            data = response.json()
+            openai_models = data.get('data', [])
+            models = [m.get('id', 'unknown') for m in openai_models]
+            return {"models": models, "source": "openai-compatible"}
+    except Exception as e:
+        print(f"OpenAI-compatible API failed: {e}")
+    
+    return {"models": [], "error": "Failed to fetch models from server"}
+
+
+class TestConnectionRequest(BaseModel):
+    url: Optional[str] = None
+    model: Optional[str] = None
+
+
+@router.post("/test-llm-connection")
+def test_llm_connection(request: Optional[TestConnectionRequest] = None, db: Session = Depends(get_db)):
+    """Test the LLM connection. Uses provided URL/model if given, otherwise uses saved settings."""
+    import httpx
+    
+    settings = get_or_create_settings(db)
+    
+    # Use request params if provided, otherwise fall back to saved settings
+    test_url = (request.url if request and request.url else None) or settings.internal_llm_url
+    test_model = (request.model if request and request.model else None) or settings.internal_llm_model or "llama3.1:8b"
+    provider = settings.llm_provider or "openai"
+    
+    # If URL is provided in request, assume testing internal provider
+    if request and request.url:
+        provider = "internal"
+    
+    if provider == "internal":
+        if not test_url:
+            return {"success": False, "provider": "internal", "message": "No internal LLM URL configured"}
         
-        # Check client type
-        if isinstance(client, MockLLMClient):
-            return {"success": False, "provider": "mock", "message": "No LLM configured - using mock client"}
+        # Normalize URL
+        clean_url = test_url.rstrip('/').rstrip('/v1').rstrip('/')
         
-        provider_name = "internal" if isinstance(client, InternalLLMClient) else "openai"
-        
-        # Simple test - try to make a minimal request
-        if isinstance(client, InternalLLMClient):
-            # For Ollama/vLLM, try listing models
-            import httpx
-            base_url = client.base_url.rstrip('/v1').rstrip('/')
-            response = httpx.get(f"{base_url}/api/tags", timeout=5.0)
+        try:
+            # Test Ollama connection
+            response = httpx.get(f"{clean_url}/api/tags", timeout=5.0)
             if response.status_code == 200:
                 models = response.json().get('models', [])
                 model_names = [m.get('name', 'unknown') for m in models[:5]]
+                
+                # Check if selected model exists
+                model_exists = any(m.get('name') == test_model for m in models)
+                
                 return {
                     "success": True, 
-                    "provider": provider_name,
-                    "url": client.base_url,
-                    "model": client.model,
+                    "provider": "internal",
+                    "url": test_url,
+                    "model": test_model,
+                    "model_valid": model_exists,
                     "available_models": model_names,
-                    "message": f"Connected! {len(models)} models available"
+                    "message": f"Connected! Model '{test_model}' {'found' if model_exists else 'not found, please select from dropdown'}"
                 }
             else:
-                return {"success": False, "provider": provider_name, "message": f"Server responded with status {response.status_code}"}
+                return {"success": False, "provider": "internal", "message": f"Server responded with status {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "provider": "internal", "message": f"Connection failed: {str(e)}"}
+    else:
+        # OpenAI provider
+        if settings.openai_api_key:
+            return {"success": True, "provider": "openai", "message": "OpenAI API key configured"}
         else:
-            # For OpenAI, just return configured status
-            return {"success": True, "provider": provider_name, "message": "OpenAI API key configured"}
-            
-    except Exception as e:
-        return {"success": False, "provider": "unknown", "message": f"Connection failed: {str(e)}"}
+            return {"success": False, "provider": "openai", "message": "No OpenAI API key configured"}
+

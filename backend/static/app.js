@@ -1499,7 +1499,7 @@ async function loadLLMProviderSettings() {
         const providerInternal = document.getElementById('provider-internal');
         const internalSettings = document.getElementById('internal-llm-settings');
         const urlInput = document.getElementById('internal-llm-url');
-        const modelInput = document.getElementById('internal-llm-model');
+        const modelSelect = document.getElementById('internal-llm-model');
         
         if (data.provider === 'internal') {
             if (providerInternal) providerInternal.checked = true;
@@ -1510,7 +1510,15 @@ async function loadLLMProviderSettings() {
         }
         
         if (urlInput && data.internal_url) urlInput.value = data.internal_url;
-        if (modelInput && data.internal_model) modelInput.value = data.internal_model;
+        
+        // For dropdown: add saved model as an option if it exists
+        if (modelSelect && data.internal_model) {
+            // Clear and add the saved model as an option
+            modelSelect.innerHTML = `
+                <option value="">-- Select Model --</option>
+                <option value="${data.internal_model}" selected>${data.internal_model}</option>
+            `;
+        }
         
     } catch (e) {
         console.error("Failed to load LLM provider settings", e);
@@ -1523,6 +1531,110 @@ function toggleLLMProvider(provider) {
         internalSettings.classList.remove('hidden');
     } else {
         internalSettings.classList.add('hidden');
+    }
+}
+
+async function refreshModelList() {
+    const urlInput = document.getElementById('internal-llm-url');
+    const modelSelect = document.getElementById('internal-llm-model');
+    const refreshBtn = document.getElementById('btn-refresh-models');
+    
+    const url = urlInput?.value.trim();
+    
+    if (!url) {
+        alert('Please enter the Server URL first');
+        return;
+    }
+    
+    // Store current selection
+    const currentModel = modelSelect?.value;
+    
+    // Show loading state
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = `
+            <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            Loading...
+        `;
+    }
+    
+    try {
+        const res = await fetch(`${API_BASE}/settings/list-models?url=${encodeURIComponent(url)}`);
+        const data = await res.json();
+        
+        // Clear existing options
+        modelSelect.innerHTML = '<option value="">-- Select Model --</option>';
+        
+        if (data.models && data.models.length > 0) {
+            data.models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                if (model === currentModel) {
+                    option.selected = true;
+                }
+                modelSelect.appendChild(option);
+            });
+            
+            // Show success indicator
+            if (refreshBtn) {
+                refreshBtn.innerHTML = `
+                    <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                    ${data.models.length} found
+                `;
+                setTimeout(() => resetRefreshButton(), 2000);
+            }
+        } else {
+            // No models found or error
+            const option = document.createElement('option');
+            option.value = "";
+            option.textContent = data.error || "No models found";
+            option.disabled = true;
+            modelSelect.appendChild(option);
+            
+            if (refreshBtn) {
+                refreshBtn.innerHTML = `
+                    <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                    Failed
+                `;
+                setTimeout(() => resetRefreshButton(), 2000);
+            }
+        }
+    } catch (e) {
+        console.error("Failed to refresh model list", e);
+        modelSelect.innerHTML = '<option value="">-- Error loading models --</option>';
+        if (refreshBtn) {
+            refreshBtn.innerHTML = `
+                <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+                Error
+            `;
+            setTimeout(() => resetRefreshButton(), 2000);
+        }
+    } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
+    }
+}
+
+function resetRefreshButton() {
+    const refreshBtn = document.getElementById('btn-refresh-models');
+    if (refreshBtn) {
+        refreshBtn.innerHTML = `
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                </path>
+            </svg>
+            Refresh
+        `;
     }
 }
 
@@ -1574,20 +1686,50 @@ async function saveLLMProvider() {
 async function testLLMConnection() {
     const testBtn = document.getElementById('btn-test-llm');
     const statusSpan = document.getElementById('llm-provider-status');
+    const providerInternal = document.getElementById('provider-internal');
+    const urlInput = document.getElementById('internal-llm-url');
+    const modelSelect = document.getElementById('internal-llm-model');
     
     testBtn.disabled = true;
     testBtn.textContent = 'Testing...';
     statusSpan.textContent = '';
     
+    // Build request body with current form values
+    const isInternal = providerInternal?.checked;
+    const body = {};
+    
+    if (isInternal) {
+        const url = urlInput?.value.trim();
+        const model = modelSelect?.value;
+        
+        if (!url) {
+            statusSpan.textContent = '✗ Please enter Server URL first';
+            statusSpan.className = 'text-sm text-red-600';
+            testBtn.disabled = false;
+            testBtn.textContent = 'Test Connection';
+            return;
+        }
+        
+        body.url = url;
+        if (model) body.model = model;
+    }
+    
     try {
-        const res = await fetch(`${API_BASE}/settings/test-llm-connection`, { method: 'POST' });
+        const res = await fetch(`${API_BASE}/settings/test-llm-connection`, { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
         const data = await res.json();
         
         if (data.success) {
-            statusSpan.textContent = `✓ ${data.message}`;
-            statusSpan.className = 'text-sm text-green-600';
-            if (data.available_models && data.available_models.length > 0) {
-                statusSpan.textContent += ` (${data.available_models.join(', ')})`;
+            if (data.model_valid === false) {
+                // Connection OK but model not found
+                statusSpan.textContent = `⚠ ${data.message}`;
+                statusSpan.className = 'text-sm text-yellow-600';
+            } else {
+                statusSpan.textContent = `✓ ${data.message}`;
+                statusSpan.className = 'text-sm text-green-600';
             }
         } else {
             statusSpan.textContent = `✗ ${data.message}`;

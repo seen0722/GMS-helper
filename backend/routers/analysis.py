@@ -136,11 +136,11 @@ Test Failure Details:
             if isinstance(analysis_result, dict):
                 root_cause = analysis_result.get("root_cause", "Unknown")
                 if isinstance(root_cause, list):
-                    root_cause = "\n".join(root_cause)
+                    root_cause = "\n".join(str(item) for item in root_cause)
                     
                 solution = analysis_result.get("solution", "No solution provided")
                 if isinstance(solution, list):
-                    solution = "\n".join(solution)
+                    solution = "\n".join(str(item) for item in solution)
                     
                 ai_summary = analysis_result.get("ai_summary", "Analysis pending...")
                 severity = analysis_result.get("severity", "Medium")
