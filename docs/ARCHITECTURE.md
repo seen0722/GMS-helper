@@ -1,6 +1,6 @@
-# GMS Certification Analyzer - Software Architecture
+# CTS Insight - Software Architecture
 
-This document provides a comprehensive overview of the GMS Certification Analyzer's software architecture.
+This document provides a comprehensive overview of the CTS Insight's software architecture.
 
 ## 🏗️ High-Level Architecture
 

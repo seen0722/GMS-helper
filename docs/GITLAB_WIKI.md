@@ -1,10 +1,10 @@
-# GMS Certification Analyzer Wiki
+# CTS Insight Wiki
 
-Welcome to the **GMS Certification Analyzer** project wiki! This tool is designed to streamline the analysis of Android GMS (Google Mobile Services) certification test results (CTS, GTS, VTS, STS).
+Welcome to the **CTS Insight** project wiki! This tool is designed to streamline the analysis of Android GMS (Google Mobile Services) certification test results (CTS, GTS, VTS, STS).
 
 ## 🚀 Project Overview
 
-The GMS Certification Analyzer is a web-based application that parses XML test results, provides a dashboard for visualization, and leverages AI to analyze failures and cluster them by root cause. It also integrates with Redmine for issue tracking.
+CTS Insight is a web-based application that parses XML test results, provides a dashboard for visualization, and leverages AI to analyze failures and cluster them by root cause. It also integrates with Redmine for issue tracking.
 
 ### Key Features
 

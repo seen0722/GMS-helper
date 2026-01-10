@@ -1,4 +1,4 @@
-# GMS Certification Analyzer
+# CTS Insight
 
 A powerful web-based tool for analyzing GMS (Google Mobile Services) certification test results with AI-powered failure clustering and Redmine integration.
 

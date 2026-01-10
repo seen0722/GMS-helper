@@ -9,7 +9,7 @@ import os
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="GMS Certification Analyzer", version="1.0.0")
+app = FastAPI(title="CTS Insight", version="1.0.0")
 
 # CORS configuration
 origins = [
