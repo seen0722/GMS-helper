@@ -1503,16 +1503,6 @@ async function showClusterDetail(cluster) {
         if (unlinkBtn) unlinkBtn.classList.add('hidden');
     }
 
-    // Code Hint (Simple heuristic for now)
-    const codeHintDiv = document.getElementById('detail-code-hint');
-    if (cluster.common_root_cause && cluster.common_root_cause.includes('.java')) {
-        // Extract potential file names
-        const matches = cluster.common_root_cause.match(/[\w]+\.java:\d+/g);
-        codeHintDiv.textContent = matches ? matches.join(', ') : 'No specific code location detected.';
-    } else {
-        codeHintDiv.textContent = 'No specific code context detected.';
-    }
-
     // Fetch failures for this cluster
     const list = document.getElementById('detail-failure-list');
     const countSpan = document.getElementById('detail-failure-count');
@@ -1537,11 +1527,13 @@ async function showClusterDetail(cluster) {
 
         failures.forEach(f => {
             const item = document.createElement('div');
-            item.className = 'p-2 border-b border-slate-50 last:border-0 hover:bg-slate-50 text-xs font-mono text-slate-600 break-all';
+            item.className = 'py-1.5 px-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 text-[11px] font-mono text-slate-600 flex items-center gap-1 overflow-hidden';
+            // Truncate long class names for display
+            const shortClass = f.class_name.length > 60 ? '...' + f.class_name.slice(-55) : f.class_name;
             item.innerHTML = `
-                <span class="font-semibold text-slate-800">${f.module_name}</span> 
-                <span class="text-slate-400 mx-1">/</span> 
-                ${f.class_name}#${f.method_name}
+                <span class="font-semibold text-slate-700 shrink-0">${f.module_name}</span>
+                <span class="text-slate-300">/</span>
+                <span class="text-slate-500 truncate">${shortClass}#${f.method_name}</span>
             `;
             list.appendChild(item);
         });

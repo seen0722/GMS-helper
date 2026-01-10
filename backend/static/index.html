@@ -468,17 +468,19 @@
 
     <template id="tmpl-run-details">
         <div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <!-- Header Info -->
-            <div class="bg-white p-8 rounded-2xl shadow-apple border border-slate-100 flex justify-between items-center relative overflow-hidden">
+            <!-- Header Info (Compact) -->
+            <div class="bg-white px-6 py-4 rounded-2xl shadow-apple border border-slate-100 flex justify-between items-center relative overflow-hidden">
                 <div class="absolute top-0 left-0 w-1.5 h-full bg-primary-500"></div>
-                <div>
-                    <h3 class="text-2xl font-display font-bold text-slate-900 flex items-center gap-3" id="detail-suite-name">CTS</h3>
-                    <div id="detail-device" class="mt-2"></div>
-                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest mt-4" id="detail-date">-</p>
+                <div class="flex items-center gap-6">
+                    <div>
+                        <h3 class="text-xl font-display font-bold text-slate-900 flex items-center gap-2" id="detail-suite-name">CTS</h3>
+                        <div id="detail-device" class="mt-1"></div>
+                    </div>
+                    <p class="text-xs text-slate-400" id="detail-date">-</p>
                 </div>
                 <div class="text-right">
-                    <div class="text-4xl font-display font-bold text-slate-900" id="detail-pass-rate">0%</div>
-                    <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Overall Pass Rate</div>
+                    <div class="text-2xl font-display font-bold text-slate-900" id="detail-pass-rate">0%</div>
+                    <div class="text-[10px] font-medium text-slate-400 uppercase tracking-wide">Pass Rate</div>
                 </div>
             </div>
  
@@ -634,12 +636,13 @@
 
                 <!-- Layer 3: Deep Analysis & Fix Suggestion -->
                 <div id="analysis-detail-view"
-                    class="hidden bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-                    <div class="p-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-                        <h4 class="font-semibold text-slate-800" id="detail-title">Cluster Analysis</h4>
-                        <div class="flex gap-2">
+                    class="hidden bg-white rounded-2xl shadow-apple border border-slate-100 overflow-hidden">
+                    <!-- Header -->
+                    <div class="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex justify-between items-center">
+                        <h4 class="font-bold text-slate-900 text-lg" id="detail-title">Cluster Analysis</h4>
+                        <div class="flex items-center gap-3">
                             <button onclick="openRedmineModal()" id="btn-assign-redmine"
-                                class="px-3 py-1.5 bg-orange-600 text-white text-sm rounded-lg hover:bg-orange-700 transition-colors flex items-center gap-1">
+                                class="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-xl transition-all flex items-center gap-2 shadow-sm">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                         d="M12 4v16m8-8H4"></path>
@@ -647,7 +650,7 @@
                                 Assign to Redmine
                             </button>
                             <button onclick="unlinkRedmineIssue()" id="btn-unlink-redmine-detail"
-                                class="hidden px-3 py-1.5 bg-red-600 text-white text-sm rounded-lg hover:bg-red-700 transition-colors flex items-center gap-1">
+                                class="hidden px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-xl transition-all flex items-center gap-2">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                         d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
@@ -655,7 +658,7 @@
                                 <span id="btn-unlink-redmine-text">Unlink</span>
                             </button>
                             <button onclick="document.getElementById('analysis-detail-view').classList.add('hidden')"
-                                class="text-slate-400 hover:text-slate-600">
+                                class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                                         d="M6 18L18 6M6 6l12 12"></path>
@@ -663,72 +666,77 @@
                             </button>
                         </div>
                     </div>
-                    <div class="p-6">
-                        <!-- AI Summary Body -->
+                    
+                    <div class="p-5 space-y-4">
+                        <!-- AI Summary -->
                         <div id="detail-summary-body"
-                            class="mb-6 text-slate-600 text-sm leading-relaxed bg-slate-50 p-4 rounded-lg border border-slate-100">
+                            class="text-slate-700 text-[13px] leading-relaxed bg-blue-50/50 p-4 rounded-xl border border-blue-100">
                         </div>
 
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                            <!-- Left: Root Cause & Code -->
-                            <div class="space-y-6">
-                                <div>
-                                    <h5 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">Root
-                                        Cause Analysis</h5>
-                                    <div class="bg-purple-50 p-4 rounded-lg border border-purple-100 text-slate-800 text-sm leading-relaxed"
-                                        id="detail-root-cause">
-                                        -
+                        <!-- Root Cause & Fix - Side by Side -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                            <!-- Root Cause -->
+                            <div class="bg-gradient-to-br from-purple-50 to-purple-50/30 p-4 rounded-xl border border-purple-100">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-6 h-6 rounded-md bg-purple-100 flex items-center justify-center">
+                                        <svg class="w-3.5 h-3.5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                        </svg>
                                     </div>
+                                    <h5 class="text-xs font-bold text-purple-900">Root Cause</h5>
                                 </div>
-                                <div>
-                                    <h5 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">Code
-                                        Context Hint</h5>
-                                    <div class="bg-slate-800 p-4 rounded-lg text-slate-200 font-mono text-xs overflow-x-auto"
-                                        id="detail-code-hint">
-                                        No specific code context detected.
-                                    </div>
-                                </div>
+                                <div class="text-slate-700 text-[13px] leading-relaxed" id="detail-root-cause">-</div>
                             </div>
-                            <!-- Right: Fix & Raw Data -->
-                            <div class="space-y-6">
-                                <div>
-                                    <h5 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">🛠️
-                                        Fix
-                                        Suggestion</h5>
-                                    <div class="bg-green-50 p-4 rounded-lg border border-green-100 text-slate-800 text-sm leading-relaxed"
-                                        id="detail-solution">
-                                        -
+                            
+                            <!-- Fix Suggestion -->
+                            <div class="bg-gradient-to-br from-emerald-50 to-emerald-50/30 p-4 rounded-xl border border-emerald-100">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-6 h-6 rounded-md bg-emerald-100 flex items-center justify-center">
+                                        <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                        </svg>
                                     </div>
+                                    <h5 class="text-xs font-bold text-emerald-900">Fix Suggestion</h5>
                                 </div>
-                                <div>
-                                    <h5 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-2">Raw
-                                        Data
-                                    </h5>
-                                    <details class="group">
-                                        <summary
-                                            class="flex items-center gap-2 cursor-pointer text-sm text-blue-600 hover:text-blue-700 font-medium">
-                                            <span>View Stack Trace & Failures</span>
-                                            <svg class="w-4 h-4 transition-transform group-open:rotate-180" fill="none"
-                                                stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                    d="M19 9l-7 7-7-7"></path>
-                                            </svg>
-                                        </summary>
-                                        <div class="mt-4 space-y-2">
-                                            <div class="text-xs text-slate-500 mb-2">Representative Stack Trace:</div>
-                                            <pre class="bg-slate-50 p-3 rounded border border-slate-200 text-xs text-slate-600 overflow-x-auto whitespace-pre-wrap code-scroll max-h-60"
-                                                id="detail-stack-trace">-</pre>
-                                            <div class="text-xs text-slate-500 mt-4 mb-2">Affected Test Cases (<span
-                                                    id="detail-failure-count">0</span>):</div>
-                                            <div class="max-h-40 overflow-y-auto border border-slate-100 rounded"
-                                                id="detail-failure-list">
-                                                <!-- List items -->
-                                            </div>
-                                        </div>
-                                    </details>
-                                </div>
+                                <div class="text-slate-700 text-[13px] leading-relaxed" id="detail-solution">-</div>
                             </div>
                         </div>
+                        
+                        <!-- Raw Data - Collapsible -->
+                        <details class="group bg-slate-50 rounded-xl border border-slate-200 overflow-hidden">
+                            <summary class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-6 h-6 rounded-md bg-slate-200 flex items-center justify-center">
+                                        <svg class="w-3.5 h-3.5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                                        </svg>
+                                    </div>
+                                    <span class="text-xs font-bold text-slate-700">Raw Data</span>
+                                    <span class="text-[11px] text-slate-400">Stack Trace & Affected Tests</span>
+                                </div>
+                                <svg class="w-4 h-4 text-slate-400 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                </svg>
+                            </summary>
+                            <div class="px-4 pb-4 space-y-3 border-t border-slate-200 pt-3">
+                                <!-- Stack Trace -->
+                                <div>
+                                    <div class="text-[11px] font-medium text-slate-500 mb-1.5">Representative Stack Trace</div>
+                                    <pre class="bg-slate-800 text-slate-200 p-3 rounded-lg text-[11px] font-mono overflow-x-auto whitespace-pre-wrap max-h-56 code-scroll leading-relaxed"
+                                        id="detail-stack-trace">-</pre>
+                                </div>
+                                <!-- Affected Tests -->
+                                <div>
+                                    <div class="text-[11px] font-medium text-slate-500 mb-1.5">
+                                        Affected Test Cases (<span id="detail-failure-count" class="font-bold text-slate-700">0</span>)
+                                    </div>
+                                    <div class="bg-white border border-slate-200 rounded-lg"
+                                        id="detail-failure-list">
+                                        <!-- List items -->
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
                     </div>
                 </div>
                 <!-- Tab Content: Failures -->
@@ -1152,7 +1160,7 @@
         </div>
     </template>
 
-    <script src="/static/app.js?v=73"></script>
+    <script src="/static/app.js?v=80"></script>
 </body>
 
 </html>

@@ -35,3 +35,19 @@ This document outlines the development history and key milestones of the GMS-hel
 - In-depth AI usage and cost tracking
 - Real-world data validation and reporting examples
 - Enhanced AI analysis documentation with concrete examples
+
+### Phase 4: LLM Migration & UI Polish (Jan 2026)
+| Date | Description |
+|------|-------------|
+| 2026-01-07 | **LLM Integration**: Added support for internal LLM servers (Ollama/vLLM) with OpenAI-compatible API |
+| 2026-01-08 | **Design Docs**: Created `LLM_INTEGRATION_DESIGN.md` documenting the Strategy Pattern architecture |
+| 2026-01-09 | **Apple UX Phase 1**: Implemented Dark Mode CSS variables, empty state illustrations, HUD toasts |
+| 2026-01-11 | **Run Details UI**: Compact header (112px), reorganized analysis detail view, typography optimization |
+| 2026-01-11 | **Code Cleanup**: Removed unused "Code Context Hint" section, optimized Affected Test Cases display |
+
+#### Key Changes (Jan 11)
+- Header height reduced from ~160px to ~112px
+- Analysis detail: Root Cause/Fix cards with icon badges and gradient backgrounds
+- Stack trace: Dark terminal style for better readability
+- Typography: Standardized on `text-[11px]` for code, `text-[13px]` for content
+- Raw Data section: Full-width layout with collapsible card design

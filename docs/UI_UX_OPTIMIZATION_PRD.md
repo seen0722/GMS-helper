@@ -52,3 +52,40 @@ Enable engineering teams to rapidly triage GMS certification failures by groupin
 - **Mean Time to Triage (MTTT)**: Reduce time from report upload to team assignment.
 - **Redmine Accuracy**: % of AI-assigned teams that remain unchanged by human reviewers.
 - **User Satisfaction**: Qualitative feedback on the "Apple-level" feel of the interface.
+
+---
+
+## 6. Recent UI Optimizations (2026-01-11)
+
+### 6.1 Header Compactification
+- Reduced header height from ~160px to ~112px
+- Changed padding from `p-8` to `px-6 py-4`
+- Reduced title font from `text-2xl` to `text-xl`
+- Pass rate display: `text-4xl` → `text-2xl`
+- Layout: Horizontal flex with device info and date inline
+
+### 6.2 Analysis Detail View Redesign
+| Component | Before | After |
+|-----------|--------|-------|
+| **Root Cause / Fix Cards** | Separate headers, large padding | Icon badges, gradient backgrounds, compact `p-4` |
+| **AI Summary** | `text-sm`, `p-5` | `text-[13px]`, `p-4` |
+| **Raw Data Section** | Link-based expand | Card-style collapsible with header bar |
+| **Stack Trace** | Light background | Dark terminal style (`bg-slate-800`) |
+| **Affected Tests** | Break-all multi-line | Single-line truncated with module/class separation |
+
+### 6.3 Typography Optimization
+| Element | Font Size |
+|---------|-----------|
+| Section titles | `text-xs` |
+| Card content | `text-[13px]` |
+| Stack trace | `text-[11px]` |
+| Test case list | `text-[11px]` |
+| Labels | `text-[11px]` |
+
+### 6.4 Removed Components
+- **Code Context Hint**: Removed as it provided no useful information (was using simple heuristics that rarely matched actual code locations)
+
+### 6.5 Layout Changes
+- **Raw Data section**: Changed from 2-column grid to full-width for better stack trace visibility
+- **Root Cause + Fix Suggestion**: Kept as 2-column for comparison
+- **Affected Test Cases**: Removed scroll limit, displays all items
