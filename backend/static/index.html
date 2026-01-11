@@ -317,6 +317,25 @@
         </div>
     </main>
 
+    <!-- Global Delete Confirmation Modal (accessible from all pages) -->
+    <div id="delete-modal"
+        class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 animate-in fade-in duration-200">
+        <div class="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl animate-in zoom-in-95 duration-200">
+            <h3 class="text-lg font-bold text-slate-800 mb-4">Confirm Deletion</h3>
+            <div id="delete-modal-message" class="text-sm text-slate-600 mb-6"></div>
+            <div class="flex gap-3 justify-end">
+                <button id="modal-cancel"
+                    class="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-medium">
+                    Cancel
+                </button>
+                <button id="modal-confirm"
+                    class="px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-colors font-medium">
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Templates -->
     <template id="tmpl-dashboard">
         <div class="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -786,24 +805,6 @@
                             Next
                         </button>
                     </div>
-                </div>
-            </div>
-        </div>
-        <!-- Delete Confirmation Modal -->
-        <div id="delete-modal"
-            class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-                <h3 class="text-lg font-bold text-slate-800 mb-4">Confirm Deletion</h3>
-                <div id="delete-modal-message" class="text-sm text-slate-600 mb-6"></div>
-                <div class="flex gap-3 justify-end">
-                    <button id="modal-cancel"
-                        class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors">
-                        Cancel
-                    </button>
-                    <button id="modal-confirm"
-                        class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors">
-                        Delete
-                    </button>
                 </div>
             </div>
         </div>
