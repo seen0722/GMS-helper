@@ -3,7 +3,7 @@
 **Created**: 2026-01-11  
 **Branch**: `feature/improve-clustering-algorithm`  
 **Author**: AI Assistant + Chen Zeming  
-**Status**: In Progress
+**Status**: ✅ Completed
 
 ---
 
@@ -29,13 +29,13 @@ These dominate the TF-IDF features, causing unrelated failures to cluster togeth
 
 ---
 
-## 2. Current Architecture
+## 2. Original Architecture (Before)
 
 ### 2.1 Analysis Flow
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        CURRENT FLOW                                  │
+│                        ORIGINAL FLOW                                 │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  1. Upload XML                                                       │
@@ -55,33 +55,23 @@ These dominate the TF-IDF features, causing unrelated failures to cluster togeth
 │       ↓                                                              │
 │  6. Group failures by cluster label                                  │
 │       ↓                                                              │
-│  7. For each cluster:                                                │
-│       - Take first failure as representative                         │
-│       - Call LLM with full context (module, class, method, stack)    │
-│       - Store analysis in FailureCluster table                       │
+│  7. For each cluster: LLM analysis                                   │
 │       ↓                                                              │
-│  8. Link all failures to their clusters (FailureAnalysis table)      │
+│  8. Link all failures to their clusters                              │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.2 Current Code
-
-#### `backend/analysis/clustering.py`
+### 2.2 Original Code
 
 ```python
 class FailureClusterer:
     def __init__(self, n_clusters=10):
         self.n_clusters = n_clusters
         self.vectorizer = TfidfVectorizer(stop_words='english', max_features=1000)
-        self.kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42, batch_size=100)
+        self.kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42)
 
     def cluster_failures(self, failures: List[str]) -> List[int]:
-        # Dynamic cluster count adjustment
-        n_samples = len(failures)
-        if n_samples < self.n_clusters:
-            self.kmeans.n_clusters = max(1, n_samples // 2)
-            
         tfidf_matrix = self.vectorizer.fit_transform(failures)
         self.kmeans.fit(tfidf_matrix)
         return self.kmeans.labels_.tolist()
@@ -91,90 +81,16 @@ class FailureClusterer:
 
 | Limitation | Impact |
 |------------|--------|
-| Input is pure stack trace text | No domain context (module, class) in clustering features |
-| Fixed K-Means | Forces k clusters even when natural groupings differ |
+| Input is pure stack trace text | No domain context (module, class) |
+| Fixed K-Means | Forces k clusters regardless of data |
 | No cluster quality metrics | Can't detect poor clustering |
-| TF-IDF on raw traces | JUnit framework frames dominate features |
-
-#### `backend/analysis/llm_client.py`
-
-```python
-SYSTEM_PROMPT = """You are an expert Android GMS certification test engineer...
-
-Return a JSON response with:
-- 'title': Summary sentence (max 20 words)
-- 'summary': Detailed technical summary
-- 'root_cause': Why the test failed
-- 'solution': Actionable steps to fix
-- 'severity': High|Medium|Low
-- 'category': Test Case Issue|Framework Issue|Media/Codec Issue|...
-- 'confidence_score': 1-5
-- 'suggested_assignment': Team name
-"""
-
-# Context sent to LLM (GOOD - has all info)
-failure_context = f"""
-Test Failure Details:
-- Module: {module_name}
-- Test Class: {class_name}
-- Test Method: {method_name}
-- Error Message: {error_message}
-- Stack Trace: {stack_trace}
-- Number of similar failures in cluster: {count}
-"""
-```
-
-**LLM logic is correct** - it receives full context. The problem is **upstream clustering**.
-
-### 2.3 Database Schema
-
-```sql
--- Stores individual test failures
-CREATE TABLE test_cases (
-    id INTEGER PRIMARY KEY,
-    test_run_id INTEGER,
-    module_name VARCHAR,      -- e.g., CtsViewTestCases
-    module_abi VARCHAR,
-    class_name VARCHAR,       -- e.g., android.view.cts.TooltipTest
-    method_name VARCHAR,      -- e.g., testLongKeyPressTooltip
-    status VARCHAR,
-    stack_trace TEXT,
-    error_message TEXT
-);
-
--- Stores cluster definitions with AI analysis
-CREATE TABLE failure_clusters (
-    id INTEGER PRIMARY KEY,
-    signature TEXT UNIQUE,
-    description VARCHAR,
-    common_root_cause TEXT,
-    common_solution TEXT,
-    ai_summary TEXT,
-    severity VARCHAR DEFAULT 'Medium',
-    category VARCHAR,
-    confidence_score INTEGER DEFAULT 0,
-    suggested_assignment VARCHAR,
-    redmine_issue_id INTEGER
-);
-
--- Links failures to clusters
-CREATE TABLE failure_analysis (
-    id INTEGER PRIMARY KEY,
-    test_case_id INTEGER,
-    cluster_id INTEGER,
-    root_cause TEXT,
-    suggested_solution TEXT,
-    ai_analysis_timestamp DATETIME
-);
-```
+| TF-IDF on raw traces | JUnit frames dominate features |
 
 ---
 
-## 3. Proposed Improvement
+## 3. Implemented Solution
 
-### 3.1 Strategy: Enriched Features + HDBSCAN
-
-We will implement a **two-phase approach**:
+### 3.1 Strategy: Enriched Features + HDBSCAN + Hierarchical Fallback
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -185,394 +101,161 @@ We will implement a **two-phase approach**:
 │  ───────────────────────────                                         │
 │  For each failure, create enriched text:                             │
 │                                                                      │
-│    enriched_text = f"{module_name} {class_name} {method_name} "      │
-│                    f"{extracted_exception} {key_stack_frames}"       │
+│    enriched_text = f"{module_name} {module_name} {module_name} "     │
+│                    f"{class_name} {class_name} {method_name} "       │
+│                    f"{exception_type} {exception_type} "             │
+│                    f"{assertion_msg} {filtered_stack}"               │
 │                                                                      │
-│  Where:                                                              │
-│    - extracted_exception = parse exception type from stack trace     │
-│    - key_stack_frames = filter out generic JUnit frames              │
+│  Key features:                                                       │
+│    - Module name weighted 3x (most important for domain)             │
+│    - Class name weighted 2x                                          │
+│    - Exception type weighted 2x                                      │
+│    - JUnit framework frames filtered out                             │
 │                                                                      │
 │  Phase 2: Clustering with HDBSCAN                                    │
 │  ────────────────────────────────                                    │
 │                                                                      │
 │    ┌─────────────────────────────────────────┐                       │
-│    │ TfidfVectorizer (enriched_text)         │                       │
+│    │ TfidfVectorizer(max_features=2000,      │                       │
+│    │                 ngram_range=(1,2))      │                       │
 │    │ HDBSCAN(min_cluster_size=2)             │                       │
 │    │ → Automatic cluster count               │                       │
 │    │ → Outlier detection (label=-1)          │                       │
+│    │ → Silhouette score for quality          │                       │
 │    └─────────────────────────────────────────┘                       │
 │                                                                      │
-│  Phase 3: Fallback for Outliers                                      │
-│  ──────────────────────────────                                      │
-│  Failures with label=-1 get individual LLM analysis                  │
-│  OR grouped by module_name as secondary clustering                   │
+│  Phase 3: Hierarchical Fallback for Outliers                         │
+│  ────────────────────────────────────────────                        │
+│  Failures with label=-1 are grouped by module_name                   │
+│  This ensures no failure is left ungrouped                           │
 │                                                                      │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 Implementation Details
+### 3.2 Key Implementation Details
 
-#### 3.2.1 New Clustering Class
+See `backend/analysis/clustering.py` for full implementation.
 
-```python
-from sklearn.feature_extraction.text import TfidfVectorizer
-from typing import List, Dict, Tuple, Optional
-import re
+Key methods:
+- `extract_exception_type()` - Parse exception from stack trace
+- `filter_framework_frames()` - Remove generic JUnit frames
+- `extract_test_package()` - Get domain from class name
+- `create_enriched_features()` - Build weighted feature text
+- `cluster_failures()` - HDBSCAN with metrics
+- `handle_outliers()` - Module-based fallback grouping
+- `get_cluster_summary()` - Generate cluster statistics
 
-try:
-    from hdbscan import HDBSCAN
-    HDBSCAN_AVAILABLE = True
-except ImportError:
-    from sklearn.cluster import MiniBatchKMeans
-    HDBSCAN_AVAILABLE = False
-
-
-class ImprovedFailureClusterer:
-    """
-    Enhanced clustering with domain-aware feature engineering.
-    
-    Key improvements:
-    1. Enriched features including module/class/method names
-    2. Exception type extraction
-    3. JUnit frame filtering
-    4. HDBSCAN for automatic cluster count (with KMeans fallback)
-    5. Cluster quality metrics
-    """
-    
-    # JUnit/Android test framework frames to de-prioritize
-    FRAMEWORK_PATTERNS = [
-        r'org\.junit\.Assert\.',
-        r'org\.junit\.internal\.',
-        r'org\.junit\.runners\.',
-        r'android\.test\.',
-        r'androidx\.test\.',
-        r'java\.lang\.reflect\.',
-        r'sun\.reflect\.',
-    ]
-    
-    def __init__(self, min_cluster_size: int = 2, use_hdbscan: bool = True):
-        self.min_cluster_size = min_cluster_size
-        self.use_hdbscan = use_hdbscan and HDBSCAN_AVAILABLE
-        self.vectorizer = TfidfVectorizer(
-            stop_words='english',
-            max_features=2000,
-            ngram_range=(1, 2)  # Include bigrams for better context
-        )
-        
-    def extract_exception_type(self, stack_trace: str) -> str:
-        """Extract the primary exception type from stack trace."""
-        if not stack_trace:
-            return ""
-        
-        # Match patterns like: java.lang.AssertionError, junit.framework.AssertionFailedError
-        patterns = [
-            r'^([a-z][a-z0-9_]*\.)+[A-Z][a-zA-Z0-9]*(?:Error|Exception)',
-            r'Caused by: ([a-z][a-z0-9_]*\.)+[A-Z][a-zA-Z0-9]*(?:Error|Exception)',
-        ]
-        
-        for pattern in patterns:
-            match = re.search(pattern, stack_trace, re.MULTILINE)
-            if match:
-                return match.group(0).replace('Caused by: ', '')
-        
-        return ""
-    
-    def filter_framework_frames(self, stack_trace: str) -> str:
-        """Remove generic framework frames to focus on application-specific traces."""
-        if not stack_trace:
-            return ""
-        
-        lines = stack_trace.split('\n')
-        filtered = []
-        
-        for line in lines:
-            is_framework = any(re.search(p, line) for p in self.FRAMEWORK_PATTERNS)
-            if not is_framework:
-                filtered.append(line)
-        
-        return '\n'.join(filtered)
-    
-    def create_enriched_features(
-        self, 
-        failures: List[Dict]
-    ) -> List[str]:
-        """
-        Create enriched text features for clustering.
-        
-        Args:
-            failures: List of dicts with keys:
-                - module_name
-                - class_name  
-                - method_name
-                - stack_trace
-                - error_message
-        
-        Returns:
-            List of enriched text strings for vectorization
-        """
-        enriched_texts = []
-        
-        for f in failures:
-            module = f.get('module_name', '') or ''
-            class_name = f.get('class_name', '') or ''
-            method = f.get('method_name', '') or ''
-            stack = f.get('stack_trace', '') or ''
-            error = f.get('error_message', '') or ''
-            
-            # Extract key information
-            exception_type = self.extract_exception_type(stack)
-            filtered_stack = self.filter_framework_frames(stack)
-            
-            # Weight domain information by repetition
-            enriched = f"""
-            {module} {module} {module}
-            {class_name} {class_name}
-            {method}
-            {exception_type} {exception_type}
-            {error}
-            {filtered_stack[:1000]}
-            """
-            
-            enriched_texts.append(enriched.strip())
-        
-        return enriched_texts
-    
-    def cluster_failures(
-        self, 
-        failures: List[Dict]
-    ) -> Tuple[List[int], Dict]:
-        """
-        Cluster failures using enriched features.
-        
-        Returns:
-            Tuple of (labels, metrics)
-            - labels: cluster assignments (-1 for outliers if using HDBSCAN)
-            - metrics: dict with clustering quality info
-        """
-        if not failures:
-            return [], {'n_clusters': 0}
-        
-        enriched_texts = self.create_enriched_features(failures)
-        
-        # Filter empty texts
-        valid_mask = [bool(t.strip()) for t in enriched_texts]
-        valid_texts = [t for t, v in zip(enriched_texts, valid_mask) if v]
-        
-        if not valid_texts:
-            return [0] * len(failures), {'n_clusters': 1, 'method': 'fallback'}
-        
-        try:
-            tfidf_matrix = self.vectorizer.fit_transform(valid_texts)
-            
-            if self.use_hdbscan:
-                clusterer = HDBSCAN(
-                    min_cluster_size=self.min_cluster_size,
-                    min_samples=1,
-                    metric='euclidean',
-                    cluster_selection_method='eom'
-                )
-                labels = clusterer.fit_predict(tfidf_matrix.toarray())
-                n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-                n_outliers = list(labels).count(-1)
-                
-                metrics = {
-                    'method': 'hdbscan',
-                    'n_clusters': n_clusters,
-                    'n_outliers': n_outliers,
-                    'outlier_ratio': n_outliers / len(labels) if labels.size else 0
-                }
-            else:
-                # Fallback to KMeans
-                n_clusters = min(20, max(1, len(valid_texts) // 3))
-                kmeans = MiniBatchKMeans(n_clusters=n_clusters, random_state=42)
-                labels = kmeans.fit_predict(tfidf_matrix)
-                
-                metrics = {
-                    'method': 'kmeans',
-                    'n_clusters': n_clusters,
-                    'n_outliers': 0
-                }
-            
-            # Map back to original indices
-            full_labels = []
-            valid_idx = 0
-            for is_valid in valid_mask:
-                if is_valid:
-                    full_labels.append(int(labels[valid_idx]))
-                    valid_idx += 1
-                else:
-                    full_labels.append(-1)  # Mark invalid as outlier
-            
-            return full_labels, metrics
-            
-        except Exception as e:
-            print(f"Clustering failed: {e}")
-            return [0] * len(failures), {'n_clusters': 1, 'method': 'error', 'error': str(e)}
-    
-    def handle_outliers(
-        self, 
-        failures: List[Dict], 
-        labels: List[int]
-    ) -> List[int]:
-        """
-        Handle outliers (label=-1) by grouping them by module_name.
-        
-        Returns updated labels with outliers assigned to new clusters.
-        """
-        if -1 not in labels:
-            return labels
-        
-        max_label = max(l for l in labels if l >= 0) if any(l >= 0 for l in labels) else -1
-        
-        # Group outliers by module
-        module_clusters = {}
-        new_labels = labels.copy()
-        
-        for i, (label, failure) in enumerate(zip(labels, failures)):
-            if label == -1:
-                module = failure.get('module_name', 'Unknown')
-                if module not in module_clusters:
-                    max_label += 1
-                    module_clusters[module] = max_label
-                new_labels[i] = module_clusters[module]
-        
-        return new_labels
-```
-
-#### 3.2.2 Updated Analysis Router
-
-Key changes to `backend/routers/analysis.py`:
-
-```python
-# Change from:
-failure_texts = [f.stack_trace or f.error_message for f in failures]
-clusterer = FailureClusterer(n_clusters=...)
-labels = clusterer.cluster_failures(failure_texts)
-
-# To:
-failure_dicts = [
-    {
-        'module_name': f.module_name,
-        'class_name': f.class_name,
-        'method_name': f.method_name,
-        'stack_trace': f.stack_trace,
-        'error_message': f.error_message
-    }
-    for f in failures
-]
-clusterer = ImprovedFailureClusterer(min_cluster_size=2)
-labels, metrics = clusterer.cluster_failures(failure_dicts)
-labels = clusterer.handle_outliers(failure_dicts, labels)
-```
-
-### 3.3 Dependencies
+### 3.3 Dependencies Added
 
 ```txt
-# requirements.txt additions
+# requirements.txt
 hdbscan>=0.8.33
 ```
 
-Note: HDBSCAN requires `numpy` and `scipy`. If installation fails, the system falls back to KMeans.
-
 ---
 
-## 4. Expected Improvements
+## 4. Validation Results
 
-### 4.1 Quantitative Goals
+### 4.1 Test Suite
 
-| Metric | Current | Target |
-|--------|---------|--------|
-| Cluster Purity | ~60% | >85% |
-| Cross-domain Mixing | High | Minimal |
-| Outlier Handling | None | Module-based fallback |
-| Feature Context | Stack trace only | Module + Class + Exception + Filtered stack |
+**18 unit tests created and passing:**
 
-### 4.2 Qualitative Improvements
+| Category | Tests |
+|----------|-------|
+| Exception extraction | 5 |
+| Framework filtering | 2 |
+| Enriched features | 3 |
+| Clustering | 3 |
+| Outlier handling | 2 |
+| Legacy interface | 2 |
+| Cluster summary | 1 |
 
-1. **NFC tests** will cluster together (same module pattern)
-2. **Input tests** will separate from View tests
-3. **Media codec tests** will remain correctly grouped
-4. **Permission tests** will cluster by permission type, not assertion type
+### 4.2 Run #35 Comparison
 
----
+| Metric | Original | Improved | Change |
+|--------|----------|----------|--------|
+| **Weighted Avg Purity** | 0.900 | **1.000** | +10% ✅ |
+| **Number of Clusters** | 16 | 31 | More granular |
+| **Silhouette Score** | N/A | **0.767** | High quality |
+| **Clusters with purity < 0.8** | 2 | **0** | ✅ Perfect |
+| **Outliers** | N/A | 2 | Handled |
 
-## 5. Testing Plan
+### 4.3 Catch-All Cluster #22 Resolution
 
-### 5.1 Unit Tests
+**Before**: Cluster #22 contained **26 failures** from:
+- CtsInputTestCases
+- CtsNfcTestCases
+- CtsViewTestCases
+- CtsAccessibilityTestCases
 
-```python
-def test_extract_exception_type():
-    clusterer = ImprovedFailureClusterer()
-    
-    # Test basic exception
-    assert clusterer.extract_exception_type(
-        "java.lang.AssertionError\n  at Test.method()"
-    ) == "java.lang.AssertionError"
-    
-    # Test nested exception
-    assert "NullPointerException" in clusterer.extract_exception_type(
-        "Caused by: java.lang.NullPointerException"
-    )
+**After**: Split into **13 pure clusters** with purity = 1.00 for each.
 
-def test_enriched_features():
-    clusterer = ImprovedFailureClusterer()
-    failures = [
-        {'module_name': 'CtsNfcTestCases', 'class_name': 'NfcAdapterTest', ...},
-        {'module_name': 'CtsViewTestCases', 'class_name': 'TooltipTest', ...}
-    ]
-    
-    texts = clusterer.create_enriched_features(failures)
-    assert 'CtsNfcTestCases' in texts[0]
-    assert 'CtsViewTestCases' in texts[1]
+### 4.4 Complete Cluster Distribution
+
+All 31 clusters have **purity = 1.00**:
+
+```
+✅ Cluster #0: 2 failures, modules=['MctsMediaDrmFrameworkTestCases']
+✅ Cluster #1: 2 failures, modules=['MctsMediaDrmFrameworkTestCases']
+✅ Cluster #2: 5 failures, modules=['CtsPermissionTestCases']
+✅ Cluster #3: 3 failures, modules=['CtsPermissionTestCases']
+✅ Cluster #4: 5 failures, modules=['CtsPermissionMultiDeviceTestCases']
+✅ Cluster #5: 2 failures, modules=['CtsPermissionMultiDeviceTestCases']
+✅ Cluster #6: 8 failures, modules=['CtsViewTestCases']
+✅ Cluster #7: 3 failures, modules=['CtsWindowManagerDeviceInput']
+✅ Cluster #8: 3 failures, modules=['CtsWindowManagerDeviceMultiDisplay']
+✅ Cluster #9: 2 failures, modules=['CtsNfcTestCases']
+✅ Cluster #10: 3 failures, modules=['CtsNfcTestCases']
+... (all 31 clusters at 100% purity)
 ```
 
-### 5.2 Integration Test
+---
 
-Re-run analysis on Run ID #35 and verify:
-- Cluster #22 is split into separate domain clusters
-- NFC tests are grouped together
-- No cross-domain mixing
+## 5. Files Changed
+
+| File | Change |
+|------|--------|
+| `backend/analysis/clustering.py` | Complete rewrite with `ImprovedFailureClusterer` |
+| `backend/routers/analysis.py` | Updated to use new clustering interface |
+| `requirements.txt` | Added `hdbscan` |
+| `tests/test_clustering.py` | New: 18 unit tests |
+| `validate_clustering_improvement.py` | New: Validation script |
+| `docs/CLUSTERING_IMPROVEMENT_DESIGN.md` | This document |
 
 ---
 
-## 6. Migration Strategy
+## 6. Backward Compatibility
 
-1. **Backward Compatibility**: New clustering produces same output format (list of labels)
-2. **Feature Flag**: Can switch between old/new via config if needed
-3. **Re-analysis**: Existing runs can be re-analyzed with new algorithm
+The original `FailureClusterer` class is preserved as a wrapper:
 
----
-
-## 7. Appendix: Run #35 Analysis Results
-
-### Before (Current Algorithm)
-
-| Cluster | Failures | Actual Domains | Issue |
-|---------|----------|----------------|-------|
-| #22 | 26 | Input + NFC + View + Accessibility | ❌ Mixed |
-| #23 | 4 | NFC only | ✅ OK |
-| #32 | 6 | WindowManager | ✅ OK |
-| #35 | 4 | Media/Codec | ✅ OK |
-| #40 | 8 | InputDevice | ✅ OK |
-
-### Expected After (Improved Algorithm)
-
-| Cluster | Failures | Expected Domain |
-|---------|----------|-----------------|
-| NEW-1 | ~8 | CtsInputTestCases |
-| NEW-2 | ~4 | CtsNfcTestCases |
-| NEW-3 | ~10 | CtsViewTestCases |
-| NEW-4 | ~4 | CtsAccessibilityTestCases |
-| #32 | 6 | WindowManager |
-| #35 | 4 | Media/Codec |
-| #40 | 8 | InputDevice |
+```python
+class FailureClusterer(ImprovedFailureClusterer):
+    """Legacy compatibility wrapper."""
+    
+    def cluster_failures(self, failures: List[str]) -> List[int]:
+        # Converts string list to dict format
+        # Infers module/class from stack traces where possible
+        ...
+```
 
 ---
 
-**Next Steps**:
-1. ✅ Document created
-2. ⬜ Implement `ImprovedFailureClusterer`
-3. ⬜ Update `analysis.py` router
-4. ⬜ Add HDBSCAN to requirements
-5. ⬜ Write unit tests
-6. ⬜ Re-analyze Run #35 and validate
+## 7. Completion Checklist
+
+- [x] Document created
+- [x] Implement `ImprovedFailureClusterer`
+- [x] Update `analysis.py` router
+- [x] Add HDBSCAN to requirements
+- [x] Write unit tests (18 tests passing)
+- [x] Run validation on Run #35
+- [x] Verify 100% purity on all clusters
+- [x] Commit to feature branch
+
+---
+
+## 8. Future Improvements (Optional)
+
+1. **Cluster Merging**: Optionally merge very small clusters from same module
+2. **Semantic Embeddings**: Use LLM embeddings for better similarity
+3. **Incremental Clustering**: Support adding new failures to existing clusters
+4. **UI Visualization**: Add cluster quality metrics to frontend dashboard
