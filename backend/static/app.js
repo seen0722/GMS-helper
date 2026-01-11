@@ -827,16 +827,18 @@ async function loadRunDetails(runId) {
             deviceHtml += `<span class="text-xs text-slate-500">(${product})</span>`;
         }
         
-        // Full Fingerprint Display (removed truncation)
+        // Compact Fingerprint Display
+        const displayFingerprint = fingerprint.length > 60 ? fingerprint.substring(0, 50) + '...' : fingerprint;
+        
         deviceHtml += `
-            <div class="flex items-center gap-2 mt-0.5">
-                <div class="text-[10px] text-slate-400 font-mono break-all">${fingerprint}</div>
+            <div class="flex items-center gap-2 mt-0.5 group">
+                <div class="text-[10px] text-slate-400 font-mono" title="${fingerprint}">${displayFingerprint}</div>
                 ${fingerprint ? `
-                <button onclick="copyToClipboard('${fingerprint}')" class="text-slate-400 hover:text-blue-500 transition-colors p-1 rounded-md hover:bg-slate-100" title="Copy Fingerprint">
-                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                <button onclick="copyToClipboard('${fingerprint}')" class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-blue-500 transition-all p-1 rounded-md hover:bg-slate-100" title="Copy Fingerprint">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                 </button>` : ''}
             </div>
-        `;
+            `;
         deviceEl.innerHTML = deviceHtml;
         document.getElementById('detail-date').textContent = new Date(run.start_time).toLocaleString();
 
@@ -1508,12 +1510,42 @@ async function loadClusters(runId) {
         }
 
         const renderTable = (filterNoRedmine) => {
-            console.log(`[renderTable] Rendering ${clusters.length} clusters, filter=${filterNoRedmine}`);
+            console.log(`[renderTable] Rendering clusters, filter=${filterNoRedmine}`);
             tbody.innerHTML = '';
-            clusters.forEach(cluster => {
-                // Filter logic
-                // if (filterNoRedmine && cluster.redmine_issue) return; 
+            
+            // Filter list
+            const displayClusters = filterNoRedmine 
+                ? clusters.filter(c => !c.redmine_issue_id)
+                : clusters;
 
+            if (displayClusters.length === 0) {
+                 if (filterNoRedmine) {
+                    tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="px-8 py-12 text-center">
+                             <div class="flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-300">
+                                 <div class="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center border-4 border-green-50 shadow-sm mb-2">
+                                     <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+                                     </svg>
+                                 </div>
+                                 <div>
+                                     <h3 class="text-slate-900 font-bold text-lg">All Issues Synced</h3>
+                                     <p class="text-slate-500 text-sm mt-1">Great job! All identified clusters have been assigned to Redmine.</p>
+                                     <button onclick="document.getElementById('filter-no-redmine').click()" class="mt-4 text-sm text-blue-600 hover:text-blue-800 font-medium hover:underline">
+                                        Show all clusters
+                                     </button>
+                                 </div>
+                             </div>
+                        </td>
+                    </tr>`;
+                 }
+                 return;
+            }
+
+            displayClusters.forEach(cluster => {
+                // Filter logic handled above
+                
                 const tr = document.createElement('tr');
                 tr.className = 'hover:bg-slate-50 transition-colors cursor-pointer border-b border-slate-50 last:border-0';
                 tr.onclick = () => showClusterDetail(cluster);
@@ -1537,22 +1569,41 @@ async function loadClusters(runId) {
                 // Parse Summary Title
                 const fullSummary = cluster.ai_summary || cluster.description || 'No summary available.';
                 const summaryTitle = getClusterTitle(fullSummary);
+                const sevClass = sev === 'High' ? 'bg-red-100 text-red-700' : (sev === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700');
+                const sevLabel = sev === 'High' ? 'High' : (sev === 'Medium' ? 'Med' : 'Low');
 
+                // Confidence Heatmap
+                const score = cluster.confidence_score || 0;
+                let confClass = 'bg-slate-100 text-slate-600';
+                let confLabel = 'Low';
+                if (score >= 4) { confClass = 'bg-green-100 text-green-700'; confLabel = 'High'; }
+                else if (score >= 3) { confClass = 'bg-yellow-100 text-yellow-700'; confLabel = 'Med'; }
+                
                 tr.innerHTML = `
-                    <td class="px-4 py-3 font-mono text-xs text-slate-500">#${cluster.id}</td>
                     <td class="px-4 py-3">
-                        <div class="font-medium text-slate-800" title="${fullSummary.replace(/"/g, '&quot;')}">${summaryTitle}</div>
-                        <div class="text-xs text-slate-500 mt-0.5 flex gap-2">
-                            <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${sevColor}">${sev}</span>
-                            <span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600">${cluster.category || 'Uncategorized'}</span>
+                        <div class="flex items-center gap-3">
+                            <span class="font-medium text-slate-900 line-clamp-1 max-w-[200px]" title="${cluster.title || 'Untitled Cluster'}">${cluster.title || 'Untitled Cluster'}</span>
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${sevClass}">
+                                ${sevLabel}
+                            </span>
                         </div>
                     </td>
+                    <td class="px-4 py-3 text-sm text-slate-600">${cluster.root_cause_category || 'Uncategorized'}</td>
                     <td class="px-4 py-3">
                         <div class="text-sm text-slate-600 font-semibold">
                             ${cluster.failures_count || '?'} <span class="text-xs font-normal text-slate-400">tests</span>
                         </div>
                     </td>
-                    <td class="px-4 py-3 ${confColor} text-xs tracking-widest font-bold" title="Confidence: ${cluster.confidence_score}/5">${stars}</td>
+                    <td class="px-4 py-3 text-xs">
+                        <div class="flex items-center gap-2">
+                             <div class="flex gap-0.5 text-slate-300">
+                                ${Array(5).fill(0).map((_, i) => 
+                                    `<svg class="w-3 h-3 ${i < score ? 'text-amber-400' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>`
+                                ).join('')}
+                            </div>
+                            <span class="px-1.5 py-0.5 rounded font-bold ${confClass}">${confLabel}</span>
+                        </div>
+                    </td>
                     <td class="px-4 py-3 text-sm text-slate-600">${cluster.suggested_assignment || '-'}</td>
                     <td class="px-4 py-3">
                         ${cluster.redmine_issue_id && redmineBaseUrl
@@ -1565,8 +1616,12 @@ async function loadClusters(runId) {
                             : '<span class="text-xs text-slate-400 italic">None</span>')}
                     </td>
                     <td class="px-4 py-3">
-                        <button class="px-3 py-1 bg-blue-50 text-blue-600 rounded-md hover:bg-blue-100 font-medium text-xs transition-all active:scale-95">
-                            Analyze
+                        <button onclick="showClusterDetail(allClustersData.find(c => c.id === ${cluster.id}))" 
+                             class="group flex items-center gap-1.5 px-3 py-1.5 text-blue-600 text-xs font-medium rounded-lg hover:bg-blue-50 transition-all">
+                            <span>Analyze</span>
+                            <svg class="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                            </svg>
                         </button>
                     </td>
                 `;
