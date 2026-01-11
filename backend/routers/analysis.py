@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from backend.database.database import get_db
 from backend.database import models
-from backend.analysis.clustering import FailureClusterer
+from backend.analysis.clustering import ImprovedFailureClusterer
 from backend.analysis.llm_client import get_llm_client
-from typing import List
+from typing import List, Dict, Any
 
 router = APIRouter()
 
@@ -29,28 +29,50 @@ def run_analysis_task(run_id: int, db: Session):
                 db.commit()
             return
 
-        # 2. Cluster failures
-        # We use stack trace if available and meaningful, else error message
-        failure_texts = []
-        for f in failures:
-            text = f.stack_trace if f.stack_trace and f.stack_trace.strip() else f.error_message
-            failure_texts.append(text or "")
+        # 2. Prepare failure data for improved clustering
+        # The new clusterer uses enriched features including module/class/method
+        failure_dicts = [
+            {
+                'module_name': f.module_name or '',
+                'class_name': f.class_name or '',
+                'method_name': f.method_name or '',
+                'stack_trace': f.stack_trace or '',
+                'error_message': f.error_message or ''
+            }
+            for f in failures
+        ]
         
-        # Filter out empty ones
-        valid_indices = [i for i, t in enumerate(failure_texts) if t.strip()]
-        valid_texts = [failure_texts[i] for i in valid_indices]
+        # Filter out failures with no useful text
+        valid_indices = [
+            i for i, fd in enumerate(failure_dicts) 
+            if fd['stack_trace'].strip() or fd['error_message'].strip()
+        ]
+        valid_failure_dicts = [failure_dicts[i] for i in valid_indices]
         
-        if not valid_texts:
+        if not valid_failure_dicts:
             if run:
                 run.analysis_status = "completed"
                 db.commit()
             return
 
-        clusterer = FailureClusterer(n_clusters=min(20, len(valid_texts) // 5 + 1))
-        labels = clusterer.cluster_failures(valid_texts)
+        # 3. Cluster using improved algorithm with HDBSCAN
+        clusterer = ImprovedFailureClusterer(min_cluster_size=2)
+        labels, metrics = clusterer.cluster_failures(valid_failure_dicts)
         
-        # 3. Group by cluster and analyze representative
-        clusters = {}
+        # Handle outliers by grouping them by module
+        labels = clusterer.handle_outliers(valid_failure_dicts, labels)
+        
+        # Log clustering metrics
+        print(f"[Run {run_id}] Clustering completed: {metrics}")
+        
+        # Get cluster summary for debugging
+        cluster_summary = clusterer.get_cluster_summary(valid_failure_dicts, labels)
+        for cluster_id, info in cluster_summary.items():
+            print(f"  Cluster {cluster_id}: {info['count']} failures, "
+                  f"modules={info['modules']}, purity={info['purity']:.2f}")
+        
+        # 4. Group by cluster and analyze representative
+        clusters: Dict[int, List] = {}
         for idx, label in enumerate(labels):
             if label not in clusters:
                 clusters[label] = []
