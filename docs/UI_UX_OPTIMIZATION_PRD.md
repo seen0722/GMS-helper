@@ -14,6 +14,10 @@
 3. **Information Density**: [DONE] The build fingerprint is truncated with a "copy to clipboard" icon on hover.
 4. **Empty State Continuity**: [DONE] Premium empty state illustration is triggered when "Show only without Redmine Issue" filter returns no results.
 
+### Additional User Refinements
+5. **Table Layout Optimization**: [DONE] Merged "Category" into the "Summary" column and removed truncation to allow full text display. 
+6. **Action Safety**: [DONE] Removed the "Delete Run" button from the details page to prevent accidental deletions, keeping it Dashboard-only.
+
 ---
 
 # PRD: GMS Run Details & AI Triage Engine
