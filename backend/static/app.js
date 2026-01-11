@@ -8,6 +8,71 @@ let currentFailuresPage = 1;
 let currentFailuresQuery = '';
 const failuresPerPage = 50;
 
+// Java Stack Trace syntax highlighting
+function highlightStackTrace(text) {
+    if (!text) return '<span class="text-slate-400">No stack trace available.</span>';
+    
+    // Escape HTML first
+    const escaped = text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    
+    return escaped.split('\n').map(line => {
+        // Exception line (e.g., java.lang.AssertionError: message)
+        if (line.match(/^[\w.]+(?:Error|Exception|Throwable):/)) {
+            const colonIdx = line.indexOf(':');
+            const exceptionType = line.substring(0, colonIdx);
+            const message = line.substring(colonIdx);
+            return `<span class="text-red-400 font-semibold">${exceptionType}</span><span class="text-orange-300">${message}</span>`;
+        }
+        
+        // Exception line without message
+        if (line.match(/^[\w.]+(?:Error|Exception|Throwable)$/)) {
+            return `<span class="text-red-400 font-semibold">${line}</span>`;
+        }
+        
+        // Stack frame line (e.g., at com.package.Class.method(File.java:123))
+        const atMatch = line.match(/^(\s*)(at\s+)([\w.$]+)\.([\w$<>]+)\((.*)\)$/);
+        if (atMatch) {
+            const [, indent, atKeyword, packageClass, method, location] = atMatch;
+            // Highlight file:line if present
+            const locHighlighted = location.replace(
+                /([\w]+\.java):(\d+)/g,
+                '<span class="text-yellow-400">$1</span>:<span class="text-yellow-500">$2</span>'
+            ).replace(
+                /Native Method|Unknown Source/g,
+                '<span class="text-slate-500 italic">$&</span>'
+            );
+            return `${indent}<span class="text-purple-400">${atKeyword}</span><span class="text-slate-400">${packageClass}.</span><span class="text-cyan-300">${method}</span>(<span>${locHighlighted}</span>)`;
+        }
+        
+        // Caused by line
+        if (line.match(/^Caused by:/)) {
+            return `<span class="text-orange-500 font-semibold">${line}</span>`;
+        }
+        
+        // "... X more" line
+        if (line.match(/^\s*\.\.\. \d+ more$/)) {
+            return `<span class="text-slate-500 italic">${line}</span>`;
+        }
+        
+        // Test details header lines (####)
+        if (line.match(/^#{3,}/)) {
+            return `<span class="text-slate-500">${line}</span>`;
+        }
+        
+        // Key-value lines (e.g., Test Name :- xxx)
+        const kvMatch = line.match(/^(\s*)([\w\s]+)\s*(:-|:=|:)\s*(.*)$/);
+        if (kvMatch) {
+            const [, indent, key, sep, value] = kvMatch;
+            return `${indent}<span class="text-slate-500">${key}</span><span class="text-slate-600">${sep}</span> <span class="text-slate-300">${value}</span>`;
+        }
+        
+        return line;
+    }).join('\n');
+}
+
 // Notification helper (HUD-style Toast)
 function showNotification(message, type = 'info') {
     const icons = {
@@ -1483,7 +1548,7 @@ async function showClusterDetail(cluster) {
     }
     document.getElementById('detail-root-cause').textContent = cluster.common_root_cause || 'Analysis pending...';
     document.getElementById('detail-solution').textContent = cluster.common_solution || 'No solution suggested yet.';
-    document.getElementById('detail-stack-trace').textContent = cluster.signature || 'No stack trace available.';
+    document.getElementById('detail-stack-trace').innerHTML = highlightStackTrace(cluster.signature);
 
     // Show/Hide Assign/Unlink buttons based on whether cluster has Redmine issue
     const assignBtn = document.getElementById('btn-assign-redmine');
