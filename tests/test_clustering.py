@@ -297,5 +297,89 @@ class TestClusterSummary:
         assert 'M2' in summary[1]['modules']
 
 
+class TestMergeSmallClusters:
+    """Test P1: merge_small_clusters functionality."""
+    
+    def setup_method(self):
+        self.clusterer = ImprovedFailureClusterer()
+    
+    def test_merges_same_class_small_clusters(self):
+        """Small clusters with same module+class should be merged."""
+        failures = [
+            {'module_name': 'CtsViewTestCases', 'class_name': 'TooltipTest', 'method_name': 'm1', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'CtsViewTestCases', 'class_name': 'TooltipTest', 'method_name': 'm2', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'CtsViewTestCases', 'class_name': 'TooltipTest', 'method_name': 'm3', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'CtsViewTestCases', 'class_name': 'TooltipTest', 'method_name': 'm4', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'CtsNfcTestCases', 'class_name': 'NfcTest', 'method_name': 'm1', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'CtsNfcTestCases', 'class_name': 'NfcTest', 'method_name': 'm2', 'stack_trace': '', 'error_message': ''},
+        ]
+        
+        # Simulate fragmented clusters (4 small clusters for TooltipTest)
+        labels = [0, 0, 1, 1, 2, 2]  # Each pair in own cluster
+        
+        merged = self.clusterer.merge_small_clusters(failures, labels, max_merge_size=2)
+        
+        # TooltipTest failures should all be in same cluster after merge
+        assert merged[0] == merged[1] == merged[2] == merged[3]
+        
+        # NFC should remain separate
+        assert merged[4] == merged[5]
+        assert merged[4] != merged[0]
+    
+    def test_large_clusters_not_merged(self):
+        """Clusters larger than max_merge_size should not be merged."""
+        failures = [
+            {'module_name': 'M1', 'class_name': 'C1', 'method_name': 'm1', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'M1', 'class_name': 'C1', 'method_name': 'm2', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'M1', 'class_name': 'C1', 'method_name': 'm3', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'M1', 'class_name': 'C1', 'method_name': 'm4', 'stack_trace': '', 'error_message': ''},
+        ]
+        
+        # One large cluster (size=3), one small cluster (size=1)
+        labels = [0, 0, 0, 1]
+        
+        merged = self.clusterer.merge_small_clusters(failures, labels, max_merge_size=2)
+        
+        # Should have 2 clusters still (large one not merged with small one)
+        # The small cluster 1 has only 1 member so nothing to merge with
+        unique = set(merged)
+        assert len(unique) == 2  # Two distinct clusters
+    
+    def test_different_classes_not_merged(self):
+        """Small clusters from different classes should not be merged."""
+        failures = [
+            {'module_name': 'M1', 'class_name': 'ClassA', 'method_name': '', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'M1', 'class_name': 'ClassA', 'method_name': '', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'M1', 'class_name': 'ClassB', 'method_name': '', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'M1', 'class_name': 'ClassB', 'method_name': '', 'stack_trace': '', 'error_message': ''},
+        ]
+        
+        labels = [0, 0, 1, 1]  # Two clusters, each size 2
+        
+        merged = self.clusterer.merge_small_clusters(failures, labels, max_merge_size=2)
+        
+        # Different classes should NOT be merged
+        assert merged[0] == merged[1]  # ClassA together
+        assert merged[2] == merged[3]  # ClassB together
+        assert merged[0] != merged[2]  # ClassA != ClassB
+    
+    def test_labels_renumbered_consecutively(self):
+        """After merge, labels should be renumbered 0, 1, 2, ..."""
+        failures = [
+            {'module_name': 'M1', 'class_name': 'C1', 'method_name': '', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'M1', 'class_name': 'C1', 'method_name': '', 'stack_trace': '', 'error_message': ''},
+            {'module_name': 'M2', 'class_name': 'C2', 'method_name': '', 'stack_trace': '', 'error_message': ''},
+        ]
+        
+        # Gap in labels
+        labels = [0, 0, 5]
+        
+        merged = self.clusterer.merge_small_clusters(failures, labels, max_merge_size=2)
+        
+        # Should be renumbered to 0, 0, 1
+        assert merged == [0, 0, 1] or merged == [1, 1, 0]
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+

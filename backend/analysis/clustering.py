@@ -15,9 +15,14 @@ Author: Chen Zeming + AI Assistant
 Date: 2026-01-11
 """
 
-from sklearn.feature_extraction.text import TfidfVectorizer
+import warnings
+# P4: Suppress numerical warnings from sparse matrix operations
+warnings.filterwarnings('ignore', category=RuntimeWarning, module='sklearn')
+
+from sklearn.feature_extraction.text import TfidfVectorizer, ENGLISH_STOP_WORDS
 from sklearn.metrics import silhouette_score
 from typing import List, Dict, Tuple, Optional, Any
+from collections import Counter, defaultdict
 import re
 import numpy as np
 
@@ -56,6 +61,13 @@ class ImprovedFailureClusterer:
         r'dalvik\.system\.',
     ]
     
+    # P2: Domain-specific stop words to filter out generic terms
+    DOMAIN_STOP_WORDS = [
+        'java', 'lang', 'org', 'junit', 'android', 'test', 'androidx',
+        'assertionerror', 'exception', 'error', 'assert', 'at', 'in', 'from',
+        'com', 'cts', 'null', 'true', 'false', 'expected', 'but', 'was',
+    ]
+    
     # Common Android exception types for extraction
     EXCEPTION_PATTERNS = [
         r'^([a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)*\.[A-Z][a-zA-Z0-9]*(?:Error|Exception|Failure))',
@@ -81,8 +93,11 @@ class ImprovedFailureClusterer:
         self.min_cluster_size = min_cluster_size
         self.use_hdbscan = use_hdbscan and HDBSCAN_AVAILABLE
         self.min_samples = min_samples
+        # P2: Combine English stop words with domain-specific stop words
+        combined_stop_words = list(set(ENGLISH_STOP_WORDS) | set(self.DOMAIN_STOP_WORDS))
+        
         self.vectorizer = TfidfVectorizer(
-            stop_words='english',
+            stop_words=combined_stop_words,
             max_features=max_features,
             ngram_range=(1, 2),  # Include bigrams for better context
             sublinear_tf=True,   # Apply sublinear tf scaling
@@ -441,6 +456,58 @@ class ImprovedFailureClusterer:
                     module_clusters[module] = max_label
                 
                 new_labels[i] = module_clusters[module]
+        
+        return new_labels
+    
+    def merge_small_clusters(
+        self, 
+        failures: List[Dict], 
+        labels: List[int],
+        max_merge_size: int = 2
+    ) -> List[int]:
+        """
+        P1: Merge small clusters that share the same module+class.
+        
+        This reduces over-fragmentation where HDBSCAN creates many tiny clusters
+        for failures that likely share the same root cause.
+        
+        Args:
+            failures: Original failure dicts
+            labels: Cluster labels
+            max_merge_size: Maximum cluster size to consider for merging
+            
+        Returns:
+            Updated labels with small same-class clusters merged
+        """
+        # Group by module+class
+        class_groups: Dict[Tuple[str, str], List[Tuple[int, int]]] = defaultdict(list)
+        for i, (f, label) in enumerate(zip(failures, labels)):
+            key = (f.get('module_name', ''), f.get('class_name', ''))
+            class_groups[key].append((i, label))
+        
+        new_labels = list(labels)
+        
+        for key, items in class_groups.items():
+            if len(items) < 2:
+                continue
+                
+            # Count cluster sizes within this class group
+            cluster_sizes: Dict[int, int] = Counter(label for _, label in items)
+            
+            # Find small clusters to merge
+            small_clusters = [c for c, size in cluster_sizes.items() if size <= max_merge_size]
+            
+            if len(small_clusters) > 1:
+                # Merge all small clusters into the first one
+                target = small_clusters[0]
+                for i, label in items:
+                    if label in small_clusters:
+                        new_labels[i] = target
+        
+        # Re-label to ensure consecutive labels
+        unique_labels = sorted(set(new_labels))
+        label_map = {old: new for new, old in enumerate(unique_labels)}
+        new_labels = [label_map[l] for l in new_labels]
         
         return new_labels
     

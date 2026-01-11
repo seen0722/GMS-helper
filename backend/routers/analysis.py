@@ -56,14 +56,20 @@ def run_analysis_task(run_id: int, db: Session):
             return
 
         # 3. Cluster using improved algorithm with HDBSCAN
-        clusterer = ImprovedFailureClusterer(min_cluster_size=2)
+        # P3: Increased min_cluster_size from 2 to 3 to reduce fragmentation
+        clusterer = ImprovedFailureClusterer(min_cluster_size=3)
         labels, metrics = clusterer.cluster_failures(valid_failure_dicts)
         
         # Handle outliers by grouping them by module
         labels = clusterer.handle_outliers(valid_failure_dicts, labels)
         
+        # P1: Merge small clusters with same module+class to reduce fragmentation
+        labels = clusterer.merge_small_clusters(valid_failure_dicts, labels, max_merge_size=2)
+        
         # Log clustering metrics
+        n_clusters_after_merge = len(set(labels))
         print(f"[Run {run_id}] Clustering completed: {metrics}")
+        print(f"[Run {run_id}] After merge: {n_clusters_after_merge} clusters (from {metrics.get('n_clusters', 0)})")
         
         # Get cluster summary for debugging
         cluster_summary = clusterer.get_cluster_summary(valid_failure_dicts, labels)

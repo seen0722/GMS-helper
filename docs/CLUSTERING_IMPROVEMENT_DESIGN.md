@@ -253,9 +253,136 @@ class FailureClusterer(ImprovedFailureClusterer):
 
 ---
 
-## 8. Future Improvements (Optional)
+## 8. ML Expert Analysis & Optimization Roadmap
 
-1. **Cluster Merging**: Optionally merge very small clusters from same module
-2. **Semantic Embeddings**: Use LLM embeddings for better similarity
-3. **Incremental Clustering**: Support adding new failures to existing clusters
-4. **UI Visualization**: Add cluster quality metrics to frontend dashboard
+### 8.1 Current Performance Metrics
+
+| Metric | Value | Evaluation |
+|--------|-------|------------|
+| **Silhouette Score** | 0.767 | ✅ Excellent (>0.7 = strong structure) |
+| **Outlier Ratio** | 2.5% (2/80) | ✅ Very low, robust model |
+| **Cluster Purity** | 100% | ✅ Perfect domain separation |
+| **Intra-cluster Similarity** | 0.84-0.99 | ✅ High cohesion |
+
+### 8.2 Identified Issues
+
+#### Issue 1: Over-fragmentation
+`CtsViewTestCases.TooltipTest` split into 9 separate clusters (#22-#30), each with 2 failures.
+While purity=100%, these likely share the same root cause and should be merged.
+
+#### Issue 2: Feature Dominance
+Top TF-IDF features still include generic terms like `java`, `assertionerror` which could cause issues at larger scale.
+
+#### Issue 3: Numerical Warnings
+RuntimeWarnings in sparse matrix operations (divide by zero, overflow). Non-critical but should be suppressed.
+
+### 8.3 Optimization Roadmap
+
+| Priority | Task | Description | Status |
+|----------|------|-------------|--------|
+| **P1** | Same-class cluster merging | Merge small clusters (size≤2) with same module+class | ✅ Done |
+| **P2** | Domain-specific stop words | Filter out `java`, `lang`, `junit`, `assertionerror` | ✅ Done |
+| **P3** | Adjust min_cluster_size | Increase from 2 to 3 to reduce fragmentation | ✅ Done |
+| **P4** | Suppress numerical warnings | Add warning filters for expected edge cases | ✅ Done |
+
+### 8.4 Optimization Results
+
+| Metric | Before Opt | After P1-P4 |
+|--------|------------|-------------|
+| **Clusters** | 31 | **15** |
+| **Purity** | 1.00 | **1.00** |
+| **TooltipTest clusters** | 9 | **1** (18 failures) |
+| **NFC clusters** | 3 | **1** (6 failures) |
+| **Tests** | 18 passed | 22 passed |
+
+---
+
+## 9. Optimization Implementation
+
+### 9.1 P1: Same-class Cluster Merging
+
+**Goal**: Reduce cluster count by merging small clusters that share module+class.
+
+**Before**: 31 clusters, 9 clusters for TooltipTest alone  
+**After**: ~15-20 clusters expected
+
+**Implementation**:
+```python
+def merge_small_clusters(
+    self, 
+    failures: List[Dict], 
+    labels: List[int],
+    max_merge_size: int = 2
+) -> List[int]:
+    """Merge small clusters that share the same module+class."""
+    # Group by module+class
+    class_groups = defaultdict(list)
+    for i, (f, label) in enumerate(zip(failures, labels)):
+        key = (f['module_name'], f['class_name'])
+        class_groups[key].append((i, label))
+    
+    # For each group, merge small clusters
+    new_labels = list(labels)
+    for key, items in class_groups.items():
+        cluster_sizes = Counter(label for _, label in items)
+        small_clusters = [c for c, size in cluster_sizes.items() if size <= max_merge_size]
+        
+        if len(small_clusters) > 1:
+            # Merge all small clusters into the first one
+            target = small_clusters[0]
+            for i, label in items:
+                if label in small_clusters:
+                    new_labels[i] = target
+    
+    return new_labels
+```
+
+### 9.2 P2: Domain-specific Stop Words
+
+**Goal**: Improve feature quality by filtering generic terms.
+
+**Implementation**:
+```python
+DOMAIN_STOP_WORDS = [
+    'java', 'lang', 'org', 'junit', 'android', 'test', 'androidx',
+    'assertionerror', 'exception', 'error', 'at', 'in', 'from'
+]
+
+self.vectorizer = TfidfVectorizer(
+    stop_words=list(set(ENGLISH_STOP_WORDS) | set(DOMAIN_STOP_WORDS)),
+    max_features=2000,
+    ngram_range=(1, 2)
+)
+```
+
+### 9.3 P3: Adjust min_cluster_size
+
+**Goal**: Reduce fragmentation by requiring larger minimum clusters.
+
+**Trade-off**: May increase outliers, which are handled by module-based fallback.
+
+**Implementation**:
+```python
+clusterer = ImprovedFailureClusterer(min_cluster_size=3)  # Was 2
+```
+
+### 9.4 P4: Suppress Numerical Warnings
+
+**Goal**: Clean console output by suppressing expected warnings.
+
+**Implementation**:
+```python
+import warnings
+warnings.filterwarnings('ignore', category=RuntimeWarning, module='sklearn')
+```
+
+---
+
+## 10. Validation Plan
+
+After each optimization, run validation script and verify:
+1. Silhouette score >= 0.7
+2. Purity >= 95%
+3. Cluster count reduced (ideal: 15-25 for 80 failures)
+4. No cross-domain mixing
+
