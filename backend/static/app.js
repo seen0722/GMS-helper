@@ -1583,12 +1583,16 @@ async function loadClusters(runId) {
                     <td class="px-4 py-3">
                         <div class="flex flex-col gap-1.5 items-start">
                             <span class="font-medium text-slate-900 text-sm leading-snug" title="${summaryTitle || 'Untitled Cluster'}">${summaryTitle || 'Untitled Cluster'}</span>
-                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${sevClass}">
-                                ${sevLabel}
-                            </span>
+                            <div class="flex items-center gap-2 mt-0.5">
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${sevClass}">
+                                    ${sevLabel}
+                                </span>
+                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                                    ${cluster.category || 'Uncategorized'}
+                                </span>
+                            </div>
                         </div>
                     </td>
-                    <td class="px-4 py-3 text-sm text-slate-600">${cluster.category || 'Uncategorized'}</td>
                     <td class="px-4 py-3">
                         <div class="text-sm text-slate-600 font-semibold">
                             ${cluster.failures_count || '?'} <span class="text-xs font-normal text-slate-400">tests</span>
