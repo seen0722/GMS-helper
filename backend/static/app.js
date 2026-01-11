@@ -564,20 +564,19 @@ function renderDashboardTable() {
             if (total === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7" class="px-8 py-20 text-center">
-                            <div class="flex flex-col items-center gap-6 animate-in fade-in zoom-in duration-700">
-                                <div class="relative w-64 h-64">
+                        <td colspan="7" class="px-8 py-8 text-center">
+                            <div class="flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-500">
+                                <div class="relative w-32 h-32">
                                     <img src="/static/assets/empty_state.png" 
-                                         alt="No results" class="w-full h-full object-contain rounded-3xl shadow-2xl">
-                                    <div class="absolute inset-0 rounded-3xl ring-1 ring-inset ring-white/10 glass-dark opacity-10"></div>
+                                         alt="No results" class="w-full h-full object-contain rounded-2xl shadow-lg">
                                 </div>
                                 <div class="max-w-xs">
-                                    <h3 class="text-slate-900 text-lg font-bold">${currentRunsQuery ? 'No results found' : 'All Clear'}</h3>
-                                    <p class="text-slate-400 text-sm mt-2 font-medium leading-relaxed">${currentRunsQuery ? 'Try adjusting your search criteria' : 'Connect your first test report to begin the analyzer experience'}</p>
+                                    <h3 class="text-slate-900 text-base font-bold">${currentRunsQuery ? 'No results found' : 'Ready to Analyze'}</h3>
+                                    <p class="text-slate-400 text-sm mt-1 font-medium">${currentRunsQuery ? 'Try adjusting your search' : 'Upload your first test report to get started'}</p>
                                 </div>
                                 ${!currentRunsQuery ? `
-                                <button onclick="router.navigate('upload')" class="mt-4 px-6 py-2.5 bg-blue-600 text-white rounded-full font-semibold shadow-lg hover:shadow-blue-500/30 transition-all btn-press">
-                                    Get Started
+                                <button onclick="router.navigate('upload')" class="px-5 py-2 bg-blue-600 text-white rounded-full text-sm font-semibold shadow-md hover:shadow-blue-500/30 hover:bg-blue-700 transition-all btn-press">
+                                    Upload Report
                                 </button>` : ''}
                             </div>
                         </td>
