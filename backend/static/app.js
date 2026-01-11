@@ -107,6 +107,147 @@ function showNotification(message, type = 'info') {
     }, 4000);
 }
 
+/**
+ * Reusable Delete Run Modal
+ * Shows a confirmation dialog before deleting a test run and all associated data.
+ * 
+ * @param {number} runId - The ID of the run to delete
+ * @param {object} runDetails - Optional run details for display (totalTests, clusterCount, suiteName)
+ * @param {function} onSuccess - Optional callback after successful deletion
+ */
+function showDeleteRunModal(runId, runDetails = {}, onSuccess = null) {
+    const deleteModal = document.getElementById('delete-modal');
+    const modalMessage = document.getElementById('delete-modal-message');
+    const modalCancel = document.getElementById('modal-cancel');
+    const modalConfirm = document.getElementById('modal-confirm');
+    
+    if (!deleteModal) {
+        console.error('Delete modal not found');
+        return;
+    }
+    
+    // Build confirmation message
+    const totalTests = runDetails.totalTests ? runDetails.totalTests.toLocaleString() : 'all';
+    const clusterCount = runDetails.clusterCount || 0;
+    const suiteName = runDetails.suiteName || '';
+    
+    modalMessage.innerHTML = `
+        <div class="space-y-4">
+            <div class="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+                <div class="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                    <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <div class="font-bold text-red-800">Delete Run #${runId}${suiteName ? ` (${suiteName})` : ''}</div>
+                    <div class="text-sm text-red-600">This action cannot be undone</div>
+                </div>
+            </div>
+            
+            <div class="text-sm text-slate-600">
+                The following data will be <strong>permanently deleted</strong>:
+            </div>
+            
+            <ul class="space-y-2 text-sm">
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    <span><strong>${totalTests}</strong> test case records</span>
+                </li>
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                    <span><strong>${clusterCount}</strong> AI analysis clusters</span>
+                </li>
+                <li class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span>System information & metadata</span>
+                </li>
+            </ul>
+        </div>
+    `;
+    
+    // Reset button state
+    modalConfirm.disabled = false;
+    modalConfirm.textContent = 'Delete';
+    modalConfirm.className = 'px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium';
+    
+    // Show modal
+    deleteModal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    
+    // Remove old listeners
+    const newCancelBtn = modalCancel.cloneNode(true);
+    const newConfirmBtn = modalConfirm.cloneNode(true);
+    modalCancel.parentNode.replaceChild(newCancelBtn, modalCancel);
+    modalConfirm.parentNode.replaceChild(newConfirmBtn, modalConfirm);
+    
+    // Add new listeners
+    newCancelBtn.addEventListener('click', () => {
+        deleteModal.classList.add('hidden');
+        document.body.classList.remove('modal-open');
+    });
+    
+    let isDeleting = false;
+    newConfirmBtn.addEventListener('click', async () => {
+        if (isDeleting) return;
+        isDeleting = true;
+        
+        try {
+            newConfirmBtn.disabled = true;
+            newConfirmBtn.innerHTML = `
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                Deleting...
+            `;
+            
+            const response = await fetch(`${API_BASE}/reports/runs/${runId}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                deleteModal.classList.add('hidden');
+                document.body.classList.remove('modal-open');
+                showNotification(`Run #${runId} deleted successfully`, 'success');
+                
+                if (onSuccess) {
+                    onSuccess();
+                } else {
+                    // Default: navigate to dashboard and refresh
+                    router.navigate('dashboard');
+                }
+            } else {
+                const error = await response.json();
+                showNotification(error.detail || 'Failed to delete test run', 'error');
+                newConfirmBtn.disabled = false;
+                newConfirmBtn.textContent = 'Delete';
+                isDeleting = false;
+            }
+        } catch (e) {
+            console.error("Delete failed", e);
+            showNotification('Error deleting test run', 'error');
+            newConfirmBtn.disabled = false;
+            newConfirmBtn.textContent = 'Delete';
+            isDeleting = false;
+        }
+    });
+    
+    // Close on outside click
+    deleteModal.onclick = (e) => {
+        if (e.target === deleteModal) {
+            deleteModal.classList.add('hidden');
+            document.body.classList.remove('modal-open');
+        }
+    };
+}
+
 // Copy to Clipboard helper
 async function copyToClipboard(text) {
     try {
@@ -493,7 +634,22 @@ function renderDashboardTable() {
                 </div>
             </td>
             <td class="px-6 py-4 text-right">
-                <button onclick="router.navigate('run-details', {id: ${run.id}})" class="text-blue-600 hover:text-blue-900 font-medium">View</button>
+                <div class="flex items-center justify-end gap-2">
+                    <button onclick="router.navigate('run-details', {id: ${run.id}})" 
+                        class="text-blue-600 hover:text-blue-900 font-medium text-sm">View</button>
+                    <button onclick="event.stopPropagation(); showDeleteRunModal(${run.id}, {
+                        totalTests: ${run.total_tests || 0},
+                        clusterCount: ${run.cluster_count || 0},
+                        suiteName: '${(run.test_suite_name || '').replace(/'/g, "\\'")}'
+                    }, () => { loadDashboard(); })" 
+                        class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                        title="Delete Run">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                    </button>
+                </div>
             </td>
 `;
         tbody.appendChild(tr);
@@ -881,86 +1037,17 @@ class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-cen
             };
         }
 
-        // Setup Delete Button with Custom Modal
+        // Setup Delete Button - use reusable modal function
         const btnDelete = document.getElementById('btn-delete');
-        const deleteModal = document.getElementById('delete-modal');
-        const modalMessage = document.getElementById('delete-modal-message');
-        const modalCancel = document.getElementById('modal-cancel');
-        const modalConfirm = document.getElementById('modal-confirm');
-
-        // Store handler references for cleanup
-        const showModalHandler = () => {
-            // Show modal with details
-            modalMessage.innerHTML = `
-                Are you sure you want to delete <strong>Run #${runId}</strong>?<br><br>
-                This will permanently remove:<br>
-                • All test case data (${run.total_tests.toLocaleString()} tests)<br>
-                • Analysis results and clusters<br>
-                • System information
-            `;
-            deleteModal.classList.remove('hidden');
-            document.body.classList.add('modal-open');
-        };
-
-        const cancelHandler = () => {
-            deleteModal.classList.add('hidden');
-        };
-
-        // Flag to prevent duplicate execution - must be outside handler
-        let isDeleting = false;
-
-        const confirmHandler = async () => {
-            if (isDeleting) return; // Prevent duplicate execution
-            isDeleting = true;
-
-            try {
-                modalConfirm.disabled = true;
-                modalConfirm.textContent = 'Deleting...';
-
-                const response = await fetch(`${API_BASE}/reports/runs/${runId}`, {
-                    method: 'DELETE'
+        if (btnDelete) {
+            btnDelete.onclick = () => {
+                showDeleteRunModal(runId, {
+                    totalTests: run.total_tests,
+                    clusterCount: run.cluster_count || 0,
+                    suiteName: run.test_suite_name
                 });
-
-                if (response.ok) {
-                    deleteModal.classList.add('hidden');
-                    alert('Test run deleted successfully');
-                    router.navigate('dashboard');
-                } else {
-                    alert('Failed to delete test run');
-                    modalConfirm.disabled = false;
-                    modalConfirm.textContent = 'Delete';
-                    isDeleting = false;
-                }
-            } catch (e) {
-                console.error("Delete failed", e);
-                alert('Error deleting test run');
-                modalConfirm.disabled = false;
-                modalConfirm.textContent = 'Delete';
-                isDeleting = false;
-            }
-        };
-
-        const outsideClickHandler = (e) => {
-            if (e.target === deleteModal) {
-                deleteModal.classList.add('hidden');
-            }
-        };
-
-        // Add event listeners
-        if (btnDelete) btnDelete.addEventListener('click', showModalHandler);
-        if (modalCancel) modalCancel.addEventListener('click', cancelHandler);
-        if (modalConfirm) modalConfirm.addEventListener('click', confirmHandler);
-        if (deleteModal) deleteModal.addEventListener('click', outsideClickHandler);
-
-        // Store cleanup function to remove listeners when navigating away
-        const oldCleanup = router.cleanup;
-        router.cleanup = () => {
-            if (oldCleanup) oldCleanup();
-            if (btnDelete) btnDelete.removeEventListener('click', showModalHandler);
-            if (modalCancel) modalCancel.removeEventListener('click', cancelHandler);
-            if (modalConfirm) modalConfirm.removeEventListener('click', confirmHandler);
-            if (deleteModal) deleteModal.removeEventListener('click', outsideClickHandler);
-        };
+            };
+        }
 
         // Check if we should poll (if no clusters but status is completed/processing)
         // For now, just load clusters. If empty, user can click button.
