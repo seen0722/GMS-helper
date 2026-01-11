@@ -33,8 +33,8 @@ When analyzing failures:
 Return a JSON response with the following keys:
 - 'title': A single, descriptive sentence summarizing the failure (e.g., "Assertion failure due to improper default permission grants"). Max 20 words. Do NOT use markdown.
 - 'summary': A detailed technical summary of the failure.
-- 'root_cause': A concise technical explanation of why the test failed.
-- 'solution': Specific, actionable steps to fix the issue.
+- 'root_cause': A concise technical explanation of why the test failed. If multiple causes, use numbered list with each item on a new line (e.g., "1. First cause\\n2. Second cause").
+- 'solution': Specific, actionable steps to fix the issue. IMPORTANT: Use numbered list with each step on a NEW LINE separated by \\n (e.g., "1. First step\\n2. Second step\\n3. Third step"). Do NOT put all steps on one line.
 - 'severity': One of "High", "Medium", "Low". High = Crash/Fatal/Blocker.
 - 'category': The main category of the error. Choose from: "Test Case Issue", "Framework Issue", "Media/Codec Issue", "Permission Issue", "Configuration Issue", "Hardware Issue", "Performance Issue", "System Stability".
 - 'confidence_score': An integer from 1 to 5 (5 is highest confidence).

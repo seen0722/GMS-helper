@@ -1287,6 +1287,48 @@ function escapeHtml(text) {
         .replace(/'/g, "&#039;");
 }
 
+/**
+ * Format multiline text for HTML display.
+ * Converts numbered lists and newlines to proper HTML formatting.
+ * @param {string} text - Raw text from LLM
+ * @returns {string} - HTML formatted text
+ */
+function formatMultilineText(text) {
+    if (!text) return '';
+    
+    // First escape HTML special characters
+    let escaped = escapeHtml(text);
+    
+    // Convert \n to actual newlines (in case LLM returns escaped newlines)
+    escaped = escaped.replace(/\\n/g, '\n');
+    
+    // Split by newlines
+    const lines = escaped.split('\n');
+    
+    // Check if this looks like a numbered list
+    const isNumberedList = lines.some(line => /^\d+\.\s/.test(line.trim()));
+    
+    if (isNumberedList) {
+        // Format as list items
+        return lines
+            .map(line => {
+                const trimmed = line.trim();
+                if (!trimmed) return '';
+                // Add proper spacing for list items
+                if (/^\d+\.\s/.test(trimmed)) {
+                    return `<div class="mb-2">${trimmed}</div>`;
+                }
+                return `<div class="mb-1">${trimmed}</div>`;
+            })
+            .filter(line => line)
+            .join('');
+    } else {
+        // Just convert newlines to <br>
+        return escaped.replace(/\n/g, '<br>');
+    }
+}
+
+
 async function loadClusters(runId) {
     // Show Skeleton for Clusters Table
     const tbody = document.getElementById('clusters-table-body');
@@ -1546,8 +1588,8 @@ async function showClusterDetail(cluster) {
     } else {
         bodyEl.classList.add('hidden');
     }
-    document.getElementById('detail-root-cause').textContent = cluster.common_root_cause || 'Analysis pending...';
-    document.getElementById('detail-solution').textContent = cluster.common_solution || 'No solution suggested yet.';
+    document.getElementById('detail-root-cause').innerHTML = formatMultilineText(cluster.common_root_cause || 'Analysis pending...');
+    document.getElementById('detail-solution').innerHTML = formatMultilineText(cluster.common_solution || 'No solution suggested yet.');
     document.getElementById('detail-stack-trace').innerHTML = highlightStackTrace(cluster.signature);
 
     // Show/Hide Assign/Unlink buttons based on whether cluster has Redmine issue
