@@ -2,7 +2,6 @@ version: '3.8'
 
 services:
   gms-helper:
-    build: .
     image: gms-helper:latest
     container_name: gms-helper
     restart: unless-stopped
@@ -23,15 +22,4 @@ services:
       # Database path
       - DATABASE_URL=sqlite:///./data/gms_analysis.db
 
-  # 測試用 service
-  test-runner:
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-    container_name: gms-test
-    volumes:
-      - ./scripts:/app/scripts
-    environment:
-      - INTERNAL_LLM_API_KEY=${INTERNAL_LLM_API_KEY}
-    profiles:
-      - test
+
