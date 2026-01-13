@@ -42,7 +42,8 @@ def main():
     # Test 1: HTTP 連線
     print("[1/3] 測試 HTTP 連線...")
     try:
-        r = httpx.get(f"{args.url}/v1/models", verify=verify_ssl, timeout=10.0)
+        headers = {"Authorization": f"Bearer {args.token}"}
+        r = httpx.get(f"{args.url}/v1/models", headers=headers, verify=verify_ssl, timeout=10.0)
         if r.status_code == 200:
             print(f"      ✅ HTTP 連線成功")
             data = r.json()
