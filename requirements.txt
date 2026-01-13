@@ -9,5 +9,6 @@ requests
 pydantic
 python-dotenv
 openai
+httpx
 cryptography
 hdbscan

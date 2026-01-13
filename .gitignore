@@ -50,3 +50,5 @@ uploads/
 # Environment variables
 .env
 .env.local
+gms-helper-offline-*.tar.gz
+gms-helper-offline-*/

@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  gms-helper:
+    build: .
+    image: gms-helper:latest
+    container_name: gms-helper
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist SQLite database
+      - ./data:/app/data
+      # Mount uploads directory
+      - ./uploads:/app/uploads
+    environment:
+      # LLM Configuration for Cambrian Gateway
+      - LLM_PROVIDER=${LLM_PROVIDER:-internal}
+      - INTERNAL_LLM_URL=${INTERNAL_LLM_URL:-https://api.cambrian.pegatroncorp.com}
+      - INTERNAL_LLM_MODEL=${INTERNAL_LLM_MODEL:-LLAMA 3.3 70B}
+      - INTERNAL_LLM_API_KEY=${INTERNAL_LLM_API_KEY}
+      - INTERNAL_LLM_VERIFY_SSL=${INTERNAL_LLM_VERIFY_SSL:-0}
+      # Database path
+      - DATABASE_URL=sqlite:///./data/gms_analysis.db
+
+  # 測試用 service
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    container_name: gms-test
+    volumes:
+      - ./scripts:/app/scripts
+    environment:
+      - INTERNAL_LLM_API_KEY=${INTERNAL_LLM_API_KEY}
+    profiles:
+      - test
