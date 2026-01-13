@@ -99,9 +99,10 @@ docker exec -it gms-helper bash
 
 ## 故障排除
 
-### 連線 Cambrian 失敗
-
-1. 確認網路可達：`curl -k https://api.cambrian.pegatroncorp.com/v1/models`
+1. 確認網路與認證：
+   ```bash
+   curl -k -H "Authorization: Bearer <YOUR_TOKEN>" https://api.cambrian.pegatroncorp.com/v1/models
+   ```
 2. 確認 API Token 正確
 3. 確認 SSL 驗證已關閉 (`INTERNAL_LLM_VERIFY_SSL=0`)
 
