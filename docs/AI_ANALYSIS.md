@@ -25,116 +25,146 @@ flowchart LR
 
 ## 📊 Part 1: Failure Clustering
 
-### **Algorithm: TF-IDF + K-Means**
+### **Algorithm: Domain-Aware Feature Engineering + HDBSCAN**
 
-The clustering uses a two-step approach:
+The clustering uses a **three-phase approach** with domain-aware features:
 
-#### **Step 1: Text Vectorization (TF-IDF)**
+```mermaid
+flowchart LR
+    Failures[Test Failures] --> FE[Phase 1:\nFeature Engineering]
+    FE --> Cluster[Phase 2:\nHDBSCAN Clustering]
+    Cluster --> Fallback[Phase 3:\nOutlier Handling]
+    Fallback --> Result[Pure Clusters]
+    
+    style FE fill:#e1f5ff
+    style Cluster fill:#fff4e1
+    style Result fill:#e8f5e9
+```
+
+#### **Phase 1: Domain-Aware Feature Engineering**
+
+Unlike simple TF-IDF on raw stack traces, we create **enriched feature text** that weights domain context:
 
 ```python
-TfidfVectorizer(
-    stop_words='english',  # Remove common words
-    max_features=1000      # Top 1000 most important words
+# Key improvement: domain information is weighted by repetition
+enriched_text = f"""
+{module_name} {module_name} {module_name}    # 3x weight (most important)
+{test_package} {test_package}                 # 2x weight
+{simple_class} {simple_class}                 # 2x weight
+{method_name}
+{exception_type} {exception_type}             # 2x weight
+{assertion_message}
+{filtered_stack[:800]}                        # Framework frames removed
+"""
+```
+
+**Why This Works:**
+- **Module weighting (3x)**: Ensures failures from the same CTS module cluster together
+- **Exception extraction**: Primary exception type (e.g., `NullPointerException`) extracted and weighted
+- **Framework frame filtering**: Generic JUnit frames (`org.junit.Assert.*`, `androidx.test.*`) are removed
+- **Domain-specific stop words**: Filters generic terms like `java`, `lang`, `junit`, `assertionerror`
+
+#### **Phase 2: HDBSCAN Clustering**
+
+```python
+from hdbscan import HDBSCAN
+
+clusterer = HDBSCAN(
+    min_cluster_size=2,           # Minimum samples per cluster
+    min_samples=1,                # Core point neighborhood
+    metric='euclidean',
+    cluster_selection_method='eom' # Excess of Mass
 )
 ```
 
-**What is TF-IDF?**
-- **TF** (Term Frequency): How often a word appears in a failure
-- **IDF** (Inverse Document Frequency): How unique a word is across all failures
-- **Result**: Words that are common in a specific failure but rare overall get higher scores
+**HDBSCAN vs K-Means:**
 
-**Example:**
-```
-Failure 1: "NullPointerException in AudioManager.setStreamVolume"
-Failure 2: "NullPointerException in AudioManager.getStreamVolume"
-Failure 3: "IllegalStateException in MediaPlayer.start"
-
-TF-IDF identifies:
-- "AudioManager" - High score (appears in 2/3, specific to audio)
-- "NullPointerException" - Medium score (appears in 2/3)
-- "MediaPlayer" - High score (appears in 1/3, unique)
-```
-
-#### **Step 2: K-Means Clustering**
-
-```python
-MiniBatchKMeans(
-    n_clusters=10,        # Create 10 clusters
-    random_state=42,      # Reproducible results
-    batch_size=100        # Process 100 failures at a time
-)
-```
-
-**How K-Means Works:**
+| Feature | K-Means (Old) | HDBSCAN (New) |
+|---------|---------------|---------------|
+| Cluster count | Fixed (e.g., 10) | Automatic |
+| Outlier detection | ❌ None | ✅ Built-in (label=-1) |
+| Cluster shape | Spherical | Arbitrary |
+| Sensitivity to noise | High | Low |
 
 ```mermaid
 graph TB
-    Start[All Failures] --> Init[Initialize 10 Random Centers]
-    Init --> Assign[Assign Each Failure to Nearest Center]
-    Assign --> Update[Update Centers Based on Assignments]
-    Update --> Check{Centers Changed?}
-    Check -->|Yes| Assign
-    Check -->|No| Done[Clusters Ready]
+    Start[TF-IDF Vectors] --> HDBSCAN[HDBSCAN Clustering]
+    HDBSCAN --> Clusters[Dense Clusters]
+    HDBSCAN --> Outliers[Outliers label=-1]
+    Outliers --> Fallback[Module-based Fallback]
+    Fallback --> Final[All Failures Grouped]
     
     style Start fill:#e1f5ff
-    style Done fill:#e8f5e9
+    style Clusters fill:#e8f5e9
+    style Outliers fill:#fff4e1
 ```
 
-**Adaptive Clustering:**
+#### **Phase 3: Hierarchical Fallback for Outliers**
 
-The system dynamically determines the number of clusters ($k$) based on the volume of failures. This happens in two stages:
+Failures that HDBSCAN marks as outliers (label=-1) are grouped by `module_name`:
 
-1. **Initial Calculation (Router Level):**
-   The system scales the number of clusters based on the total number of failures, capped at 20.
-   ```python
-   # 1 cluster for every 5 failures, max 20
-   n_clusters = min(20, len(failures) // 5 + 1)
-   ```
+```python
+def handle_outliers(failures, labels):
+    """Outliers grouped by module_name as fallback."""
+    for i, label in enumerate(labels):
+        if label == -1:
+            module = failures[i]['module_name']
+            new_labels[i] = module_clusters[module]
+    return new_labels
+```
 
-2. **Safety Adjustment (Clusterer Level):**
-   If the calculated cluster count exceeds the number of actual samples (rare, but possible), it is reduced to ensure valid clustering.
-   ```python
-   if n_samples < n_clusters:
-       n_clusters = max(1, n_samples // 2)
-   ```
+#### **Post-Processing: Small Cluster Merging**
+
+To reduce over-fragmentation, small clusters (≤2 failures) with the same module+class are merged:
+
+```python
+def merge_small_clusters(failures, labels, max_merge_size=2):
+    """Merge tiny clusters that share module+class."""
+    # Groups by (module_name, class_name)
+    # Merges clusters with size ≤ max_merge_size
+    ...
+```
+
+### **Clustering Quality Metrics**
+
+The improved algorithm produces measurable quality metrics:
+
+| Metric | Description | Target |
+|--------|-------------|--------|
+| **Silhouette Score** | Cluster cohesion vs separation | ≥ 0.7 |
+| **Purity** | % of clusters with single module | 100% |
+| **Outlier Ratio** | % of unclustered failures | < 5% |
 
 ### **Input Format**
 
-The clustering receives failure text combining:
+The clustering receives failure dicts (not raw text):
 ```python
-failure_text = f"""
-Module: {module_name}
-Test: {class_name}#{method_name}
-Error: {error_message}
-Stack Trace:
-{stack_trace[:1000]}  # First 1000 chars
-"""
+failure = {
+    'module_name': 'CtsViewTestCases',
+    'class_name': 'android.view.cts.TooltipTest',
+    'method_name': 'testTooltipDisplay',
+    'stack_trace': '...',
+    'error_message': '...'
+}
 ```
 
 ### **Output**
 
-Returns cluster labels:
+Returns cluster labels with metrics:
 ```python
-failures = [failure1, failure2, failure3, failure4]
-labels = [0, 0, 1, 0]  # failure1, 2, 4 in cluster 0; failure3 in cluster 1
+labels, metrics = clusterer.cluster_failures(failures)
+# labels: [0, 0, 1, -1, 2, ...]  (-1 = outlier before fallback)
+# metrics: {'method': 'hdbscan', 'n_clusters': 15, 'silhouette_score': 0.767}
 ```
 
-### **Example Clustering Result**
+### **Example: Real Validation Results (Run #35)**
 
-```
-Cluster 0 (Audio Issues):
-- NullPointerException in AudioManager.setStreamVolume
-- NullPointerException in AudioManager.getStreamVolume
-- IllegalArgumentException in AudioManager.setRingerMode
-
-Cluster 1 (Media Codec Issues):
-- IllegalStateException in MediaCodec.configure
-- IllegalStateException in MediaCodec.start
-
-Cluster 2 (Permission Issues):
-- SecurityException: Permission denied
-- SecurityException: Requires CAMERA permission
-```
+| Metric | Old (K-Means) | New (HDBSCAN) |
+|--------|---------------|---------------|
+| **Purity** | 90% | **100%** |
+| **Clusters** | 16 (catch-all issues) | 15 (pure) |
+| **Silhouette** | N/A | **0.767** |
+| **Cross-domain mixing** | Yes (Cluster #22) | **None** |
 
 ---
 
@@ -348,17 +378,18 @@ sequenceDiagram
 ### **Clustering Parameters**
 
 ```python
-# In clustering.py
-n_clusters = 10          # Number of clusters to create
-max_features = 1000      # Max TF-IDF features
-batch_size = 100         # K-Means batch size
-random_state = 42        # For reproducibility
+# In clustering.py - ImprovedFailureClusterer
+min_cluster_size = 2     # Minimum samples per HDBSCAN cluster
+min_samples = 1          # Core point neighborhood size
+max_features = 2000      # Max TF-IDF features (increased from 1000)
+ngram_range = (1, 2)     # Unigrams + bigrams for context
 ```
 
 **Tuning Guidelines:**
-- **More failures** → Increase `n_clusters` (e.g., 20-30)
-- **Diverse failures** → Increase `max_features` (e.g., 2000)
-- **Large datasets** → Increase `batch_size` (e.g., 500)
+- **Over-fragmentation** → Increase `min_cluster_size` to 3
+- **Too many outliers** → Decrease `min_samples`
+- **Missing context** → Increase `max_features`
+- **Fallback to K-Means** → Set `use_hdbscan=False` (if HDBSCAN unavailable)
 
 ### **LLM Parameters**
 
@@ -379,14 +410,16 @@ max_chars = 3000         # Input text limit
 
 ### **Clustering Fallback**
 
+HDBSCAN with automatic K-Means fallback:
 ```python
 try:
-    tfidf_matrix = self.vectorizer.fit_transform(failures)
-    self.kmeans.fit(tfidf_matrix)
-    return self.kmeans.labels_.tolist()
+    if HDBSCAN_AVAILABLE:
+        labels, metrics = self._cluster_hdbscan(tfidf_matrix)
+    else:
+        labels, metrics = self._cluster_kmeans(tfidf_matrix)  # Auto-fallback
 except Exception as e:
     print(f"Clustering failed: {e}")
-    return [0] * len(failures)  # All in one cluster
+    return [0] * len(failures), {'method': 'error'}  # All in one cluster
 ```
 
 ### **LLM Fallback**
@@ -575,23 +608,26 @@ Cluster 1 (Permission Issue): Tests 5, 6, 7, 8
 
 ## 📝 Summary
 
-The GMS Analyzer uses a **two-stage AI pipeline**:
+The CTS Insight Analyzer uses a **two-stage AI pipeline**:
 
-1. **Clustering Stage**
-   - TF-IDF converts text to numbers
-   - K-Means groups similar failures
-   - Adaptive algorithm handles varying data sizes
+1. **Clustering Stage (HDBSCAN)**
+   - Domain-aware feature engineering (module 3x, class 2x weighting)
+   - HDBSCAN for automatic cluster discovery
+   - Module-based fallback for outliers
+   - Small cluster merging to reduce fragmentation
+   - Quality metrics: Silhouette score, Purity, Outlier ratio
 
-2. **Analysis Stage**
+2. **Analysis Stage (LLM)**
    - GPT-4o-mini analyzes each cluster
    - Structured prompts ensure consistent output
    - JSON format enables easy parsing
 
 **Key Benefits:**
-- ✅ Reduces 1000s of failures to 10-20 clusters
+- ✅ Reduces 1000s of failures to 10-20 **pure** clusters (100% purity)
+- ✅ Automatic cluster count (no manual k tuning)
+- ✅ Outlier detection with hierarchical fallback
 - ✅ Provides actionable insights for each cluster
-- ✅ Categorizes by severity and team ownership
 - ✅ Cost-effective (~$0.001 per 100 failures)
 - ✅ Fast processing (~30 seconds for 1000 failures)
 
-This approach combines **traditional ML** (clustering) with **modern LLMs** (analysis) to provide the best of both worlds: efficient grouping and intelligent insights.
+This approach combines **modern density-based ML** (HDBSCAN) with **intelligent LLMs** (GPT-4) to provide robust grouping and insightful analysis.

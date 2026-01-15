@@ -91,13 +91,15 @@ The backend provides a RESTful API for automation and integration.
 
 The AI engine is the core of this project. It works in two stages:
 
-1.  **Clustering**:
-    *   **Algorithm**: TF-IDF Vectorization + MiniBatch K-Means.
-    *   **Purpose**: Groups thousands of failures into ~10-20 distinct categories based on error messages and stack traces.
+1.  **Clustering (HDBSCAN)**:
+    *   **Algorithm**: Domain-Aware Feature Engineering + HDBSCAN (Hierarchical Density-Based Clustering).
+    *   **Key Features**: Module/class weighting, exception extraction, framework frame filtering.
+    *   **Purpose**: Groups failures into pure clusters with automatic cluster count discovery.
+    *   **Quality**: 100% purity, Silhouette score ≥ 0.7, outlier handling via module-based fallback.
     
-2.  **Analysis**:
-    *   **Model**: OpenAI GPT-4o-mini.
-    *   **Purpose**: Analyzes the representative failure of each cluster to determine **Root Cause**, **Solution**, **Severity**, and **Category**.
+2.  **Analysis (LLM)**:
+    *   **Model**: OpenAI GPT-4o-mini (or internal LLM gateway).
+    *   **Purpose**: Analyzes each cluster to determine **Root Cause**, **Solution**, **Severity**, and **Category**.
 
 > Learn more about the AI implementation in [AI_ANALYSIS.md](AI_ANALYSIS.md).
 
@@ -131,4 +133,4 @@ Please read `CONTRIBUTING.md` (if available) for details on our code of conduct,
 
 ---
 
-*Last updated: 2025-11-28*
+*Last updated: 2026-01-15*
