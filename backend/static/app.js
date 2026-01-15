@@ -1916,19 +1916,28 @@ async function loadLLMProviderSettings() {
         const data = await res.json();
         
         const internalSettings = document.getElementById('internal-llm-settings');
+        const cambrianSettings = document.getElementById('cambrian-llm-settings');
         const urlInput = document.getElementById('internal-llm-url');
         const modelSelect = document.getElementById('internal-llm-model');
+        const cambrianModelSelect = document.getElementById('cambrian-model');
         
         // Update Segmented Control visual state
-        selectProvider(data.provider === 'internal' ? 'internal' : 'openai', false);
+        selectProvider(data.provider, false);
         
         if (urlInput && data.internal_url) urlInput.value = data.internal_url;
         
-        // For dropdown: add saved model as an option if it exists
+        // For internal model dropdown: add saved model as an option if it exists
         if (modelSelect && data.internal_model) {
             modelSelect.innerHTML = `
                 <option value="">Select a model...</option>
                 <option value="${data.internal_model}" selected>${data.internal_model}</option>
+            `;
+        }
+        
+        // For cambrian model dropdown
+        if (cambrianModelSelect && data.cambrian_model) {
+            cambrianModelSelect.innerHTML = `
+                <option value="${data.cambrian_model}" selected>${data.cambrian_model}</option>
             `;
         }
         
@@ -1941,31 +1950,41 @@ async function loadLLMProviderSettings() {
 function selectProvider(provider, animate = true) {
     const segOpenAI = document.getElementById('seg-openai');
     const segInternal = document.getElementById('seg-internal');
+    const segCambrian = document.getElementById('seg-cambrian');
     const internalSettings = document.getElementById('internal-llm-settings');
+    const cambrianSettings = document.getElementById('cambrian-llm-settings');
+    const openaiSettings = document.getElementById('openai-settings');
     
     // Active styles
     const activeClass = 'bg-white text-slate-800 shadow-sm';
     const inactiveClass = 'text-slate-600 hover:text-slate-800';
     
-    // Get settings sections
-    const openaiSettings = document.getElementById('openai-settings');
+    // Reset all to inactive
+    if (segOpenAI) segOpenAI.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${inactiveClass}`;
+    if (segInternal) segInternal.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${inactiveClass}`;
+    if (segCambrian) segCambrian.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${inactiveClass}`;
     
+    // Hide all settings
+    if (openaiSettings) openaiSettings.classList.add('hidden');
+    if (internalSettings) internalSettings.classList.add('hidden');
+    if (cambrianSettings) cambrianSettings.classList.add('hidden');
+    
+    // Activate selected
     if (provider === 'internal') {
-        // Update segmented control
-        segInternal.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${activeClass}`;
-        segOpenAI.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${inactiveClass}`;
-        // Show internal settings, hide OpenAI
+        if (segInternal) segInternal.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${activeClass}`;
         if (internalSettings) {
             internalSettings.classList.remove('hidden');
             if (animate) internalSettings.classList.add('animate-fadeIn');
         }
-        if (openaiSettings) openaiSettings.classList.add('hidden');
+    } else if (provider === 'cambrian') {
+        if (segCambrian) segCambrian.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${activeClass}`;
+        if (cambrianSettings) {
+            cambrianSettings.classList.remove('hidden');
+            if (animate) cambrianSettings.classList.add('animate-fadeIn');
+        }
     } else {
-        // Update segmented control
-        segOpenAI.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${activeClass}`;
-        segInternal.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${inactiveClass}`;
-        // Hide internal settings, show OpenAI
-        if (internalSettings) internalSettings.classList.add('hidden');
+        // Default to OpenAI
+        if (segOpenAI) segOpenAI.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${activeClass}`;
         if (openaiSettings) openaiSettings.classList.remove('hidden');
     }
 }
@@ -2078,19 +2097,34 @@ function resetRefreshButton() {
 
 async function saveLLMProvider() {
     const segInternal = document.getElementById('seg-internal');
+    const segCambrian = document.getElementById('seg-cambrian');
     const urlInput = document.getElementById('internal-llm-url');
     const modelSelect = document.getElementById('internal-llm-model');
+    const cambrianTokenInput = document.getElementById('cambrian-token');
+    const cambrianModelSelect = document.getElementById('cambrian-model');
     const statusSpan = document.getElementById('llm-provider-status');
     const saveBtn = document.getElementById('btn-save-llm-provider');
     
-    // Check if internal is selected by checking the button class
+    // Check which provider is selected by checking the button class
     const isInternal = segInternal?.className.includes('bg-white');
-    const provider = isInternal ? 'internal' : 'openai';
+    const isCambrian = segCambrian?.className.includes('bg-white');
+    
+    let provider = 'openai';
+    if (isInternal) provider = 'internal';
+    else if (isCambrian) provider = 'cambrian';
+    
     const internal_url = urlInput?.value.trim() || null;
     const internal_model = modelSelect?.value.trim() || 'llama3.1:8b';
+    const cambrian_token = cambrianTokenInput?.value.trim() || null;
+    const cambrian_model = cambrianModelSelect?.value.trim() || 'LLAMA 3.3 70B';
     
     if (provider === 'internal' && !internal_url) {
         alert('Please enter the internal LLM server URL');
+        return;
+    }
+    
+    if (provider === 'cambrian' && !cambrian_token) {
+        alert('Please enter the Cambrian API token');
         return;
     }
     
@@ -2101,7 +2135,13 @@ async function saveLLMProvider() {
         const res = await fetch(`${API_BASE}/settings/llm-provider`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ provider, internal_url, internal_model })
+            body: JSON.stringify({ 
+                provider, 
+                internal_url, 
+                internal_model,
+                cambrian_token,
+                cambrian_model
+            })
         });
         
         if (res.ok) {
@@ -2115,6 +2155,8 @@ async function saveLLMProvider() {
             `;
             setTimeout(() => { statusSpan.innerHTML = ''; }, 3000);
             updateLLMStatus();
+            // Clear token input after saving
+            if (cambrianTokenInput) cambrianTokenInput.value = '';
         } else {
             const error = await res.json();
             alert(`Failed to save: ${error.detail || 'Unknown error'}`);
@@ -2134,8 +2176,10 @@ async function testLLMConnection() {
     const testText = document.getElementById('test-text');
     const statusSpan = document.getElementById('llm-provider-status');
     const segInternal = document.getElementById('seg-internal');
+    const segCambrian = document.getElementById('seg-cambrian');
     const urlInput = document.getElementById('internal-llm-url');
     const modelSelect = document.getElementById('internal-llm-model');
+    const cambrianTokenInput = document.getElementById('cambrian-token');
     
     // Show loading state with spinner
     testBtn.disabled = true;
@@ -2148,11 +2192,16 @@ async function testLLMConnection() {
     if (testText) testText.textContent = 'Testing...';
     statusSpan.innerHTML = '';
     
-    // Check if internal is selected by checking the button class
+    // Check which provider is selected
     const isInternal = segInternal?.className.includes('bg-white');
+    const isCambrian = segCambrian?.className.includes('bg-white');
     const body = {};
     
-    if (isInternal) {
+    if (isCambrian) {
+        body.provider = 'cambrian';
+        const token = cambrianTokenInput?.value.trim();
+        if (token) body.cambrian_token = token;
+    } else if (isInternal) {
         const url = urlInput?.value.trim();
         const model = modelSelect?.value;
         
@@ -2226,6 +2275,102 @@ async function testLLMConnection() {
         `;
     } finally {
         resetTestButton();
+    }
+}
+
+// Refresh Cambrian model list
+async function refreshCambrianModels() {
+    const tokenInput = document.getElementById('cambrian-token');
+    const modelSelect = document.getElementById('cambrian-model');
+    const refreshBtn = document.getElementById('btn-refresh-cambrian-models');
+    
+    const token = tokenInput?.value.trim();
+    
+    // Store current selection
+    const currentModel = modelSelect?.value || 'LLAMA 3.3 70B';
+    
+    // Show loading state
+    if (refreshBtn) {
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = `
+            <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+        `;
+    }
+    
+    try {
+        let url = `${API_BASE}/settings/list-cambrian-models`;
+        if (token) url += `?token=${encodeURIComponent(token)}`;
+        
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        // Clear existing options
+        modelSelect.innerHTML = '';
+        
+        if (data.models && data.models.length > 0) {
+            data.models.forEach(model => {
+                const option = document.createElement('option');
+                option.value = model;
+                option.textContent = model;
+                if (model === currentModel) {
+                    option.selected = true;
+                }
+                modelSelect.appendChild(option);
+            });
+            
+            // Show success indicator
+            if (refreshBtn) {
+                refreshBtn.innerHTML = `
+                    <svg class="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                `;
+                setTimeout(() => resetCambrianRefreshButton(), 2000);
+            }
+        } else {
+            // No models found or error
+            const option = document.createElement('option');
+            option.value = currentModel;
+            option.textContent = data.error || currentModel;
+            modelSelect.appendChild(option);
+            
+            if (refreshBtn && data.error) {
+                refreshBtn.innerHTML = `
+                    <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                `;
+                setTimeout(() => resetCambrianRefreshButton(), 2000);
+            }
+        }
+    } catch (e) {
+        console.error("Failed to refresh Cambrian model list", e);
+        if (refreshBtn) {
+            refreshBtn.innerHTML = `
+                <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+            `;
+            setTimeout(() => resetCambrianRefreshButton(), 2000);
+        }
+    } finally {
+        if (refreshBtn) refreshBtn.disabled = false;
+    }
+}
+
+function resetCambrianRefreshButton() {
+    const refreshBtn = document.getElementById('btn-refresh-cambrian-models');
+    if (refreshBtn) {
+        refreshBtn.innerHTML = `
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                </path>
+            </svg>
+        `;
     }
 }
 

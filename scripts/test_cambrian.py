@@ -42,21 +42,37 @@ def main():
     # Test 1: HTTP 連線
     print("[1/3] 測試 HTTP 連線...")
     try:
-        headers = {"Authorization": f"Bearer {args.token}"}
-        r = httpx.get(f"{args.url}/v1/models", headers=headers, verify=verify_ssl, timeout=10.0)
+        headers = {
+            "Authorization": f"Bearer {args.token}",
+            "Accept": "application/json"
+        }
+        # 根據用戶驗證更新 endpoint: /assistant/llm_model
+        # 處理 url 結尾可能有或沒有 /
+        base_url = args.url.rstrip('/')
+        url = f"{base_url}/assistant/llm_model"
+        
+        # 特殊處理: 如果用戶傳入的 url 已經帶有 /v1，嘗試移除它以匹配正確路徑
+        if base_url.endswith("/v1"):
+             url = base_url.replace("/v1", "/assistant/llm_model")
+
+        print(f"      Target URL: {url}") # 顯示實際打的 URL 方便除錯
+        r = httpx.get(url, headers=headers, verify=verify_ssl, timeout=10.0)
+        
         if r.status_code == 200:
             print(f"      ✅ HTTP 連線成功")
             data = r.json()
-            models = data.get('data', [])
+            # 根據文件更新: key 為 "llm_list"
+            models = data.get('llm_list', [])
             if models:
                 print(f"      可用模型:")
                 for m in models[:5]:
-                    model_id = m.get('id', 'unknown')
-                    print(f"        - {model_id}")
+                    model_name = m.get('name', 'unknown') # 文件是用 "name"
+                    desc = m.get('description', '')
+                    print(f"        - {model_name} ({desc})")
                 if len(models) > 5:
                     print(f"        ... 還有 {len(models) - 5} 個模型")
             else:
-                print("      ⚠️  無法取得模型列表")
+                print("      ⚠️  無法取得模型列表 (llm_list 為空)")
         elif r.status_code == 401:
             print(f"      ❌ 認證失敗 (401) - 請檢查 API Token")
             sys.exit(1)
@@ -84,26 +100,47 @@ def main():
         print(f"      ❌ Client 初始化失敗: {e}")
         sys.exit(1)
 
-    # Test 3: LLM 呼叫
-    print("\n[3/3] 測試 LLM 回應...")
-    try:
-        response = client.chat.completions.create(
-            model=args.model,
-            messages=[
-                {"role": "user", "content": "Say 'Hello' in one word only."}
-            ],
-            max_tokens=10,
-            temperature=0
-        )
-        content = response.choices[0].message.content
-        print(f"      ✅ LLM 回應成功")
-        print(f"      回應內容: {content}")
-    except Exception as e:
-        print(f"      ❌ LLM 呼叫失敗: {e}")
-        print("\n      可能原因:")
-        print("        - API Token 無效")
-        print("        - 模型名稱不正確")
-        print("        - 配額不足")
+    # Test 3: LLM 呼叫 (遍歷所有模型)
+    print("\n[3/3] 測試 LLM 回應 (遍歷所有模型)...")
+    
+    # 從 Test 1 收集到的模型列表，如果 Test 1 失敗或沒抓到，就用參數指定的單一模型當作 fallback
+    target_models = []
+    if 'models' in locals() and models:
+        for m in models:
+            m_name = m.get('name') # 根據前面 llm_list 結構
+            if m_name:
+                target_models.append(m_name)
+    
+    if not target_models:
+        print(f"      ⚠️  未偵測到模型列表，使用預設/指定模型: {args.model}")
+        target_models = [args.model]
+
+    print(f"      即將測試 {len(target_models)} 個模型: {', '.join(target_models)}")
+    
+    success_count = 0
+    fail_count = 0
+
+    for model_name in target_models:
+        print(f"\n      👉 測試模型: {model_name}")
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "user", "content": "Say 'Hello' in one word only."}
+                ],
+                max_tokens=10,
+                temperature=0
+            )
+            content = response.choices[0].message.content
+            print(f"         ✅ 成功! 回應: {content}")
+            success_count += 1
+        except Exception as e:
+            print(f"         ❌ 失敗: {e}")
+            fail_count += 1
+
+    print("\n      " + "-"*30)
+    print(f"      測試總結: 成功 {success_count}, 失敗 {fail_count}")
+    if success_count == 0:
         sys.exit(1)
 
     print()

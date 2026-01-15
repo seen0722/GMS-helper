@@ -18,9 +18,12 @@ class RedmineSettingsUpdate(BaseModel):
 
 
 class LLMProviderUpdate(BaseModel):
-    provider: str  # openai | internal
+    provider: str  # openai | internal | cambrian
     internal_url: Optional[str] = None
     internal_model: Optional[str] = "llama3.1:8b"
+    cambrian_url: Optional[str] = "https://api.cambrian.pegatroncorp.com"
+    cambrian_token: Optional[str] = None
+    cambrian_model: Optional[str] = "LLAMA 3.3 70B"
 
 
 def get_or_create_settings(db: Session) -> models.Settings:
@@ -145,15 +148,35 @@ def get_llm_provider(db: Session = Depends(get_db)):
     
     provider = settings.llm_provider or "openai"
     internal_model = settings.internal_llm_model or "llama3.1:8b"
+    cambrian_model = settings.cambrian_model or "LLAMA 3.3 70B"
     
-    active_model = internal_model if provider == "internal" else "gpt-4o-mini"
-    provider_display = "Internal AI" if provider == "internal" else "OpenAI"
+    if provider == "cambrian":
+        active_model = cambrian_model
+        provider_display = "Cambrian"
+    elif provider == "internal":
+        active_model = internal_model
+        provider_display = "Internal AI"
+    else:
+        active_model = "gpt-4o-mini"
+        provider_display = "OpenAI"
+    
+    # Check if cambrian token is set
+    cambrian_configured = False
+    if settings.cambrian_token:
+        try:
+            encryption.decrypt(settings.cambrian_token)
+            cambrian_configured = True
+        except:
+            pass
     
     return {
         "provider": provider,
         "provider_display": provider_display,
         "internal_url": settings.internal_llm_url,
         "internal_model": internal_model,
+        "cambrian_url": settings.cambrian_url or "https://api.cambrian.pegatroncorp.com",
+        "cambrian_model": cambrian_model,
+        "cambrian_configured": cambrian_configured,
         "active_model": active_model,
         "openai_configured": bool(settings.openai_api_key)
     }
@@ -162,11 +185,14 @@ def get_llm_provider(db: Session = Depends(get_db)):
 @router.put("/llm-provider")
 def update_llm_provider(data: LLMProviderUpdate, db: Session = Depends(get_db)):
     """Update the LLM provider settings."""
-    if data.provider not in ["openai", "internal"]:
-        raise HTTPException(status_code=400, detail="Provider must be 'openai' or 'internal'")
+    if data.provider not in ["openai", "internal", "cambrian"]:
+        raise HTTPException(status_code=400, detail="Provider must be 'openai', 'internal', or 'cambrian'")
     
     if data.provider == "internal" and not data.internal_url:
         raise HTTPException(status_code=400, detail="Internal URL is required when using internal provider")
+    
+    if data.provider == "cambrian" and not data.cambrian_token:
+        raise HTTPException(status_code=400, detail="Cambrian token is required when using Cambrian provider")
     
     try:
         settings = get_or_create_settings(db)
@@ -175,6 +201,10 @@ def update_llm_provider(data: LLMProviderUpdate, db: Session = Depends(get_db)):
         if data.provider == "internal":
             settings.internal_llm_url = data.internal_url.strip() if data.internal_url else None
             settings.internal_llm_model = data.internal_model or "llama3.1:8b"
+        elif data.provider == "cambrian":
+            settings.cambrian_url = data.cambrian_url.strip() if data.cambrian_url else "https://api.cambrian.pegatroncorp.com"
+            settings.cambrian_token = encryption.encrypt(data.cambrian_token.strip()) if data.cambrian_token else None
+            settings.cambrian_model = data.cambrian_model or "LLAMA 3.3 70B"
         
         db.commit()
         return {"message": f"LLM provider updated to {data.provider}"}
@@ -229,28 +259,122 @@ def list_available_models(url: Optional[str] = None, db: Session = Depends(get_d
     return {"models": [], "error": "Failed to fetch models from server"}
 
 
+@router.get("/list-cambrian-models")
+def list_cambrian_models(token: Optional[str] = None, url: Optional[str] = None, db: Session = Depends(get_db)):
+    """Fetch available models from Cambrian LLM gateway."""
+    import httpx
+    
+    settings = get_or_create_settings(db)
+    base_url = url or settings.cambrian_url or "https://api.cambrian.pegatroncorp.com"
+    
+    # Use provided token or decrypt stored token
+    api_token = token
+    if not api_token and settings.cambrian_token:
+        try:
+            api_token = encryption.decrypt(settings.cambrian_token)
+        except:
+            pass
+    
+    if not api_token:
+        return {"models": [], "error": "No Cambrian token configured"}
+    
+    # Normalize URL
+    clean_url = base_url.rstrip('/')
+    
+    try:
+        # Use Cambrian /assistant/llm_model endpoint
+        headers = {
+            "Authorization": f"Bearer {api_token}",
+            "Accept": "application/json"
+        }
+        response = httpx.get(f"{clean_url}/assistant/llm_model", headers=headers, verify=False, timeout=10.0)
+        
+        if response.status_code == 200:
+            data = response.json()
+            models_list = data.get('llm_list', [])
+            models = [m.get('name', 'unknown') for m in models_list if m.get('name')]
+            return {"models": models, "source": "cambrian"}
+        elif response.status_code == 401:
+            return {"models": [], "error": "Authentication failed - invalid token"}
+        else:
+            return {"models": [], "error": f"Server returned status {response.status_code}"}
+    except Exception as e:
+        print(f"Cambrian API failed: {e}")
+        return {"models": [], "error": f"Connection failed: {str(e)}"}
+
+
 class TestConnectionRequest(BaseModel):
     url: Optional[str] = None
     model: Optional[str] = None
+    provider: Optional[str] = None  # Force test specific provider
+    cambrian_token: Optional[str] = None
 
 
 @router.post("/test-llm-connection")
 def test_llm_connection(request: Optional[TestConnectionRequest] = None, db: Session = Depends(get_db)):
-    """Test the LLM connection. Uses provided URL/model if given, otherwise uses saved settings."""
+    """Test the LLM connection. Uses provided params if given, otherwise uses saved settings."""
     import httpx
     
     settings = get_or_create_settings(db)
     
-    # Use request params if provided, otherwise fall back to saved settings
-    test_url = (request.url if request and request.url else None) or settings.internal_llm_url
-    test_model = (request.model if request and request.model else None) or settings.internal_llm_model or "llama3.1:8b"
-    provider = settings.llm_provider or "openai"
+    # Determine provider
+    provider = (request.provider if request and request.provider else None) or settings.llm_provider or "openai"
     
-    # If URL is provided in request, assume testing internal provider
-    if request and request.url:
+    # If URL is provided in request without explicit provider, assume internal
+    if request and request.url and not request.provider:
         provider = "internal"
     
-    if provider == "internal":
+    if provider == "cambrian":
+        # Test Cambrian connection
+        cambrian_url = settings.cambrian_url or "https://api.cambrian.pegatroncorp.com"
+        cambrian_model = settings.cambrian_model or "LLAMA 3.3 70B"
+        
+        # Get token from request or settings
+        api_token = request.cambrian_token if request and request.cambrian_token else None
+        if not api_token and settings.cambrian_token:
+            try:
+                api_token = encryption.decrypt(settings.cambrian_token)
+            except:
+                pass
+        
+        if not api_token:
+            return {"success": False, "provider": "cambrian", "message": "No Cambrian token configured"}
+        
+        clean_url = cambrian_url.rstrip('/')
+        
+        try:
+            headers = {
+                "Authorization": f"Bearer {api_token}",
+                "Accept": "application/json"
+            }
+            response = httpx.get(f"{clean_url}/assistant/llm_model", headers=headers, verify=False, timeout=10.0)
+            
+            if response.status_code == 200:
+                data = response.json()
+                models_list = data.get('llm_list', [])
+                model_names = [m.get('name', 'unknown') for m in models_list[:5]]
+                model_exists = any(m.get('name') == cambrian_model for m in models_list)
+                
+                return {
+                    "success": True,
+                    "provider": "cambrian",
+                    "url": cambrian_url,
+                    "model": cambrian_model,
+                    "model_valid": model_exists,
+                    "available_models": model_names,
+                    "message": f"Connected! Model '{cambrian_model}' {'found' if model_exists else 'not found, please select from dropdown'}"
+                }
+            elif response.status_code == 401:
+                return {"success": False, "provider": "cambrian", "message": "Authentication failed - invalid token"}
+            else:
+                return {"success": False, "provider": "cambrian", "message": f"Server responded with status {response.status_code}"}
+        except Exception as e:
+            return {"success": False, "provider": "cambrian", "message": f"Connection failed: {str(e)}"}
+    
+    elif provider == "internal":
+        test_url = (request.url if request and request.url else None) or settings.internal_llm_url
+        test_model = (request.model if request and request.model else None) or settings.internal_llm_model or "llama3.1:8b"
+        
         if not test_url:
             return {"success": False, "provider": "internal", "message": "No internal LLM URL configured"}
         
@@ -286,4 +410,3 @@ def test_llm_connection(request: Optional[TestConnectionRequest] = None, db: Ses
             return {"success": True, "provider": "openai", "message": "OpenAI API key configured"}
         else:
             return {"success": False, "provider": "openai", "message": "No OpenAI API key configured"}
-

@@ -129,10 +129,62 @@ class InternalLLMClient(LLMClient):
                 "confidence_score": 1,
                 "suggested_assignment": "Unknown"
             }
+class CambrianLLMClient(LLMClient):
+    """LLM client for Cambrian internal gateway with SSL verification disabled."""
+    
+    def __init__(self, base_url: str, api_key: str, model: str = "LLAMA 3.3 70B"):
+        """
+        Initialize Cambrian LLM client.
+        
+        Args:
+            base_url: The Cambrian API URL (e.g., https://api.cambrian.pegatroncorp.com)
+            api_key: Cambrian API token
+            model: The model name to use (e.g., LLAMA 3.3 70B)
+        """
+        import httpx
+        # Disable SSL verification for internal network
+        http_client = httpx.Client(verify=False)
+        self.client = OpenAI(base_url=base_url, api_key=api_key, http_client=http_client)
+        self.model = model
+        self.base_url = base_url
+
+    def analyze_failure(self, failure_text: str) -> dict:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Analyze this test failure:\n\n{failure_text[:3000]}"}
+                ],
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            result = json.loads(content)
+            
+            # Combine title and summary for backward compatibility and frontend display
+            if 'title' in result and 'summary' in result:
+                result['ai_summary'] = f"{result['title']}\n{result['summary']}"
+            elif 'title' in result:
+                 result['ai_summary'] = result['title']
+            elif 'summary' in result:
+                 result['ai_summary'] = result['summary']
+                 
+            return result
+        except Exception as e:
+            print(f"Cambrian LLM API call failed ({self.base_url}): {e}")
+            return {
+                "root_cause": "AI Analysis Failed",
+                "solution": f"Error connecting to Cambrian: {str(e)}",
+                "ai_summary": "Analysis failed due to Cambrian API error.",
+                "severity": "Low",
+                "category": "Unknown",
+                "confidence_score": 1,
+                "suggested_assignment": "Unknown"
+            }
 
 
 def get_llm_client():
-    """Get LLM client based on stored settings - supports OpenAI, Internal (Ollama/vLLM), or Mock."""
+    """Get LLM client based on stored settings - supports OpenAI, Internal (Ollama/vLLM), Cambrian, or Mock."""
     from backend.database.database import SessionLocal
     from backend.database import models
     from backend.utils import encryption
@@ -144,8 +196,28 @@ def get_llm_client():
         if setting:
             provider = getattr(setting, 'llm_provider', 'openai') or 'openai'
             
+            # Cambrian LLM
+            if provider == 'cambrian':
+                cambrian_url = getattr(setting, 'cambrian_url', None)
+                cambrian_token = getattr(setting, 'cambrian_token', None)
+                cambrian_model = getattr(setting, 'cambrian_model', 'LLAMA 3.3 70B') or 'LLAMA 3.3 70B'
+                
+                if cambrian_url and cambrian_token:
+                    try:
+                        decrypted_token = encryption.decrypt(cambrian_token)
+                        db.close()
+                        return CambrianLLMClient(base_url=cambrian_url, api_key=decrypted_token, model=cambrian_model)
+                    except Exception as e:
+                        print(f"Error decrypting Cambrian token: {e}")
+                        db.close()
+                        return MockLLMClient()
+                else:
+                    print("Cambrian URL or token not configured, falling back to Mock")
+                    db.close()
+                    return MockLLMClient()
+            
             # Internal LLM (Ollama/vLLM)
-            if provider == 'internal':
+            elif provider == 'internal':
                 internal_url = getattr(setting, 'internal_llm_url', None)
                 internal_model = getattr(setting, 'internal_llm_model', 'llama3.1:8b') or 'llama3.1:8b'
                 

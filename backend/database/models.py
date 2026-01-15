@@ -100,6 +100,11 @@ class Settings(Base):
     redmine_api_key = Column(String, nullable=True)
     
     # LLM Provider Settings
-    llm_provider = Column(String, default="openai")  # openai | internal
+    llm_provider = Column(String, default="openai")  # openai | internal | cambrian
     internal_llm_url = Column(String, nullable=True)  # e.g., http://localhost:11434/v1
     internal_llm_model = Column(String, default="llama3.1:8b")  # Model name for internal LLM
+    
+    # Cambrian LLM Settings
+    cambrian_url = Column(String, default="https://api.cambrian.pegatroncorp.com")
+    cambrian_token = Column(String, nullable=True)  # Encrypted API token
+    cambrian_model = Column(String, default="LLAMA 3.3 70B")
