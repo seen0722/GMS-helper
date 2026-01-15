@@ -59,19 +59,29 @@ python scripts/test_cambrian.py --token YOUR_TOKEN
 
 ---
 
-## 環境變數配置
+## 配置 LLM Provider
+
+### 方法一：透過 Web UI (推薦)
+
+1. 開啟瀏覽器訪問 `http://<server-ip>:8000`
+2. 點擊左側 **Settings**
+3. 在 **AI Provider** 區塊選擇 **Cambrian**
+4. 輸入您的 **API Token**
+5. 選擇 **Model** (預設: LLAMA 3.3 70B)
+6. 點擊 **Save Settings**
+
+### 方法二：透過環境變數
 
 在 `.env` 檔案中設定：
 
 ```bash
-# LLM Provider
-LLM_PROVIDER=internal
+# LLM Provider: openai | internal | cambrian
+LLM_PROVIDER=cambrian
 
 # Cambrian Gateway
-INTERNAL_LLM_URL=https://api.cambrian.pegatroncorp.com
-INTERNAL_LLM_MODEL=LLAMA 3.3 70B
-INTERNAL_LLM_API_KEY=your-api-token
-INTERNAL_LLM_VERIFY_SSL=0
+CAMBRIAN_URL=https://api.cambrian.pegatroncorp.com
+CAMBRIAN_TOKEN=your-api-token
+CAMBRIAN_MODEL=LLAMA 3.3 70B
 ```
 
 ---
