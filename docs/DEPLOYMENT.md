@@ -379,5 +379,51 @@ sudo docker-compose up -d
   ```
 - **Stop Service**:
   ```bash
-  sudo docker-compose down
-  ```
+### 6. Troubleshooting Docker Deployment
+
+If you encounter issues during deployment, check these common solutions:
+
+#### 1. "no matching manifest for linux/amd64"
+**Cause:** Attempting to run an ARM64 (Mac M1/M2) image on an AMD64 (Intel/AMD) server.
+**Solution:**
+The image must be built for the target platform. Use the multi-arch image provided in the repo, or rebuild with:
+```bash
+docker build --platform linux/amd64 -t seen0516/gms-helper:latest .
+```
+
+#### 2. "OpenBLAS blas_thread_init: pthread_create failed"
+**Cause:** Docker security profile blocking thread creation on some Linux kernels (common in older kernels or specific VPS).
+**Solution:**
+Add `security_opt` and `OPENBLAS_NUM_THREADS` to your `docker-compose.yml`:
+```yaml
+services:
+  gms-helper:
+    # ...
+    security_opt:
+      - seccomp:unconfined
+    environment:
+      - OPENBLAS_NUM_THREADS=1
+```
+
+#### 3. Container Status "Up (unhealthy)"
+**Cause:** The health check endpoint (`/health`) is returning 404 or the service is too slow to start.
+**Solution:**
+- Check logs: `sudo docker-compose logs --tail=50`
+- Ensure the backend has a root level `/health` endpoint.
+- If the logs show "Application startup complete", the service is likely working despite the unhealthy label.
+
+#### 4. "ERR_CONNECTION_REFUSED" on localhost
+**Cause:** Trying to access `localhost:8000` from a *remote* computer (e.g., your Windows laptop) instead of the server itself.
+**Solution:**
+Use the server's LAN or Public IP address. Find it by running:
+```bash
+hostname -I
+```
+Then access: `http://<YOUR_SERVER_IP>:8000`
+
+#### 5. Cambrian/LLM API Error 404
+**Cause:** identifying the wrong API endpoint base URL. OpenAI-compatible APIs often require `/v1` at the end.
+**Solution:**
+- The system now automatically appends `/v1` if missing.
+- Ensure your Base URL is correct, e.g., `https://api.cambrian.pegatroncorp.com` (the system will use `.../v1`).
+- Check your `LLAMA 3.3 70B` model name matches exactly what the server expects.
