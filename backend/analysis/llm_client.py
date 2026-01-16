@@ -144,6 +144,14 @@ class CambrianLLMClient(LLMClient):
         import httpx
         # Disable SSL verification for internal network
         http_client = httpx.Client(verify=False)
+        
+        # Ensure base_url ends with /v1
+        if base_url and not base_url.endswith('/v1'):
+            if base_url.endswith('/'):
+                base_url = f"{base_url}v1"
+            else:
+                base_url = f"{base_url}/v1"
+                
         self.client = OpenAI(base_url=base_url, api_key=api_key, http_client=http_client)
         self.model = model
         self.base_url = base_url

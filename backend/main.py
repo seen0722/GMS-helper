@@ -37,6 +37,10 @@ app.include_router(import_json.router, prefix="/api/import", tags=["Import"])
 # Mount static files
 app.mount("/static", StaticFiles(directory="backend/static"), name="static")
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
 @app.get("/")
 def read_root():
     return FileResponse('backend/static/index.html')

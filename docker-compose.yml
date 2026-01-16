@@ -12,7 +12,11 @@ services:
       - ./data:/app/data
       # Mount uploads directory
       - ./uploads:/app/uploads
+    security_opt:
+      - seccomp:unconfined
     environment:
+      # Fix for OpenBLAS threading issue on some hosts
+      - OPENBLAS_NUM_THREADS=1
       # LLM Configuration for Cambrian Gateway
       - LLM_PROVIDER=${LLM_PROVIDER:-internal}
       - INTERNAL_LLM_URL=${INTERNAL_LLM_URL:-https://api.cambrian.pegatroncorp.com}
