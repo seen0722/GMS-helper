@@ -56,8 +56,31 @@ A powerful web-based tool for analyzing GMS (Google Mobile Services) certificati
    uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
    ```
 
-5. **Access the application**
+6. **Access the application**
    Open your browser and navigate to: `http://localhost:8000`
+
+### Docker Support
+
+You can also run the application using Docker:
+
+```bash
+# Pull the latest image
+docker pull seen0516/gms-helper:latest
+
+# Run with Docker Compose (Recommended)
+docker-compose up -d
+```
+
+Or manually with `docker run`:
+
+```bash
+docker run -d \
+  -p 8000:8000 \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/uploads:/app/uploads \
+  --name gms-helper \
+  seen0516/gms-helper:latest
+```
 
 ## Configuration
 

@@ -45,6 +45,12 @@ We support deploying to **Vultr VPS** with **Cloudflare** for DNS and security.
     ```
 3.  **Configure**: Set up your OpenAI API Key in the web UI.
 
+### Docker Quick Start
+
+```bash
+docker run -d -p 8000:8000 -v $(pwd)/data:/app/data seen0516/gms-helper:latest
+```
+
 > For the complete deployment guide, including SSL and Cloudflare setup, see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---

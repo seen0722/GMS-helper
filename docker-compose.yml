@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   gms-helper:
-    image: gms-helper:latest
+    image: seen0516/gms-helper:latest
     container_name: gms-helper
     restart: unless-stopped
     ports:
