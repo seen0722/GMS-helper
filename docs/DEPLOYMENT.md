@@ -307,5 +307,77 @@ If `ssh-keygen` fails with "Too many arguments" or similar:
 3. **Backups**: Regularly backup `gms_analysis.db`.
    ```bash
    # Copy to local machine
-   scp root@YOUR_IP:/var/www/gms-analyzer/gms_analysis.db ./backup.db
    ```
+   
+---
+
+## 🐳 Phase 6: Docker Deployment (Alternative)
+
+For a cleaner and more portable deployment, you can use Docker.
+
+### 1. Recommended Structure
+We recommend organizing your Docker services in a dedicated directory.
+
+```text
+~/docker-services/
+└── gms-helper/               <-- Project Root
+    ├── docker-compose.yml    <-- Service Definition
+    ├── .env                  <-- Configuration & Secrets
+    ├── data/                 <-- Database Persistence (Auto-created)
+    └── uploads/              <-- Uploads Persistence (Auto-created)
+```
+
+### 2. One-Click Setup
+Run this on your server to set up the directory and files:
+
+```bash
+# 1. Create directory
+mkdir -p ~/docker-services/gms-helper
+cd ~/docker-services/gms-helper
+
+# 2. Create .env file
+cat <<EOF > .env
+LLM_PROVIDER=internal
+INTERNAL_LLM_URL=https://api.cambrian.pegatroncorp.com
+INTERNAL_LLM_MODEL=LLAMA 3.3 70B
+INTERNAL_LLM_API_KEY=
+INTERNAL_LLM_VERIFY_SSL=0
+EOF
+
+# 3. Create docker-compose.yml
+cat <<EOF > docker-compose.yml
+version: '3.8'
+
+services:
+  gms-helper:
+    image: seen0516/gms-helper:latest
+    container_name: gms-helper
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    env_file:
+      - .env
+EOF
+```
+
+### 3. Start Service
+```bash
+sudo docker-compose up -d
+```
+
+### 4. Management Commands
+- **Update with latest code**:
+  ```bash
+  sudo docker-compose pull && sudo docker-compose up -d
+  ```
+- **View Logs**:
+  ```bash
+  sudo docker-compose logs -f
+  ```
+- **Stop Service**:
+  ```bash
+  sudo docker-compose down
+  ```
