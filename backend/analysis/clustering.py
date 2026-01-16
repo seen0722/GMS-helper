@@ -35,6 +35,7 @@ except ImportError:
     print("HDBSCAN not available, falling back to KMeans")
 
 from sklearn.cluster import MiniBatchKMeans
+from sklearn.decomposition import TruncatedSVD
 
 
 class ImprovedFailureClusterer:
@@ -66,6 +67,7 @@ class ImprovedFailureClusterer:
         'java', 'lang', 'org', 'junit', 'android', 'test', 'androidx',
         'assertionerror', 'exception', 'error', 'assert', 'at', 'in', 'from',
         'com', 'cts', 'null', 'true', 'false', 'expected', 'but', 'was',
+        'tradefed', 'testcases', 'app', 'base', 'runner', 'invoke', 'run'
     ]
     
     # Common Android exception types for extraction
@@ -79,7 +81,8 @@ class ImprovedFailureClusterer:
         min_cluster_size: int = 2, 
         use_hdbscan: bool = True,
         min_samples: int = 1,
-        max_features: int = 2000
+        max_features: int = 2000,
+        svd_components: int = 100  # PRD Phase 2: Dimensionality reduction
     ):
         """
         Initialize the improved clusterer.
@@ -89,10 +92,12 @@ class ImprovedFailureClusterer:
             use_hdbscan: Whether to use HDBSCAN (True) or KMeans fallback (False)
             min_samples: HDBSCAN min_samples parameter
             max_features: Maximum features for TF-IDF vectorizer
+            svd_components: Number of SVD components for dimensionality reduction (0 to disable)
         """
         self.min_cluster_size = min_cluster_size
         self.use_hdbscan = use_hdbscan and HDBSCAN_AVAILABLE
         self.min_samples = min_samples
+        self.svd_components = svd_components
         # P2: Combine English stop words with domain-specific stop words
         combined_stop_words = list(set(ENGLISH_STOP_WORDS) | set(self.DOMAIN_STOP_WORDS))
         
@@ -103,6 +108,10 @@ class ImprovedFailureClusterer:
             sublinear_tf=True,   # Apply sublinear tf scaling
             min_df=1,            # Include rare terms (important for specific errors)
         )
+        
+        # PRD Phase 2: SVD for dimensionality reduction
+        self.svd = TruncatedSVD(n_components=svd_components, random_state=42) if svd_components > 0 else None
+        
         self._last_metrics: Dict[str, Any] = {}
         
     def extract_exception_type(self, stack_trace: str) -> str:
@@ -180,6 +189,26 @@ class ImprovedFailureClusterer:
         
         return '\n'.join(filtered)
     
+    def extract_top_frames(self, stack_trace: str, n: int = 3) -> str:
+        """
+        Extract only the top N stack frames (closest to failure point).
+        
+        Args:
+            stack_trace: Full stack trace text
+            n: Number of frames to keep (default 3)
+            
+        Returns:
+            Space-separated top N frames
+        """
+        if not stack_trace:
+            return ""
+        
+        # Find lines that start with 'at ' (stack frames)
+        frames = [l.strip() for l in stack_trace.split('\n') if l.strip().startswith('at ')]
+        
+        # Return top N frames joined by space
+        return ' '.join(frames[:n])
+    
     def extract_test_package(self, class_name: str) -> str:
         """
         Extract the test package/domain from class name.
@@ -220,6 +249,12 @@ class ImprovedFailureClusterer:
         """
         enriched_texts = []
         
+        # P3: Define generic exceptions that shouldn't influence clustering heavily
+        GENERIC_EXCEPTIONS = {
+            'assertionerror', 'runtimeexception', 'exception', 'throwable',
+            'error', 'testfailure', 'assertionfailederror', 'retryableexception'
+        }
+        
         for f in failures:
             module = f.get('module_name', '') or ''
             class_name = f.get('class_name', '') or ''
@@ -231,23 +266,41 @@ class ImprovedFailureClusterer:
             exception_type = self.extract_exception_type(stack)
             assertion_msg = self.extract_assertion_message(stack)
             filtered_stack = self.filter_framework_frames(stack)
+            top_frames = self.extract_top_frames(stack, n=3)  # Only top 3 frames
             test_package = self.extract_test_package(class_name)
             
             # Get simple class name (without package)
             simple_class = class_name.split('.')[-1] if class_name else ''
             
+            # Get simple exception name for checking
+            simple_exception = exception_type.split('.')[-1].lower() if exception_type else ''
+            
+            # Decision: Should we emphasize the exception?
+            # If it's generic, we DON'T add it to the enriched text multiple times.
+            # We relies on module/class/message to drive clustering.
+            if simple_exception in GENERIC_EXCEPTIONS:
+                # It's generic, don't emphasize it. 
+                # We might not even want it in the 'exception_type' block if it causes over-grouping.
+                # But let's just add it once (implicit in stack) effectively by not adding the weighted block.
+                exception_feature = "" 
+            else:
+                # Specific exception (e.g., SQLiteConstraintException), weight it!
+                exception_feature = f"{exception_type} {exception_type}"
+            
             # Weight important features by repetition
-            # Module is most important (3x), then class (2x), then exception
-            # This ensures domain context influences clustering
+            # Module is DOMINANT (10x) to strongly encourage same-module grouping
+            # Class (2x), method (1x)
+            # Exception is weighted ONLY if it's specific
+            # Stack trace: only top 3 frames (most relevant to failure point)
             enriched = f"""
-{module} {module} {module}
+{module} {module} {module} {module} {module} {module} {module} {module} {module} {module}
 {test_package} {test_package}
 {simple_class} {simple_class}
 {method}
-{exception_type} {exception_type}
+{exception_feature}
 {assertion_msg}
 {error}
-{filtered_stack[:800]}
+{top_frames}
 """
             enriched_texts.append(enriched.strip())
         
@@ -291,11 +344,46 @@ class ImprovedFailureClusterer:
         try:
             # Vectorize with TF-IDF
             tfidf_matrix = self.vectorizer.fit_transform(valid_texts)
+            original_dims = tfidf_matrix.shape[1]
+            
+            # PRD Phase 2: Apply SVD dimensionality reduction
+            if self.svd is not None and tfidf_matrix.shape[1] > self.svd_components:
+                # Ensure n_components doesn't exceed features
+                n_components = min(self.svd_components, tfidf_matrix.shape[1] - 1, len(valid_texts) - 1)
+                if n_components > 0:
+                    self.svd.n_components = n_components
+                    reduced_matrix = self.svd.fit_transform(tfidf_matrix)
+                    # Convert to sparse-like format for consistency
+                    feature_matrix = reduced_matrix
+                    reduced_dims = reduced_matrix.shape[1]
+                else:
+                    feature_matrix = tfidf_matrix
+                    reduced_dims = original_dims
+            else:
+                feature_matrix = tfidf_matrix
+                reduced_dims = original_dims
+            
+            # Debug logging
+            with open("clustering_debug.log", "a") as f:
+                f.write(f"\n--- Clustering Run ---\n")
+                f.write(f"Using HDBSCAN: {self.use_hdbscan}\n")
+                f.write(f"Valid texts count: {len(valid_texts)}\n")
+                f.write(f"Original TF-IDF dims: {original_dims}\n")
+                f.write(f"After SVD dims: {reduced_dims}\n")
+                if valid_texts:
+                    f.write(f"Sample Text 0:\n{valid_texts[0]}\n")
+                
+                # Check features
+                feature_names = self.vectorizer.get_feature_names_out()
+                f.write(f"Feature count: {len(feature_names)}\n")
+                f.write(f"First 50 features: {feature_names[:50]}\n")
+                f.write(f"Is 'assertionerror' in features? {'assertionerror' in feature_names}\n")
+                f.write(f"Is 'java' in features? {'java' in feature_names}\n")
             
             if self.use_hdbscan:
-                labels, metrics = self._cluster_hdbscan(tfidf_matrix, valid_texts)
+                labels, metrics = self._cluster_hdbscan(feature_matrix, valid_texts)
             else:
-                labels, metrics = self._cluster_kmeans(tfidf_matrix, valid_texts)
+                labels, metrics = self._cluster_kmeans(feature_matrix, valid_texts)
             
             # Map back to original indices (mark invalid as outliers)
             full_labels = []
@@ -308,6 +396,11 @@ class ImprovedFailureClusterer:
                     full_labels.append(-1)
             
             self._last_metrics = metrics
+            
+            with open("clustering_debug.log", "a") as f:
+                f.write(f"Metrics: {metrics}\n")
+                f.write(f"Labels: {full_labels}\n")
+
             return full_labels, metrics
             
         except Exception as e:
@@ -320,7 +413,7 @@ class ImprovedFailureClusterer:
     
     def _cluster_hdbscan(
         self, 
-        tfidf_matrix, 
+        feature_matrix, 
         texts: List[str]
     ) -> Tuple[List[int], Dict[str, Any]]:
         """
@@ -329,8 +422,11 @@ class ImprovedFailureClusterer:
         HDBSCAN automatically determines the optimal number of clusters
         and can identify outliers (noise points with label=-1).
         """
-        # Convert sparse matrix to dense for HDBSCAN
-        dense_matrix = tfidf_matrix.toarray()
+        # Convert sparse matrix to dense for HDBSCAN (SVD output is already dense)
+        if hasattr(feature_matrix, 'toarray'):
+            dense_matrix = feature_matrix.toarray()
+        else:
+            dense_matrix = np.asarray(feature_matrix)
         
         clusterer = HDBSCAN(
             min_cluster_size=self.min_cluster_size,

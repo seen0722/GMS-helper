@@ -1,26 +1,32 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-from backend.database.database import get_db
+from backend.database.database import get_db, SessionLocal
 from backend.database import models
 from backend.analysis.clustering import ImprovedFailureClusterer
 from backend.analysis.llm_client import get_llm_client
 from typing import List, Dict, Any
+import traceback
 
 router = APIRouter()
 
-def run_analysis_task(run_id: int, db: Session):
-    # Set analysis status to 'analyzing'
-    run = db.query(models.TestRun).filter(models.TestRun.id == run_id).first()
-    if run:
-        run.analysis_status = "analyzing"
-        db.commit()
-
+def run_analysis_task(run_id: int):
+    print(f"--- Starting Analysis Task for Run {run_id} ---")
+    db = SessionLocal()
     try:
+        # Set analysis status to 'analyzing'
+        run = db.query(models.TestRun).filter(models.TestRun.id == run_id).first()
+        if run:
+            run.analysis_status = "analyzing"
+            db.commit()
+            print(f"Run {run_id} status set to analyzing")
+
         # 1. Fetch all failures for the run
         failures = db.query(models.TestCase).filter(
             models.TestCase.test_run_id == run_id,
             models.TestCase.status == "fail"
         ).all()
+        
+        print(f"Fetched {len(failures)} failures")
         
         if not failures:
             # No failures, mark completed
@@ -49,6 +55,8 @@ def run_analysis_task(run_id: int, db: Session):
         ]
         valid_failure_dicts = [failure_dicts[i] for i in valid_indices]
         
+        print(f"Valid failures for clustering: {len(valid_failure_dicts)}")
+        
         if not valid_failure_dicts:
             if run:
                 run.analysis_status = "completed"
@@ -56,7 +64,7 @@ def run_analysis_task(run_id: int, db: Session):
             return
 
         # 3. Cluster using improved algorithm with HDBSCAN
-        # P3: Increased min_cluster_size from 2 to 3 to reduce fragmentation
+        # PRD Phase 1.2: min_cluster_size=3 to reduce fragmentation while maintaining granularity
         clusterer = ImprovedFailureClusterer(min_cluster_size=3)
         labels, metrics = clusterer.cluster_failures(valid_failure_dicts)
         
@@ -75,7 +83,7 @@ def run_analysis_task(run_id: int, db: Session):
         cluster_summary = clusterer.get_cluster_summary(valid_failure_dicts, labels)
         for cluster_id, info in cluster_summary.items():
             print(f"  Cluster {cluster_id}: {info['count']} failures, "
-                  f"modules={info['modules']}, purity={info['purity']:.2f}")
+                  f"modules={info['modules']}, purity={info['purity']:.2f}, exceptions={info['exceptions']}")
         
         # 4. Group by cluster and analyze representative
         clusters: Dict[int, List] = {}
@@ -126,6 +134,8 @@ Test Failure Details:
                 "failures": cluster_failures # Keep reference to failures for linking later
             })
 
+        print(f"Prepared {len(analysis_tasks)} analysis tasks")
+
         # 3.2 Execute Analysis in Parallel (Worker Threads)
         from concurrent.futures import ThreadPoolExecutor, as_completed
         
@@ -137,14 +147,18 @@ Test Failure Details:
                 return {"cluster_id": task["cluster_id"], "result": result, "failures": task["failures"]}
             except Exception as e:
                 print(f"Analysis failed for cluster {task['cluster_id']}: {e}")
+                traceback.print_exc()
                 return {"cluster_id": task["cluster_id"], "error": str(e), "failures": task["failures"]}
 
         # Use 5 workers to balance speed and rate limits
         results = []
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            future_to_cluster = {executor.submit(analyze_single_cluster, task): task for task in analysis_tasks}
-            for future in as_completed(future_to_cluster):
-                results.append(future.result())
+        if analysis_tasks:
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                future_to_cluster = {executor.submit(analyze_single_cluster, task): task for task in analysis_tasks}
+                for future in as_completed(future_to_cluster):
+                    results.append(future.result())
+        
+        print(f"Analysis complete. Processing {len(results)} results")
 
         # 3.3 Save Results (Main Thread)
         for res in results:
@@ -218,12 +232,22 @@ Test Failure Details:
         if run:
             run.analysis_status = "completed"
             db.commit()
+            print(f"Run {run_id} analysis marked as completed")
             
     except Exception as e:
-        print(f"Analysis failed: {e}")
-        if run:
-            run.analysis_status = "failed"
-            db.commit()
+        print(f"Analysis task failed: {e}")
+        traceback.print_exc()
+        try:
+            # Re-query session just in case
+            run = db.query(models.TestRun).filter(models.TestRun.id == run_id).first()
+            if run:
+                run.analysis_status = "failed"
+                db.commit()
+        except:
+            pass
+    finally:
+        db.close()
+        print(f"--- Analysis Task for Run {run_id} Finished (Session Closed) ---")
 
 @router.post("/run/{run_id}")
 async def trigger_analysis(run_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
@@ -237,7 +261,8 @@ async def trigger_analysis(run_id: int, background_tasks: BackgroundTasks, db: S
     db.commit()
     
     # Run analysis in background
-    background_tasks.add_task(run_analysis_task, run_id, db)
+    print(f"Triggering analysis for run {run_id} in background")
+    background_tasks.add_task(run_analysis_task, run_id)
     
     return {"message": "Analysis started in background"}
 
