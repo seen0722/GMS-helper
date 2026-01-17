@@ -4,7 +4,7 @@ const API_BASE = '/api';
 
 let allClustersData = [];
 let allModulesData = [];  // PRD Phase 5: Module View data
-let currentViewMode = 'module';  // 'cluster' or 'module'
+let currentViewMode = 'cluster';  // 'cluster' or 'module'
 let allFailuresData = [];
 let currentFailuresPage = 1;
 let currentFailuresQuery = '';
@@ -424,7 +424,7 @@ async function loadDashboard() {
     document.getElementById('runs-table-body').innerHTML = `
         ${[1, 2, 3, 4, 5].map(() => `
             <tr>
-                <td colspan="6" class="px-6 py-4"><div class="h-10 w-full skeleton rounded-lg"></div></td>
+                <td colspan="7" class="px-6 py-4"><div class="h-10 w-full skeleton rounded-lg"></div></td>
             </tr>
         `).join('')}
     `;
@@ -1494,9 +1494,11 @@ async function loadClusters(runId) {
 
     try {
         // Fetch both Cluster Data and Module Data (Parallel for speed)
+        // Also fetch Redmine Users for resolving assignees in UI
         const [clustersRes, modulesRes] = await Promise.all([
             fetch(`${API_BASE}/analysis/run/${runId}/clusters`),
-            fetch(`${API_BASE}/analysis/run/${runId}/clusters/by-module`)
+            fetch(`${API_BASE}/analysis/run/${runId}/clusters/by-module`),
+            fetchRedmineUsers() // Pre-fetch users for cache
         ]);
 
         const clusters = await clustersRes.json();
@@ -1716,7 +1718,38 @@ function renderClusterView(tbody, filterNoRedmine) {
                     <span class="px-1.5 py-0.5 rounded font-bold ${confClass}">${confLabel}</span>
                 </div>
             </td>
-            <td class="px-4 py-3 text-sm text-slate-600">${cluster.suggested_assignment || '-'}</td>
+            <td class="px-4 py-3 text-sm text-slate-500">
+                ${cluster.suggested_assignment || '-'}
+            </td>
+            <td class="px-4 py-3 text-sm text-slate-600">
+                ${(() => {
+                    // 1. If synced, show actual Redmine Assignee
+                    if (cluster.redmine_assignee) return `<span class="font-medium text-slate-700">${cluster.redmine_assignee}</span>`;
+                    
+                    // 2. If suggested ID exists, try to resolve name
+                    if (cluster.suggested_assignee_id) {
+                        const user = redmineUsersCache.find(u => u.id === cluster.suggested_assignee_id);
+                        const name = user ? (user.firstname && user.lastname ? `${user.firstname} ${user.lastname}` : user.login) : `User ${cluster.suggested_assignee_id}`;
+                        
+                        // Badge logic
+                        let badge = '';
+                        if (cluster.suggested_assignee_source === 'module_pattern') {
+                            badge = '<span class="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100">Rule</span>';
+                        } else if (cluster.suggested_assignee_source === 'fallback') {
+                             badge = '<span class="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200">Default</span>';
+                        }
+                        
+                        return `
+                             <div class="flex items-center">
+                                 <span class="text-slate-700 truncate max-w-[120px]" title="${name}">${name}</span>
+                                 ${badge}
+                             </div>
+                        `;
+                    }
+                    
+                    return '-';
+                })()}
+            </td>
             <td class="px-4 py-3">
                 ${cluster.redmine_issue_id && redmineBaseUrl
                 ? `<div class="flex flex-col gap-1">
@@ -1743,33 +1776,89 @@ function renderClusterView(tbody, filterNoRedmine) {
 
 function renderModuleView(tbody, filterNoRedmine) {
     allModulesData.forEach((module, index) => {
-        // Filter clusters inside module? 
-        // For now, let's keep all modules but maybe fade out if no unsynced clusters
+        // Calculate aggregated severity (highest among clusters)
+        let maxSeverity = 'Low';
+        let unsyncedCount = 0;
         
-        // Priority Badge
+        if (module.clusters) {
+            module.clusters.forEach(c => {
+                const fullCluster = allClustersData.find(ac => ac.id === c.id);
+                if (fullCluster) {
+                    // Check for unsynced
+                    if (!fullCluster.redmine_issue_id) {
+                        unsyncedCount++;
+                    }
+                    // Track max severity
+                    if (fullCluster.severity === 'High') maxSeverity = 'High';
+                    else if (fullCluster.severity === 'Medium' && maxSeverity !== 'High') maxSeverity = 'Medium';
+                }
+            });
+        }
+        
+        // Skip if filtering and all synced
+        if (filterNoRedmine && unsyncedCount === 0) return;
+        
+        // Priority Badge colors
         const priorityColor = module.priority === 'P0' ? 'bg-red-600 text-white' 
                             : (module.priority === 'P1' ? 'bg-orange-500 text-white' 
                             : (module.priority === 'P2' ? 'bg-yellow-500 text-white' : 'bg-slate-500 text-white'));
+        
+        // Severity indicator color
+        const severityDot = maxSeverity === 'High' ? 'bg-red-500' 
+                          : (maxSeverity === 'Medium' ? 'bg-yellow-500' : 'bg-green-500');
 
         const tr = document.createElement('tr');
         tr.className = 'border-b border-slate-100 last:border-0 bg-slate-50/50';
         
-        // Table Row for Module Header
+        // Table Row for Module Header with Batch Sync Button
         tr.innerHTML = `
             <td colspan="7" class="p-0">
-                <div class="flex items-center px-4 py-3 bg-slate-100 hover:bg-slate-200 cursor-pointer transition-colors"
-                     onclick="toggleModuleRow('${index}')">
-                    <svg id="module-arrow-${index}" class="w-4 h-4 text-slate-500 mr-2 transition-transform transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                    </svg>
-                    <span class="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold mr-3 ${priorityColor}">${module.priority}</span>
-                    <div class="flex-1">
-                        <span class="font-bold text-slate-800 text-sm">${module.name}</span>
-                        <span class="text-xs text-slate-500 ml-2">(${module.total_failures} failures)</span>
+                <div class="flex items-center px-4 py-3 bg-slate-100 hover:bg-slate-200 transition-colors">
+                    <!-- Expand Arrow -->
+                    <div class="cursor-pointer flex items-center flex-1" onclick="toggleModuleRow('${index}')">
+                        <svg id="module-arrow-${index}" class="w-4 h-4 text-slate-500 mr-2 transition-transform transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                        
+                        <!-- Priority Badge -->
+                        <span class="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold mr-3 ${priorityColor}">${module.priority}</span>
+                        
+                        <!-- Severity Dot -->
+                        <span class="w-2.5 h-2.5 rounded-full ${severityDot} mr-2" title="Max Severity: ${maxSeverity}"></span>
+                        
+                        <!-- Module Name & Stats -->
+                        <div class="flex-1">
+                            <span class="font-bold text-slate-800 text-sm">${module.name}</span>
+                            <span class="text-xs text-slate-500 ml-2">(${module.total_failures} failures)</span>
+                        </div>
+                        
+                        <!-- Cluster Count Badge -->
+                        <span class="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-1 rounded-full border border-purple-100 mr-2">
+                            ${module.cluster_count} Clusters
+                        </span>
+                        
+                        <!-- Unsynced Badge -->
+                        ${unsyncedCount > 0 ? `
+                        <span class="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-1 rounded-full border border-orange-100">
+                            ${unsyncedCount} Unsynced
+                        </span>
+                        ` : `
+                        <span class="text-xs font-semibold text-green-600 bg-green-50 px-2 py-1 rounded-full border border-green-100">
+                            ✓ All Synced
+                        </span>
+                        `}
                     </div>
-                     <span class="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-1 rounded-full border border-purple-100">
-                        ${module.cluster_count} Clusters
-                    </span>
+                    
+                    <!-- Batch Sync Button (only show if unsynced) -->
+                    ${unsyncedCount > 0 ? `
+                    <button onclick="event.stopPropagation(); batchSyncModule('${module.name}')" 
+                            class="ml-3 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                        </svg>
+                        Sync All
+                    </button>
+                    ` : ''}
                 </div>
                 
                 <!-- Expanded Clusters inside Module -->
@@ -1812,7 +1901,7 @@ function renderModuleClusters(clusters, filterNoRedmine) {
         ? clusters.filter(c => !allClustersData.find(ac => ac.id === c.id)?.redmine_issue_id)
         : clusters;
 
-    if (displayClusters.length === 0) return `<tr><td colspan="6" class="py-4 text-center text-xs text-slate-400">All clusters in this module are synced.</td></tr>`;
+    if (displayClusters.length === 0) return `<tr><td colspan="7" class="py-4 text-center text-xs text-slate-400">All clusters in this module are synced.</td></tr>`;
 
     return displayClusters.map(c => {
         // We need full data which might be in allClustersData matching by ID
@@ -1865,7 +1954,34 @@ function renderModuleClusters(clusters, filterNoRedmine) {
                     <span class="px-1.5 py-0.5 rounded font-bold ${confClass}">${confLabel}</span>
                 </div>
             </td>
-            <td class="px-4 py-3 text-sm text-slate-600">${fullC.suggested_assignment || '-'}</td>
+            <td class="px-4 py-3 text-sm text-slate-500">
+                ${fullC.suggested_assignment || '-'}
+            </td>
+            <td class="px-4 py-3 text-sm text-slate-600">
+                 ${(() => {
+                    if (fullC.redmine_assignee) return `<span class="font-medium text-slate-700">${fullC.redmine_assignee}</span>`;
+                    
+                    if (fullC.suggested_assignee_id) {
+                        const user = redmineUsersCache.find(u => u.id === fullC.suggested_assignee_id);
+                        const name = user ? (user.firstname && user.lastname ? `${user.firstname} ${user.lastname}` : user.login) : `User ${fullC.suggested_assignee_id}`;
+                        
+                        let badge = '';
+                        if (fullC.suggested_assignee_source === 'module_pattern') {
+                            badge = '<span class="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-blue-50 text-blue-600 border border-blue-100">Rule</span>';
+                        } else if (fullC.suggested_assignee_source === 'fallback') {
+                             badge = '<span class="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium bg-slate-100 text-slate-500 border border-slate-200">Default</span>';
+                        }
+                        
+                         return `
+                             <div class="flex items-center">
+                                 <span class="text-slate-700 truncate max-w-[120px]" title="${name}">${name}</span>
+                                 ${badge}
+                             </div>
+                        `;
+                    }
+                    return '-';
+                })()}
+            </td>
              <td class="px-4 py-3">
                 ${fullC.redmine_issue_id && redmineBaseUrl
                 ? `<div class="flex flex-col gap-1">
@@ -2152,6 +2268,9 @@ async function loadSettings() {
     
     // Load LLM Provider settings
     loadLLMProviderSettings();
+    
+    // Load Module Owner Map settings
+    loadModuleOwnerMap();
 }
 
 // LLM Provider Functions
@@ -2830,6 +2949,353 @@ async function loadRedmineSettings() {
     }
 }
 
+// Module Owner Map Functions
+let currentModuleOwnerMapConfig = null;
+let redmineUsersCache = []; // Cache for dropdown options
+
+async function fetchRedmineUsers() {
+    if (redmineUsersCache.length > 0) return redmineUsersCache;
+    try {
+        const res = await fetch(`${API_BASE}/integrations/redmine/users`);
+        const data = await res.json();
+        if (res.ok && data.users && Array.isArray(data.users)) {
+            redmineUsersCache = data.users;
+            console.log(`[fetchRedmineUsers] Cached ${data.users.length} users`);
+            return data.users;
+        }
+    } catch (e) {
+        console.error("Failed to pre-fetch Redmine users", e);
+    }
+    return [];
+}
+
+async function loadModuleOwnerMap() {
+    try {
+        const res = await fetch(`${API_BASE}/settings/module-owner-map`);
+        const data = await res.json();
+        
+        currentModuleOwnerMapConfig = data.config;
+        
+        const projectSelect = document.getElementById('default-project-id');
+        const prioritySelect = document.getElementById('default-priority-id');
+        const assigneeSelect = document.getElementById('default-assignee-id');
+        
+        // Extract default settings for dropdowns
+        const defaults = data.config?.default_settings || {};
+        
+        // Set priority dropdown
+        if (prioritySelect && defaults.default_priority_id) {
+            prioritySelect.value = defaults.default_priority_id;
+        }
+        
+        // Render module mapping table rows
+        renderModuleMappingTable();
+        
+    } catch (e) {
+        console.error("Failed to load module owner map", e);
+    }
+}
+
+function renderModuleMappingTable() {
+    const container = document.getElementById('module-mapping-rows');
+    if (!container) return;
+    
+    const patterns = currentModuleOwnerMapConfig?.module_patterns || {};
+    const patternKeys = Object.keys(patterns);
+    
+    if (patternKeys.length === 0) {
+        container.innerHTML = `
+            <div class="p-4 text-center text-sm text-slate-400">
+                No mapping rules. Click "Add Rule" to create one.
+            </div>
+        `;
+        return;
+    }
+    
+    let html = '';
+    patternKeys.forEach((pattern, index) => {
+        const data = patterns[pattern];
+        const userId = data.redmine_user_id || '';
+        html += createMappingRowHTML(index, pattern, userId);
+    });
+    
+    container.innerHTML = html;
+}
+
+function createMappingRowHTML(index, pattern = '', userId = '') {
+    const userOptions = redmineUsersCache.map(u => {
+        const name = u.firstname && u.lastname ? `${u.firstname} ${u.lastname}` : u.login;
+        const selected = u.id == userId ? 'selected' : '';
+        return `<option value="${u.id}" ${selected}>${name}</option>`;
+    }).join('');
+    
+    return `
+        <div class="grid grid-cols-12 gap-2 p-2 items-center" data-row-index="${index}">
+            <div class="col-span-5">
+                <input type="text" value="${pattern}" placeholder="e.g., CtsMedia*"
+                    class="module-pattern-input w-full px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="col-span-5">
+                <select class="module-owner-select w-full px-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                    <option value="">-- Not Assigned --</option>
+                    ${userOptions}
+                </select>
+            </div>
+            <div class="col-span-2 text-center">
+                <button onclick="removeModuleMappingRow(this)" 
+                    class="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function addModuleMappingRow() {
+    const container = document.getElementById('module-mapping-rows');
+    if (!container) return;
+    
+    // If container only has the placeholder message, clear it
+    if (container.querySelector('.text-slate-400')) {
+        container.innerHTML = '';
+    }
+    
+    const rowCount = container.children.length;
+    const newRowHTML = createMappingRowHTML(rowCount, '', '');
+    container.insertAdjacentHTML('beforeend', newRowHTML);
+}
+
+function removeModuleMappingRow(btn) {
+    const row = btn.closest('[data-row-index]');
+    if (row) {
+        row.remove();
+        
+        // If no rows left, show placeholder
+        const container = document.getElementById('module-mapping-rows');
+        if (container && container.children.length === 0) {
+            container.innerHTML = `
+                <div class="p-4 text-center text-sm text-slate-400">
+                    No mapping rules. Click "Add Rule" to create one.
+                </div>
+            `;
+        }
+    }
+}
+
+async function saveModuleOwnerMap() {
+    const projectSelect = document.getElementById('default-project-id');
+    const prioritySelect = document.getElementById('default-priority-id');
+    const assigneeSelect = document.getElementById('default-assignee-id');
+    const statusDiv = document.getElementById('module-map-status');
+    const container = document.getElementById('module-mapping-rows');
+    
+    // Build module_patterns from table rows
+    const modulePatterns = {};
+    const rows = container?.querySelectorAll('[data-row-index]') || [];
+    
+    rows.forEach(row => {
+        const patternInput = row.querySelector('.module-pattern-input');
+        const ownerSelect = row.querySelector('.module-owner-select');
+        
+        const pattern = patternInput?.value?.trim();
+        const ownerId = ownerSelect?.value;
+        
+        if (pattern) {
+            modulePatterns[pattern] = {
+                redmine_user_id: ownerId ? parseInt(ownerId) : null
+            };
+        }
+    });
+    
+    // Build config object
+    const config = {
+        module_patterns: modulePatterns,
+        default_settings: {
+            default_project_id: projectSelect?.value ? parseInt(projectSelect.value) : 1,
+            default_priority_id: prioritySelect?.value ? parseInt(prioritySelect.value) : 4,
+            fallback_user_id: assigneeSelect?.value ? parseInt(assigneeSelect.value) : null
+        }
+    };
+    
+    try {
+        const res = await fetch(`${API_BASE}/settings/module-owner-map`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+            if (statusDiv) {
+                statusDiv.className = 'text-sm p-3 rounded-lg bg-green-50 text-green-700';
+                statusDiv.textContent = `✅ Saved ${Object.keys(modulePatterns).length} mapping rules!`;
+                statusDiv.classList.remove('hidden');
+            }
+            currentModuleOwnerMapConfig = config;
+        } else {
+            if (statusDiv) {
+                statusDiv.className = 'text-sm p-3 rounded-lg bg-red-50 text-red-700';
+                statusDiv.textContent = `❌ Failed: ${data.detail || 'Unknown error'}`;
+                statusDiv.classList.remove('hidden');
+            }
+        }
+    } catch (e) {
+        console.error("Error saving module owner map", e);
+        if (statusDiv) {
+            statusDiv.className = 'text-sm p-3 rounded-lg bg-red-50 text-red-700';
+            statusDiv.textContent = `❌ Error: ${e.message}`;
+            statusDiv.classList.remove('hidden');
+        }
+    }
+}
+
+async function resetModuleOwnerMap() {
+    if (!confirm('Reset module owner map to default configuration? This will overwrite your current settings.')) {
+        return;
+    }
+    
+    const statusDiv = document.getElementById('module-map-status');
+    
+    try {
+        const res = await fetch(`${API_BASE}/settings/module-owner-map/reset`, {
+            method: 'POST'
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+            if (statusDiv) {
+                statusDiv.className = 'text-sm p-3 rounded-lg bg-green-50 text-green-700';
+                statusDiv.textContent = '✅ Configuration reset to defaults!';
+                statusDiv.classList.remove('hidden');
+            }
+            // Reload the config
+            loadModuleOwnerMap();
+        } else {
+            if (statusDiv) {
+                statusDiv.className = 'text-sm p-3 rounded-lg bg-red-50 text-red-700';
+                statusDiv.textContent = `❌ Failed: ${data.detail || 'Unknown error'}`;
+                statusDiv.classList.remove('hidden');
+            }
+        }
+    } catch (e) {
+        console.error("Error resetting module owner map", e);
+        if (statusDiv) {
+            statusDiv.className = 'text-sm p-3 rounded-lg bg-red-50 text-red-700';
+            statusDiv.textContent = `❌ Error: ${e.message}`;
+            statusDiv.classList.remove('hidden');
+        }
+    }
+}
+
+// Load Redmine Projects and Users for dropdown selectors
+async function loadRedmineDropdownData() {
+    const statusSpan = document.getElementById('redmine-data-status');
+    const projectSelect = document.getElementById('default-project-id');
+    const assigneeSelect = document.getElementById('default-assignee-id');
+    const btn = document.getElementById('btn-load-redmine-data');
+    
+    // First check if Redmine is configured
+    if (!redmineBaseUrl) {
+        if (statusSpan) {
+            statusSpan.textContent = '⚠️ Please configure Redmine URL and API Key first (see above)';
+            statusSpan.className = 'text-orange-600 font-medium';
+        }
+        return;
+    }
+    
+    if (statusSpan) statusSpan.textContent = 'Loading...';
+    if (statusSpan) statusSpan.className = 'text-slate-400';
+    if (btn) btn.disabled = true;
+    
+    let projectCount = 0;
+    let userCount = 0;
+    let errors = [];
+    
+    try {
+        // Fetch projects
+        const projectsRes = await fetch(`${API_BASE}/integrations/redmine/projects`);
+        const projectsData = await projectsRes.json();
+        
+        console.log('[loadRedmineDropdownData] Projects response:', projectsData);
+        
+        if (projectsRes.ok && projectsData.projects && Array.isArray(projectsData.projects)) {
+            // Get current value to preserve selection
+            const currentProjectId = currentModuleOwnerMapConfig?.default_settings?.default_project_id;
+            
+            projectSelect.innerHTML = '<option value="">-- Select Project --</option>';
+            projectsData.projects.forEach(p => {
+                const selected = p.id == currentProjectId ? 'selected' : '';
+                projectSelect.innerHTML += `<option value="${p.id}" ${selected}>${p.name} (ID: ${p.id})</option>`;
+            });
+            projectCount = projectsData.projects.length;
+        } else if (projectsData.detail) {
+            errors.push(`Projects: ${projectsData.detail}`);
+        } else {
+            errors.push('Projects: No data returned');
+        }
+    } catch (e) {
+        console.error("Error fetching projects", e);
+        errors.push(`Projects: ${e.message}`);
+    }
+    
+    try {
+        // Fetch users
+        const usersRes = await fetch(`${API_BASE}/integrations/redmine/users`);
+        const usersData = await usersRes.json();
+        
+        console.log('[loadRedmineDropdownData] Users response:', usersData);
+        
+        if (usersRes.ok && usersData.users && Array.isArray(usersData.users)) {
+            // Cache users for table row dropdowns
+            redmineUsersCache = usersData.users;
+            
+            const currentAssigneeId = currentModuleOwnerMapConfig?.default_settings?.fallback_user_id;
+            
+            assigneeSelect.innerHTML = '<option value="">-- None (Unassigned) --</option>';
+            usersData.users.forEach(u => {
+                const selected = u.id == currentAssigneeId ? 'selected' : '';
+                const name = u.firstname && u.lastname ? `${u.firstname} ${u.lastname}` : u.login;
+                assigneeSelect.innerHTML += `<option value="${u.id}" ${selected}>${name} (ID: ${u.id})</option>`;
+            });
+            userCount = usersData.users.length;
+            
+            // Re-render table rows with updated user dropdowns
+            renderModuleMappingTable();
+        } else if (usersData.detail) {
+            errors.push(`Users: ${usersData.detail}`);
+        } else {
+            errors.push('Users: No data returned');
+        }
+    } catch (e) {
+        console.error("Error fetching users", e);
+        errors.push(`Users: ${e.message}`);
+    }
+    
+    // Update status
+    if (errors.length > 0) {
+        if (statusSpan) {
+            statusSpan.textContent = `⚠️ ${errors.join('; ')}`;
+            statusSpan.className = 'text-red-600';
+        }
+    } else if (projectCount > 0 || userCount > 0) {
+        if (statusSpan) {
+            statusSpan.textContent = `✅ Loaded ${projectCount} projects, ${userCount} users`;
+            statusSpan.className = 'text-green-600';
+        }
+    } else {
+        if (statusSpan) {
+            statusSpan.textContent = '⚠️ No data returned. Check Redmine settings.';
+            statusSpan.className = 'text-orange-600';
+        }
+    }
+    
+    if (btn) btn.disabled = false;
+}
+
 async function saveRedmineSettings() {
     const url = document.getElementById('new-redmine-url').value.trim();
     const key = document.getElementById('new-redmine-key').value.trim();
@@ -3386,6 +3852,63 @@ async function executeBulkCreate() {
         status.textContent = `❌ Error: ${e.message}`;
         button.disabled = false;
         button.textContent = 'Create Issues';
+    }
+}
+
+// --- Batch Sync for Single Module (PRD Phase 4) ---
+async function batchSyncModule(moduleName) {
+    if (!router.currentParams || !router.currentParams.id) {
+        showNotification('No test run selected', 'error');
+        return;
+    }
+
+    // Show quick confirmation
+    const confirmed = confirm(`Sync all unsynced clusters for module "${moduleName}"?\n\nThis will create Redmine issues for clusters in this module only.`);
+    if (!confirmed) return;
+
+    showNotification(`Syncing clusters for ${moduleName}...`, 'info');
+
+    try {
+        // Get default project ID from config
+        const defaultProjectId = currentModuleOwnerMapConfig?.default_settings?.default_project_id || 1;
+        
+        const res = await fetch(`${API_BASE}/integrations/redmine/smart-bulk-create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                run_id: parseInt(router.currentParams.id),
+                project_id: defaultProjectId,
+                module_name: moduleName  // Filter to only this module
+            })
+        });
+
+        const result = await res.json();
+
+        if (res.ok) {
+            const createdCount = result.created || 0;
+            const skippedCount = result.skipped || 0;
+            
+            if (createdCount > 0) {
+                showNotification(`✅ Created ${createdCount} issues for ${moduleName}`, 'success');
+            } else if (skippedCount > 0) {
+                showNotification(`ℹ️ All clusters already synced for ${moduleName}`, 'info');
+            } else {
+                showNotification(`ℹ️ No unsynced clusters found for ${moduleName}`, 'info');
+            }
+            
+            // Reload clusters with a delay to ensure DB is updated
+            const runId = router.currentParams.id;
+            if (runId) {
+                setTimeout(async () => {
+                    await loadClusters(runId);
+                }, 300);
+            }
+        } else {
+            showNotification(`❌ Failed: ${result.detail || 'Unknown error'}`, 'error');
+        }
+    } catch (e) {
+        console.error("Batch sync error", e);
+        showNotification(`❌ Error: ${e.message}`, 'error');
     }
 }
 

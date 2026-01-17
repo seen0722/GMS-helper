@@ -14,6 +14,7 @@ services:
       - ./uploads:/app/uploads
       # Mount backend code for hot-reloading
       - ./backend:/app/backend
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
     security_opt:
       - seccomp:unconfined
     environment:

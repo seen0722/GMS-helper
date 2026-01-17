@@ -319,18 +319,38 @@ def get_clusters(run_id: int, db: Session = Depends(get_db)):
         if cluster.redmine_issue_id and redmine_client:
             try:
                 issue = redmine_client.get_issue(cluster.redmine_issue_id)
-                if issue and 'status' in issue:
-                    cluster_dict["redmine_status"] = issue['status'].get('name', 'Unknown')
-                    cluster_dict["redmine_status_id"] = issue['status'].get('id', 0)
+                if issue:
+                    if 'status' in issue:
+                        cluster_dict["redmine_status"] = issue['status'].get('name', 'Unknown')
+                        cluster_dict["redmine_status_id"] = issue['status'].get('id', 0)
+                    
+                    if 'assigned_to' in issue:
+                        cluster_dict["redmine_assignee"] = issue['assigned_to'].get('name')
+                        cluster_dict["redmine_assignee_id"] = issue['assigned_to'].get('id')
                 else:
                     cluster_dict["redmine_status"] = None
-                    cluster_dict["redmine_status_id"] = None
+                    cluster_dict["redmine_assignee"] = None
             except:
                 cluster_dict["redmine_status"] = None
-                cluster_dict["redmine_status_id"] = None
+                cluster_dict["redmine_assignee"] = None
         else:
             cluster_dict["redmine_status"] = None
-            cluster_dict["redmine_status_id"] = None
+            cluster_dict["redmine_assignee"] = None
+        
+        # Resolve suggested assignee if not synced
+        if not cluster_dict.get("redmine_assignee_id"):
+            try:
+                from backend.integrations.assignment_resolver import get_assignment_resolver
+                resolver = get_assignment_resolver()
+                # Use the first module to determine assignment
+                module_for_resolution = cluster_dict["module_names"][0] if cluster_dict["module_names"] else None
+                assignment = resolver.resolve_assignment(module_for_resolution)
+                cluster_dict["suggested_assignee_id"] = assignment.get("user_id")
+                cluster_dict["suggested_assignee_source"] = assignment.get("resolved_from")
+            except Exception as e:
+                print(f"Error resolving assignment for cluster {cluster.id}: {e}")
+                cluster_dict["suggested_assignee_id"] = None
+                cluster_dict["suggested_assignee_source"] = None
         
         enhanced_clusters.append(cluster_dict)
         

@@ -1,0 +1,45 @@
+{
+  "module_patterns": {
+    "*Media*": {
+      "redmine_user_id": 6
+    },
+    "*Camera*": {
+      "redmine_user_id": 6
+    },
+    "CtsWifi*": {
+      "redmine_user_id": null
+    },
+    "CtsNet*": {
+      "redmine_user_id": null
+    },
+    "CtsBluetooth*": {
+      "redmine_user_id": null
+    },
+    "CtsSystemUi*": {
+      "redmine_user_id": null
+    },
+    "CtsView*": {
+      "redmine_user_id": null
+    },
+    "*Security*": {
+      "redmine_user_id": 6
+    },
+    "CtsKernel*": {
+      "redmine_user_id": null
+    },
+    "*Fs*": {
+      "redmine_user_id": 6
+    },
+    "CtsTelecom*": {
+      "redmine_user_id": null
+    },
+    "CtsApp*": {
+      "redmine_user_id": null
+    }
+  },
+  "default_settings": {
+    "default_project_id": 1,
+    "default_priority_id": 4,
+    "fallback_user_id": 5
+  }
+}

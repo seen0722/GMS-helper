@@ -119,3 +119,168 @@ class RedmineClient:
         except Exception as e:
             print(f"Error fetching issue {issue_id}: {e}")
             return None
+
+    def add_note_to_issue(self, issue_id: int, note: str) -> bool:
+        """
+        Add a note/comment to an existing issue.
+        
+        Args:
+            issue_id: Redmine issue ID
+            note: The note content to add
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            payload = {
+                'issue': {
+                    'notes': note
+                }
+            }
+            response = requests.put(
+                f"{self.url}/issues/{issue_id}.json",
+                headers=self.headers,
+                json=payload
+            )
+            return response.status_code == 200
+        except Exception as e:
+            print(f"Error adding note to issue {issue_id}: {e}")
+            return False
+
+    def reopen_issue(self, issue_id: int, note: str = "Regression detected") -> bool:
+        """
+        Reopen a closed issue (for regression detection).
+        
+        Args:
+            issue_id: Redmine issue ID
+            note: Note to add explaining the reopen
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Status ID 1 is typically "New" in Redmine, adjust based on your config
+            payload = {
+                'issue': {
+                    'status_id': 1,
+                    'notes': note
+                }
+            }
+            response = requests.put(
+                f"{self.url}/issues/{issue_id}.json",
+                headers=self.headers,
+                json=payload
+            )
+            return response.status_code == 200
+        except Exception as e:
+            print(f"Error reopening issue {issue_id}: {e}")
+            return False
+
+    def search_issues_by_subject(self, subject_query: str, project_id: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Search for issues by subject (for deduplication).
+        
+        Args:
+            subject_query: Text to search in issue subjects
+            project_id: Optional project ID to narrow search
+            
+        Returns:
+            List of matching issues
+        """
+        try:
+            params = {
+                'subject': f"~{subject_query}",
+                'limit': 20
+            }
+            if project_id:
+                params['project_id'] = project_id
+            
+            response = requests.get(f"{self.url}/issues.json", headers=self.headers, params=params)
+            if response.status_code == 200:
+                return response.json().get('issues', [])
+            return []
+        except Exception as e:
+            print(f"Error searching issues: {e}")
+            return []
+
+
+def generate_issue_content(
+    cluster_data: Dict[str, Any],
+    run_data: Dict[str, Any],
+    module_name: str,
+    failures: List[Dict[str, Any]]
+) -> Dict[str, str]:
+    """
+    Generate standardized Redmine issue subject and description.
+    
+    Args:
+        cluster_data: Cluster information (ai_summary, root_cause, severity, etc.)
+        run_data: Test run metadata (build_id, fingerprint, etc.)
+        module_name: The module this ticket is for
+        failures: List of failures in this cluster for this module
+        
+    Returns:
+        Dict with 'subject' and 'description' keys
+    """
+    # Extract AI summary (first line if multi-line)
+    ai_summary = cluster_data.get('ai_summary', 'Unknown Issue')
+    title = ai_summary.split('\n')[0][:80] if ai_summary else 'Unknown Issue'
+    
+    android_version = run_data.get('android_version', 'Unknown')
+    
+    # Generate subject
+    subject = f"[GMS][{android_version}][{module_name}] {title}"
+    
+    # Generate description
+    root_cause = cluster_data.get('common_root_cause', 'N/A')
+    solution = cluster_data.get('common_solution', 'N/A')
+    severity = cluster_data.get('severity', 'Medium')
+    
+    # Get representative failure
+    rep_failure = failures[0] if failures else {}
+    stack_trace = rep_failure.get('stack_trace', 'No stack trace available')
+    # Limit stack trace to ~50 lines
+    stack_lines = stack_trace.split('\n')[:50]
+    truncated_stack = '\n'.join(stack_lines)
+    if len(stack_lines) == 50:
+        truncated_stack += '\n... (truncated)'
+    
+    # Build affected tests list (top 10)
+    affected_tests = []
+    for i, f in enumerate(failures[:10]):
+        test_name = f"{f.get('class_name', 'Unknown')}.{f.get('method_name', 'unknown')}"
+        affected_tests.append(f"{i+1}. {test_name}")
+    
+    description = f"""**[AI Analysis]**
+* **Root Cause**: {root_cause}
+* **Impact**: {len(failures)} test(s) failed (Cluster ID: #{cluster_data.get('id', 'N/A')})
+* **Severity**: {severity}
+* **Suggestion**: {solution}
+
+**[Environment]**
+* **Product**: {run_data.get('build_product', 'N/A')}
+* **Build ID**: {run_data.get('build_id', 'N/A')}
+* **Fingerprint**: {run_data.get('device_fingerprint', 'N/A')}
+* **Suite Version**: {run_data.get('suite_version', 'N/A')}
+
+**[Representative Failure]**
+* **Test Class**: {rep_failure.get('class_name', 'N/A')}
+* **Test Method**: {rep_failure.get('method_name', 'N/A')}
+* **Error Message**: 
+```
+{rep_failure.get('error_message', 'N/A')}
+```
+* **Stack Trace**:
+```java
+{truncated_stack}
+```
+
+**[Affected Tests (Top 10)]**
+{chr(10).join(affected_tests) if affected_tests else 'N/A'}
+"""
+    
+    return {
+        'subject': subject,
+        'description': description
+    }
+

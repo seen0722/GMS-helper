@@ -410,3 +410,147 @@ def test_llm_connection(request: Optional[TestConnectionRequest] = None, db: Ses
             return {"success": True, "provider": "openai", "message": "OpenAI API key configured"}
         else:
             return {"success": False, "provider": "openai", "message": "No OpenAI API key configured"}
+
+
+# ============================================================
+# Module Owner Map Configuration (PRD Redmine Automation)
+# ============================================================
+
+import json
+from pathlib import Path
+from typing import Dict, Any
+
+MODULE_OWNER_MAP_PATH = Path(__file__).parent.parent / "config" / "module_owner_map.json"
+
+
+def get_default_module_owner_map() -> Dict[str, Any]:
+    """Return default module owner map configuration."""
+    return {
+        "_description": "Module-Owner Mapping Configuration for Redmine Auto-Assignment",
+        "module_patterns": {
+            "CtsMedia*": {"team_name": "Multimedia Team", "redmine_user_id": None},
+            "CtsCamera*": {"team_name": "Camera Team", "redmine_user_id": None},
+            "CtsWifi*": {"team_name": "Connectivity Team", "redmine_user_id": None},
+            "CtsNet*": {"team_name": "Connectivity Team", "redmine_user_id": None},
+            "CtsBluetooth*": {"team_name": "Connectivity Team", "redmine_user_id": None},
+        },
+        "team_to_user_map": {
+            "Multimedia Team": None,
+            "Camera Team": None,
+            "Connectivity Team": None,
+            "Framework Team": None,
+            "Default": None
+        },
+        "severity_to_priority": {
+            "High": 5,
+            "Medium": 4,
+            "Low": 3
+        },
+        "default_settings": {
+            "default_team": "Default",
+            "default_priority_id": 4,
+            "default_project_id": 1,
+            "fallback_user_id": None
+        }
+    }
+
+
+@router.get("/module-owner-map")
+def get_module_owner_map():
+    """Get the current module-owner mapping configuration."""
+    try:
+        if MODULE_OWNER_MAP_PATH.exists():
+            with open(MODULE_OWNER_MAP_PATH, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            return {"config": config, "path": str(MODULE_OWNER_MAP_PATH)}
+        else:
+            # Return default config
+            return {"config": get_default_module_owner_map(), "path": str(MODULE_OWNER_MAP_PATH), "is_default": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read config: {str(e)}")
+
+
+class ModuleOwnerMapUpdate(BaseModel):
+    config: Dict[str, Any]
+
+
+@router.put("/module-owner-map")
+def update_module_owner_map(data: ModuleOwnerMapUpdate):
+    """Update the module-owner mapping configuration."""
+    try:
+        # Validate required top-level keys (team_to_user_map is now optional)
+        required_keys = ["module_patterns", "default_settings"]
+        for key in required_keys:
+            if key not in data.config:
+                raise HTTPException(status_code=400, detail=f"Missing required key: {key}")
+        
+        # Ensure config directory exists
+        MODULE_OWNER_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Write config
+        with open(MODULE_OWNER_MAP_PATH, 'w', encoding='utf-8') as f:
+            json.dump(data.config, f, indent=2, ensure_ascii=False)
+        
+        # Reload the assignment resolver to pick up new config
+        try:
+            from backend.integrations.assignment_resolver import AssignmentResolver
+            AssignmentResolver._instance = None
+            AssignmentResolver._config = None
+        except:
+            pass
+        
+        return {"message": "Module owner map updated successfully", "path": str(MODULE_OWNER_MAP_PATH)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to save config: {str(e)}")
+
+
+@router.post("/module-owner-map/reset")
+def reset_module_owner_map():
+    """Reset module-owner mapping to default configuration."""
+    try:
+        default_config = get_default_module_owner_map()
+        
+        MODULE_OWNER_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(MODULE_OWNER_MAP_PATH, 'w', encoding='utf-8') as f:
+            json.dump(default_config, f, indent=2, ensure_ascii=False)
+        
+        # Reload the assignment resolver
+        try:
+            from backend.integrations.assignment_resolver import AssignmentResolver
+            AssignmentResolver._instance = None
+            AssignmentResolver._config = None
+        except:
+            pass
+        
+        return {"message": "Module owner map reset to defaults", "config": default_config}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset config: {str(e)}")
+
+
+@router.get("/all")
+def get_all_settings(db: Session = Depends(get_db)):
+    """Get all settings for frontend initialization."""
+    settings = get_or_create_settings(db)
+    
+    # Get module owner map
+    module_map = {}
+    try:
+        if MODULE_OWNER_MAP_PATH.exists():
+            with open(MODULE_OWNER_MAP_PATH, 'r', encoding='utf-8') as f:
+                module_map = json.load(f)
+    except:
+        module_map = get_default_module_owner_map()
+    
+    return {
+        "redmine": {
+            "url": settings.redmine_url,
+            "is_configured": bool(settings.redmine_url and settings.redmine_api_key)
+        },
+        "llm_provider": settings.llm_provider or "openai",
+        "module_owner_map": module_map,
+        "default_project_id": module_map.get("default_settings", {}).get("default_project_id", 1)
+    }
+
