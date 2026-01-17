@@ -670,14 +670,15 @@
                                 </svg>
                                 Assign to Redmine
                             </button>
-                            <button onclick="unlinkRedmineIssue()" id="btn-unlink-redmine-detail"
-                                class="hidden px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-medium rounded-xl transition-all flex items-center gap-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
-                                <span id="btn-unlink-redmine-text">Unlink</span>
-                            </button>
+                    <span id="btn-unlink-redmine-detail" class="hidden">
+                        <button onclick="unlinkCluster()" 
+                                class="flex items-center gap-1.5 px-3 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 text-xs font-semibold rounded-lg transition-all shadow-sm hover:shadow">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                            </svg>
+                            <span id="btn-unlink-redmine-text">Unlink</span>
+                        </button>
+                    </span>
                             <button onclick="document.getElementById('analysis-detail-view').classList.add('hidden')"
                                 class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -950,34 +951,27 @@
         class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
         <div class="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h3 class="text-lg font-bold text-slate-800 mb-4">Create Issues for All Clusters</h3>
-            <p class="text-sm text-slate-600 mb-4">This will create Redmine issues for all clusters that don't have one
-                yet.</p>
-
+            
             <div class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-2">Project</label>
-                    <select id="bulk-create-project"
-                        class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="">Loading projects...</option>
-                    </select>
-                </div>
-
-                <div class="flex items-center gap-2">
-                    <input type="checkbox" id="bulk-create-children"
-                        class="w-4 h-4 text-blue-600 border-slate-300 rounded-focus:ring-blue-500">
-                    <label for="bulk-create-children" class="text-sm text-slate-700">Create child issues</label>
-                </div>
+               <div class="bg-blue-50 text-blue-800 p-4 rounded-lg text-sm">
+                   <p class="font-medium mb-1">This will create Redmine issues for all unlinked clusters.</p>
+                   <p>Settings used:</p>
+                    <ul class="list-disc list-inside mt-1 ml-1 space-y-0.5 text-blue-700">
+                        <li>Project: <span id="bulk-confirm-project" class="font-semibold">Loading...</span></li>
+                        <li>Assignee: <b>Auto-assigned</b> (based on module rules)</li>
+                    </ul>
+               </div>
 
                 <div id="bulk-create-status" class="hidden mt-2 text-sm"></div>
 
                 <div class="flex gap-3 justify-end">
-                    <button onclick="closeBulkCreateModal()"
+                    <button onclick="closeBulkCreateModal()" id="btn-cancel-bulk"
                         class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 transition-colors">
                         Cancel
                     </button>
                     <button onclick="executeBulkCreate()" id="btn-execute-bulk"
-                        class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors">
-                        Create Issues
+                        class="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors shadow-sm">
+                        Confirm & Create
                     </button>
                 </div>
             </div>
