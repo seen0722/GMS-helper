@@ -2105,7 +2105,7 @@ async function showClusterDetail(cluster) {
     }
 
     // Populate Fields
-    document.getElementById('detail-title').textContent = summaryTitle;
+    document.getElementById('detail-title').textContent = `[#${cluster.id}] ${summaryTitle}`;
     const bodyEl = document.getElementById('detail-summary-body');
     if (summaryBody) {
         bodyEl.innerHTML = summaryBody;
@@ -2122,16 +2122,17 @@ async function showClusterDetail(cluster) {
     const unlinkBtn = document.getElementById('btn-unlink-redmine-detail');
     const unlinkText = document.getElementById('btn-unlink-redmine-text');
 
+    // Always hide Assign button as per user request (use Sync All instead)
+    if (assignBtn) assignBtn.classList.add('hidden');
+
     if (cluster.redmine_issue_id) {
-        // Has issue - hide assign, show unlink
-        if (assignBtn) assignBtn.classList.add('hidden');
+        // Has issue - show unlink
         if (unlinkBtn) {
             unlinkBtn.classList.remove('hidden');
             if (unlinkText) unlinkText.textContent = `Unlink #${cluster.redmine_issue_id}`;
         }
     } else {
-        // No issue - show assign, hide unlink
-        if (assignBtn) assignBtn.classList.remove('hidden');
+        // No issue - hide unlink
         if (unlinkBtn) unlinkBtn.classList.add('hidden');
     }
 
