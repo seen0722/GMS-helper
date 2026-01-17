@@ -20,7 +20,7 @@
 
 ---
 
-## 快速部署（Docker Hub）
+## 快速部署（Git Clone）
 
 ### 1. 環境需求
 
@@ -29,6 +29,7 @@
 | OS | Ubuntu 20.04+ / CentOS 8+ | 或其他支援 Docker 的系統 |
 | Docker | 20.10+ | 容器運行環境 |
 | Docker Compose | v2.x | 多容器管理 |
+| Git | 2.x+ | 版本控制 |
 | 記憶體 | 2GB+ | 用於 AI 分析時的文字處理 |
 | 網路 | 可連接 `api.cambrian.pegatroncorp.com` | Cambrian Gateway |
 
@@ -41,38 +42,19 @@
 ### 3. 部署步驟
 
 ```bash
-# 1. 建立專案目錄
-mkdir cts-insight && cd cts-insight
+# 1. Clone 專案
+git clone https://github.com/seen0722/GMS-helper.git
+cd GMS-helper
 
-# 2. 建立 docker-compose.yml
-cat > docker-compose.yml << 'EOF'
-version: '3.3'
-
-services:
-  cts-insight:
-    image: seen0516/gms-helper:latest
-    container_name: cts-insight
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./data:/app/data
-      - ./uploads:/app/uploads
-    environment:
-      - DATABASE_URL=sqlite:///./data/gms_analysis.db
-      - LLM_PROVIDER=cambrian
-      - CAMBRIAN_URL=https://api.cambrian.pegatroncorp.com
-      - CAMBRIAN_MODEL=LLAMA 3.3 70B
-      # Token 透過 UI 設定更安全，或在此填入：
-      # - CAMBRIAN_TOKEN=your-token-here
-EOF
-
-# 3. 啟動服務（Docker 會自動建立 data/ 和 uploads/ 目錄）
+# 2. 啟動服務（Docker 會自動建立 data/ 和 uploads/ 目錄）
 docker-compose up -d
 
-# 4. 確認運行
+# 3. 確認運行
 curl http://localhost:8000/api/health
 ```
+
+> **提示**：所有設定（Cambrian Token、Redmine 等）透過 Web UI 完成，不需要建立 `.env` 檔案。
+
 
 ### 4. 首次設定
 
