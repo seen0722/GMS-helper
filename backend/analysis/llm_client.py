@@ -37,7 +37,12 @@ Return a JSON response with the following keys:
 - 'solution': Specific, actionable steps to fix the issue. IMPORTANT: Use numbered list with each step on a NEW LINE separated by \\n (e.g., "1. First step\\n2. Second step\\n3. Third step"). Do NOT put all steps on one line.
 - 'severity': One of "High", "Medium", "Low". High = Crash/Fatal/Blocker.
 - 'category': The main category of the error. Choose from: "Test Case Issue", "Framework Issue", "Media/Codec Issue", "Permission Issue", "Configuration Issue", "Hardware Issue", "Performance Issue", "System Stability".
-- 'confidence_score': An integer from 1 to 5 (5 is highest confidence).
+- 'confidence_score': An integer from 1 to 5 based strictly on evidence strength:
+  5 = Code Level Pinpoint: Stack trace explicitly points to driver, kernel, or specific app logic/race condition. Ironclad evidence.
+  4 = Framework/Service Error: Failure in a specific system service (e.g. WiFiService, AudioService) with clear state error.
+  3 = Generic Assertion/Test Failure: Standard test assertion failure (e.g. "expected true but was false") even with stack trace. This is the BASELINE for most test failures.
+  2 = Vague Guess: Only generic error messages (e.g., "Test failed") without useful logs/traces.
+  1 = Wild Guess: No logs, no stack trace, only timeout or empty failure.
 - 'suggested_assignment': The likely team or component owner (e.g., "Audio Team", "Camera Team", "Framework Team")."""
 
 

@@ -25,15 +25,18 @@ class XMLParser(BaseParser):
         
         try:
             for event, elem in context:
-                if elem.tag == 'Result':
+                # Use endswith to handle namespaces (e.g. {http://...}Result)
+                if elem.tag.endswith('Result'):
                     metadata["test_suite_name"] = elem.get('suite_name', 'Unknown')
                     metadata["start_time"] = elem.get('start')
                     metadata["end_time"] = elem.get('end')
+                    metadata["start_display"] = elem.get('start_display')
+                    metadata["end_display"] = elem.get('end_display')
                     metadata["host_name"] = elem.get('host_name', 'Unknown')
                     metadata["suite_version"] = elem.get('suite_version', 'Unknown')
                     metadata["suite_plan"] = elem.get('suite_plan', 'Unknown')
                     metadata["suite_build_number"] = elem.get('suite_build_number', 'Unknown')
-                elif elem.tag == 'Build':
+                elif elem.tag.endswith('Build'):
                     metadata["device_fingerprint"] = elem.get('build_fingerprint', 'Unknown') # Note: XML uses build_fingerprint usually, checking sample
                     # Re-checking sample_cts.xml for attribute names
                     # sample_cts.xml: <Build ... build_fingerprint="..." build_id="..." build_product="..." ... />
@@ -51,6 +54,7 @@ class XMLParser(BaseParser):
                     metadata["build_type"] = elem.get('build_type', 'Unknown')
                     metadata["security_patch"] = elem.get('build_version_security_patch', 'Unknown')
                     metadata["android_version"] = elem.get('build_version_release', 'Unknown')
+                    metadata["build_version_incremental"] = elem.get('build_version_incremental', 'Unknown')
                 
                 # We only need the top-level info, so we can stop early if we have everything
                 # But often these are at the top. Let's just read the first few elements.

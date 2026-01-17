@@ -12,6 +12,8 @@ services:
       - ./data:/app/data
       # Mount uploads directory
       - ./uploads:/app/uploads
+      # Mount backend code for hot-reloading
+      - ./backend:/app/backend
     security_opt:
       - seccomp:unconfined
     environment:

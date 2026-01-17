@@ -3,6 +3,8 @@ const API_BASE = '/api';
 
 
 let allClustersData = [];
+let allModulesData = [];  // PRD Phase 5: Module View data
+let currentViewMode = 'module';  // 'cluster' or 'module'
 let allFailuresData = [];
 let currentFailuresPage = 1;
 let currentFailuresQuery = '';
@@ -871,34 +873,82 @@ class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-cen
 
         if (infoContainer) {
             infoContainer.innerHTML = `
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mt-6">
-                    <h4 class="font-semibold text-slate-800 mb-4">System Information</h4>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 mt-6 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                        <h4 class="font-semibold text-slate-900 text-sm tracking-tight">System Information</h4>
+                        ${run.start_display ? '<span class="px-2 py-0.5 rounded-md bg-white border border-green-200 text-green-700 text-[10px] font-medium shadow-sm">Verified Metadata</span>' : ''}
+                    </div>
+                    
+                    <div class="p-6 grid grid-cols-1 lg:grid-cols-2 gap-12">
+                        <!-- Left Column: Device Configuration -->
                         <div>
-                            <div class="text-slate-500">Model</div>
-                            <div class="font-medium text-slate-900">${run.build_model || '-'}</div>
+                            <h5 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Device Configuration</h5>
+                            <div class="space-y-4">
+                                <div class="grid grid-cols-[120px_1fr] items-baseline">
+                                    <span class="text-sm text-slate-500">Product</span>
+                                    <span class="text-sm font-medium text-slate-900">${run.build_model || '-'} <span class="text-slate-400 font-normal">(${run.build_product || '-'})</span></span>
+                                </div>
+                                <div class="grid grid-cols-[120px_1fr] items-baseline">
+                                    <span class="text-sm text-slate-500">Build ID</span>
+                                    <span class="text-sm font-medium text-slate-900 flex items-center gap-2">
+                                        ${run.build_id || '-'}
+                                        <span class="px-1.5 py-0.5 rounded text-[10px] bg-slate-100 text-slate-600 capitalize border border-slate-200">${run.build_type || 'user'}</span>
+                                    </span>
+                                </div>
+                                <div class="grid grid-cols-[120px_1fr] items-baseline">
+                                    <span class="text-sm text-slate-500">Android Version</span>
+                                    <div>
+                                        <div class="text-sm font-medium text-slate-900">Android ${run.android_version || '-'}</div>
+                                        ${run.build_version_incremental ? `<div class="text-xs text-slate-400 font-normal mt-0.5">${run.build_version_incremental}</div>` : ''}
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-[120px_1fr] items-baseline">
+                                    <span class="text-sm text-slate-500">Security Patch</span>
+                                    <span class="text-sm font-medium text-slate-900">${run.security_patch || '-'}</span>
+                                </div>
+                            </div>
                         </div>
+
+                        <!-- Right Column: Session Context -->
                         <div>
-                            <div class="text-slate-500">Build ID</div>
-                            <div class="font-medium text-slate-900">${run.build_id || '-'}</div>
-                        </div>
-                        <div>
-                            <div class="text-slate-500">Android Version</div>
-                            <div class="font-medium text-slate-900">${run.android_version || '-'}</div>
-                        </div>
-                        <div>
-                            <div class="text-slate-500">Security Patch</div>
-                            <div class="font-medium text-slate-900">${run.security_patch || '-'}</div>
-                        </div>
-                        <div>
-                            <div class="text-slate-500">Suite Version</div>
-                            <div class="font-medium text-slate-900">${run.suite_version || '-'}</div>
-                        </div>
-                        <div>
-                            <div class="text-slate-500">Host Name</div>
-                            <div class="font-medium text-slate-900">${run.host_name || '-'}</div>
+                            <h5 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">Session Context</h5>
+                            <div class="space-y-4">
+                                <div class="grid grid-cols-[100px_1fr] items-baseline">
+                                    <span class="text-sm text-slate-500">Suite</span>
+                                    <div>
+                                        <div class="text-sm font-medium text-slate-900">CTS ${run.suite_version || '-'}</div>
+                                        <div class="text-xs text-slate-400 mt-0.5">Build ${run.suite_build_number || '-'} • Plan ${run.suite_plan || '-'}</div>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-[100px_1fr] items-baseline">
+                                    <span class="text-sm text-slate-500">Host</span>
+                                    <span class="text-sm font-medium text-slate-900">${run.host_name || '-'}</span>
+                                </div>
+                                <div class="grid grid-cols-[100px_1fr] items-start pt-1">
+                                    <span class="text-sm text-slate-500 flex items-center gap-1.5">
+                                        Duration
+                                    </span>
+                                    <div class="text-sm">
+                                        <div class="font-medium text-slate-900">${run.start_display ? run.start_display : (run.start_time ? new Date(run.start_time).toLocaleString() : '-')}</div>
+                                        <div class="text-xs text-slate-400 mt-1 pl-2 border-l-2 border-slate-100">
+                                            to ${run.end_display ? run.end_display : (run.end_time ? new Date(run.end_time).toLocaleString() : 'Running...')}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
+                    <!-- Footer: Fingerprint -->
+                    <div class="bg-slate-50 border-t border-slate-100 px-6 py-3">
+                         <div class="flex flex-col gap-1">
+                            <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Device Fingerprint</span>
+                            <div class="font-mono text-[10px] text-slate-500 break-all select-all leading-relaxed">
+                                ${run.device_fingerprint || '-'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 </div>
     `;
         }
@@ -1443,11 +1493,19 @@ async function loadClusters(runId) {
     });
 
     try {
-        const res = await fetch(`${API_BASE}/analysis/run/${runId}/clusters`);
-        const clusters = await res.json();
-        allClustersData = clusters;
+        // Fetch both Cluster Data and Module Data (Parallel for speed)
+        const [clustersRes, modulesRes] = await Promise.all([
+            fetch(`${API_BASE}/analysis/run/${runId}/clusters`),
+            fetch(`${API_BASE}/analysis/run/${runId}/clusters/by-module`)
+        ]);
 
-        console.log(`[loadClusters] Fetched ${clusters.length} clusters for run ${runId}`);
+        const clusters = await clustersRes.json();
+        const modulesData = await modulesRes.json();
+
+        allClustersData = clusters;
+        allModulesData = modulesData.modules || []; // Store module data
+
+        console.log(`[loadClusters] Fetched ${clusters.length} clusters and ${allModulesData.length} modules for run ${runId}`);
 
         // --- 1. Calculate KPIs ---
         let highSeverityCount = 0;
@@ -1468,7 +1526,6 @@ async function loadClusters(runId) {
             categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
 
             // To-Do (High/Medium severity, no Redmine - assuming no field yet means no issue)
-            // TODO: Check actual Redmine field when available
             if (sev === 'high' || sev === 'medium') {
                 todoCount++;
             }
@@ -1493,148 +1550,16 @@ async function loadClusters(runId) {
 
         // Update KPI Tiles
         document.getElementById('kpi-severity').textContent = overallSeverity;
-        document.getElementById('kpi-severity').className = `text-2xl font-bold ${overallSeverity === 'High' ? 'text-red-600' : (overallSeverity === 'Medium' ? 'text-yellow-600' : 'text-green-600')}`;
+        document.getElementById('kpi-severity').className = `text-2xl font-display font-bold ${overallSeverity === 'High' ? 'text-red-600' : (overallSeverity === 'Medium' ? 'text-yellow-600' : 'text-green-600')}`;
 
         document.getElementById('kpi-top-category').textContent = topCategory;
         document.getElementById('kpi-category-dist').textContent = `${topCatPct}% of clusters`;
 
         document.getElementById('kpi-todo-count').textContent = todoCount;
 
-        // --- 2. Populate Table ---
-        const tbody = document.getElementById('clusters-table-body');
-        tbody.innerHTML = '';
-
-        if (clusters.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No analysis data found. Click "Run AI Analysis" to start.</td></tr>`;
-            return;
-        }
-
-        const renderTable = (filterNoRedmine) => {
-            console.log(`[renderTable] Rendering clusters, filter=${filterNoRedmine}`);
-            tbody.innerHTML = '';
-            
-            // Filter list
-            const displayClusters = filterNoRedmine 
-                ? clusters.filter(c => !c.redmine_issue_id)
-                : clusters;
-
-            if (displayClusters.length === 0) {
-                 if (filterNoRedmine) {
-                    tbody.innerHTML = `
-                    <tr>
-                        <td colspan="7" class="px-8 py-12 text-center">
-                             <div class="flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-300">
-                                 <div class="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center border-4 border-green-50 shadow-sm mb-2">
-                                     <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
-                                     </svg>
-                                 </div>
-                                 <div>
-                                     <h3 class="text-slate-900 font-bold text-lg">All Issues Synced</h3>
-                                     <p class="text-slate-500 text-sm mt-1">Great job! All identified clusters have been assigned to Redmine.</p>
-                                     <button onclick="document.getElementById('filter-no-redmine').click()" class="mt-4 text-sm text-blue-600 hover:text-blue-800 font-medium hover:underline">
-                                        Show all clusters
-                                     </button>
-                                 </div>
-                             </div>
-                        </td>
-                    </tr>`;
-                 }
-                 return;
-            }
-
-            displayClusters.forEach(cluster => {
-                // Filter logic handled above
-                
-                const tr = document.createElement('tr');
-                tr.className = 'hover:bg-slate-50 transition-colors cursor-pointer border-b border-slate-50 last:border-0';
-                tr.onclick = () => showClusterDetail(cluster);
-
-                // Severity Badge
-                const sev = (cluster.severity || 'Medium');
-                const sevColor = sev === 'High' ? 'bg-red-100 text-red-700' : (sev === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700');
-
-                // Confidence Stars with Heat-map
-                const confidence = cluster.confidence_score || 0;
-                let confColor = 'text-slate-300'; // Gray for 0
-                if (confidence >= 5) confColor = 'text-green-500';
-                else if (confidence === 4) confColor = 'text-emerald-400';
-                else if (confidence === 3) confColor = 'text-yellow-400';
-                else if (confidence === 2) confColor = 'text-orange-400';
-                else if (confidence === 1) confColor = 'text-red-400';
-
-                const stars = '★'.repeat(confidence) + '☆'.repeat(5 - confidence);
-
-                // Parse Summary Title
-                // Parse Summary Title
-                const fullSummary = cluster.ai_summary || cluster.description || 'No summary available.';
-                const summaryTitle = getClusterTitle(fullSummary);
-                const sevClass = sev === 'High' ? 'bg-red-100 text-red-700' : (sev === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700');
-                const sevLabel = sev === 'High' ? 'High' : (sev === 'Medium' ? 'Med' : 'Low');
-
-                // Confidence Heatmap
-                const score = cluster.confidence_score || 0;
-                let confClass = 'bg-slate-100 text-slate-600';
-                let confLabel = 'Low';
-                if (score >= 4) { confClass = 'bg-green-100 text-green-700'; confLabel = 'High'; }
-                else if (score >= 3) { confClass = 'bg-yellow-100 text-yellow-700'; confLabel = 'Med'; }
-                
-                tr.innerHTML = `
-                    <td class="px-4 py-3">
-                        <div class="flex flex-col gap-1.5 items-start">
-                            <span class="font-medium text-slate-900 text-sm leading-snug" title="${summaryTitle || 'Untitled Cluster'}">${summaryTitle || 'Untitled Cluster'}</span>
-                            <div class="flex items-center gap-2 mt-0.5">
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${sevClass}">
-                                    ${sevLabel}
-                                </span>
-                                <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                                    ${cluster.category || 'Uncategorized'}
-                                </span>
-                            </div>
-                        </div>
-                    </td>
-                    <td class="px-4 py-3">
-                        <div class="text-sm text-slate-600 font-semibold">
-                            ${cluster.failures_count || '?'} <span class="text-xs font-normal text-slate-400">tests</span>
-                        </div>
-                    </td>
-                    <td class="px-4 py-3 text-xs">
-                        <div class="flex items-center gap-2">
-                             <div class="flex gap-0.5 text-slate-300">
-                                ${Array(5).fill(0).map((_, i) => 
-                                    `<svg class="w-3 h-3 ${i < score ? 'text-amber-400' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>`
-                                ).join('')}
-                            </div>
-                            <span class="px-1.5 py-0.5 rounded font-bold ${confClass}">${confLabel}</span>
-                        </div>
-                    </td>
-                    <td class="px-4 py-3 text-sm text-slate-600">${cluster.suggested_assignment || '-'}</td>
-                    <td class="px-4 py-3">
-                        ${cluster.redmine_issue_id && redmineBaseUrl
-                        ? `<div class="flex flex-col gap-1">
-                             <a href="${redmineBaseUrl}/issues/${cluster.redmine_issue_id}" target="_blank" class="text-blue-600 hover:underline text-xs">#${cluster.redmine_issue_id}</a>
-                             ${cluster.redmine_status ? `<span class="px-1.5 py-0.5 rounded text-[10px] inline-block ${getStatusColor(cluster.redmine_status)}">${cluster.redmine_status}</span>` : ''}
-                           </div>`
-                        : (cluster.redmine_issue_id
-                            ? `<span class="text-xs text-slate-600">#${cluster.redmine_issue_id}</span>`
-                            : '<span class="text-xs text-slate-400 italic">None</span>')}
-                    </td>
-                    <td class="px-4 py-3">
-                        <button onclick="showClusterDetail(allClustersData.find(c => c.id === ${cluster.id}))" 
-                             class="group flex items-center gap-1.5 px-3 py-1.5 text-blue-600 text-xs font-medium rounded-lg hover:bg-blue-50 transition-all">
-                            <span>Analyze</span>
-                            <svg class="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
-                            </svg>
-                        </button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-        };
-
-        // Initial Render
-        renderTable(false);
+        // --- 2. Render Table (using current view mode) ---
+        const filterCheckbox = document.getElementById('filter-no-redmine');
+        renderClustersTable(filterCheckbox ? filterCheckbox.checked : false);
 
         // Hide/Show analysis and bulk buttons based on cluster existence
         const btnAnalyze = document.getElementById('btn-analyze');
@@ -1672,12 +1597,332 @@ async function loadClusters(runId) {
         }
 
         // Filter Listener
-        const filterCheckbox = document.getElementById('filter-no-redmine');
-        filterCheckbox.onchange = (e) => renderTable(e.target.checked);
+        if (filterCheckbox) {
+            filterCheckbox.onchange = (e) => renderClustersTable(e.target.checked);
+        }
 
     } catch (e) {
         console.error("Failed to load clusters", e);
     }
+}
+
+// PRD Phase 5: Switch View Mode
+function switchViewMode(mode) {
+    if (currentViewMode === mode) return;
+    
+    currentViewMode = mode;
+    console.log(`[switchViewMode] Switching to ${mode}`);
+
+    // Update Buttons
+    const btnCluster = document.getElementById('view-mode-cluster');
+    const btnModule = document.getElementById('view-mode-module');
+
+    if (mode === 'cluster') {
+        btnCluster.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 bg-white text-slate-800 shadow-sm";
+        btnModule.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 text-slate-500 hover:text-slate-700";
+    } else {
+        btnModule.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 bg-white text-slate-800 shadow-sm";
+        btnCluster.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 text-slate-500 hover:text-slate-700";
+    }
+
+    // Re-render
+    const filterCheckbox = document.getElementById('filter-no-redmine');
+    renderClustersTable(filterCheckbox ? filterCheckbox.checked : false);
+}
+
+
+function renderClustersTable(filterNoRedmine) {
+    console.log(`[renderClustersTable] Mode=${currentViewMode}, Filter=${filterNoRedmine}`);
+    const tbody = document.getElementById('clusters-table-body');
+    tbody.innerHTML = '';
+
+    const dataEmpty = currentViewMode === 'cluster' ? allClustersData.length === 0 : allModulesData.length === 0;
+
+    if (dataEmpty) {
+        tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No analysis data found. Click "Run AI Analysis" to start.</td></tr>`;
+        return;
+    }
+
+    if (currentViewMode === 'module') {
+        renderModuleView(tbody, filterNoRedmine);
+    } else {
+        renderClusterView(tbody, filterNoRedmine);
+    }
+}
+
+function renderClusterView(tbody, filterNoRedmine) {
+    // Filter list
+    const displayClusters = filterNoRedmine 
+        ? allClustersData.filter(c => !c.redmine_issue_id)
+        : allClustersData;
+
+    if (displayClusters.length === 0) {
+         if (filterNoRedmine) {
+            renderEmptySyncedState(tbody);
+         }
+         return;
+    }
+
+    displayClusters.forEach(cluster => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50 transition-colors cursor-pointer border-b border-slate-50 last:border-0';
+        tr.onclick = () => showClusterDetail(cluster);
+
+        // Severity Badge
+        const sev = (cluster.severity || 'Medium');
+        const sevClass = sev === 'High' ? 'bg-red-100 text-red-700' : (sev === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700');
+        const sevLabel = sev === 'High' ? 'High' : (sev === 'Medium' ? 'Med' : 'Low');
+
+        // Confidence Heatmap
+        const score = cluster.confidence_score || 0;
+        let confClass = 'bg-slate-100 text-slate-600';
+        let confLabel = 'Low';
+        if (score >= 4) { confClass = 'bg-green-100 text-green-700'; confLabel = 'High'; }
+        else if (score >= 3) { confClass = 'bg-yellow-100 text-yellow-700'; confLabel = 'Med'; }
+        
+        // Parse Title
+        const fullSummary = cluster.ai_summary || cluster.description || 'No summary available.';
+        const summaryTitle = getClusterTitle(fullSummary);
+
+        tr.innerHTML = `
+            <td class="px-4 py-3">
+                <div class="flex flex-col gap-1.5 items-start">
+                    <div class="flex items-start gap-2">
+                        <span class="text-[10px] font-mono text-slate-400 mt-0.5">#${cluster.id}</span>
+                        <span class="font-medium text-slate-900 text-sm leading-snug" title="${summaryTitle || 'Untitled Cluster'}">${summaryTitle || 'Untitled Cluster'}</span>
+                    </div>
+                    <div class="flex items-center gap-2 mt-0.5">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${sevClass}">
+                            ${sevLabel}
+                        </span>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                            ${cluster.category || 'Uncategorized'}
+                        </span>
+                    </div>
+                </div>
+            </td>
+            <td class="px-4 py-3">
+                <div class="text-sm text-slate-600 font-semibold">
+                    ${cluster.failures_count || '?'} <span class="text-xs font-normal text-slate-400">tests</span>
+                </div>
+            </td>
+            <td class="px-4 py-3 text-xs">
+                <div class="flex items-center gap-2">
+                     <div class="flex gap-0.5 text-slate-300">
+                        ${Array(5).fill(0).map((_, i) => 
+                            `<svg class="w-3 h-3 ${i < score ? 'text-amber-400' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>`
+                        ).join('')}
+                    </div>
+                    <span class="px-1.5 py-0.5 rounded font-bold ${confClass}">${confLabel}</span>
+                </div>
+            </td>
+            <td class="px-4 py-3 text-sm text-slate-600">${cluster.suggested_assignment || '-'}</td>
+            <td class="px-4 py-3">
+                ${cluster.redmine_issue_id && redmineBaseUrl
+                ? `<div class="flex flex-col gap-1">
+                     <a href="${redmineBaseUrl}/issues/${cluster.redmine_issue_id}" target="_blank" class="text-blue-600 hover:underline text-xs">#${cluster.redmine_issue_id}</a>
+                     ${cluster.redmine_status ? `<span class="px-1.5 py-0.5 rounded text-[10px] inline-block ${getStatusColor(cluster.redmine_status)}">${cluster.redmine_status}</span>` : ''}
+                   </div>`
+                : (cluster.redmine_issue_id
+                    ? `<span class="text-xs text-slate-600">#${cluster.redmine_issue_id}</span>`
+                    : '<span class="text-xs text-slate-400 italic">None</span>')}
+            </td>
+            <td class="px-4 py-3">
+                <button onclick="showClusterDetail(allClustersData.find(c => c.id === ${cluster.id}))" 
+                     class="group flex items-center gap-1.5 px-3 py-1.5 text-blue-600 text-xs font-medium rounded-lg hover:bg-blue-50 transition-all">
+                    <span>Analyze</span>
+                    <svg class="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                    </svg>
+                </button>
+            </td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function renderModuleView(tbody, filterNoRedmine) {
+    allModulesData.forEach((module, index) => {
+        // Filter clusters inside module? 
+        // For now, let's keep all modules but maybe fade out if no unsynced clusters
+        
+        // Priority Badge
+        const priorityColor = module.priority === 'P0' ? 'bg-red-600 text-white' 
+                            : (module.priority === 'P1' ? 'bg-orange-500 text-white' 
+                            : (module.priority === 'P2' ? 'bg-yellow-500 text-white' : 'bg-slate-500 text-white'));
+
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-slate-100 last:border-0 bg-slate-50/50';
+        
+        // Table Row for Module Header
+        tr.innerHTML = `
+            <td colspan="7" class="p-0">
+                <div class="flex items-center px-4 py-3 bg-slate-100 hover:bg-slate-200 cursor-pointer transition-colors"
+                     onclick="toggleModuleRow('${index}')">
+                    <svg id="module-arrow-${index}" class="w-4 h-4 text-slate-500 mr-2 transition-transform transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                    <span class="inline-flex items-center justify-center w-6 h-6 rounded text-xs font-bold mr-3 ${priorityColor}">${module.priority}</span>
+                    <div class="flex-1">
+                        <span class="font-bold text-slate-800 text-sm">${module.name}</span>
+                        <span class="text-xs text-slate-500 ml-2">(${module.total_failures} failures)</span>
+                    </div>
+                     <span class="text-xs font-semibold text-purple-600 bg-purple-50 px-2 py-1 rounded-full border border-purple-100">
+                        ${module.cluster_count} Clusters
+                    </span>
+                </div>
+                
+                <!-- Expanded Clusters inside Module -->
+                <div id="module-content-${index}" class="hidden pl-8 pr-4 py-2 bg-white border-t border-slate-200">
+                    <table class="w-full text-sm text-left">
+                        <tbody class="divide-y divide-slate-50">
+                             ${renderModuleClusters(module.clusters, filterNoRedmine)}
+                        </tbody>
+                    </table>
+                </div>
+            </td>
+        `;
+
+        tbody.appendChild(tr);
+    });
+}
+
+// PRD Phase 5: View Mode
+// currentViewMode is defined at top of file
+
+// Ensure UI buttons update on load
+document.addEventListener('DOMContentLoaded', () => {
+    const btnCluster = document.getElementById('view-mode-cluster');
+    const btnModule = document.getElementById('view-mode-module');
+    if (btnCluster && btnModule) {
+        if (currentViewMode === 'module') {
+            btnModule.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 bg-white text-slate-800 shadow-sm";
+            btnCluster.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 text-slate-500 hover:text-slate-700";
+        } else {
+            btnCluster.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 bg-white text-slate-800 shadow-sm";
+            btnModule.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 text-slate-500 hover:text-slate-700";
+        }
+    }
+});
+// ... (The above is illustrative, I will just update the render function mainly and the variable initialization)
+
+
+function renderModuleClusters(clusters, filterNoRedmine) {
+    const displayClusters = filterNoRedmine 
+        ? clusters.filter(c => !allClustersData.find(ac => ac.id === c.id)?.redmine_issue_id)
+        : clusters;
+
+    if (displayClusters.length === 0) return `<tr><td colspan="6" class="py-4 text-center text-xs text-slate-400">All clusters in this module are synced.</td></tr>`;
+
+    return displayClusters.map(c => {
+        // We need full data which might be in allClustersData matching by ID
+        // The cluster object from 'by-module' might be simplified, let's look it up
+        const fullC = allClustersData.find(ac => ac.id === c.id) || c; 
+        
+        // Use fullC for rendering to ensure we have all fields like suggested_assignment etc.
+        
+        const sevClass = fullC.severity === 'High' ? 'bg-red-100 text-red-700' : (fullC.severity === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700');
+        const sevLabel = fullC.severity === 'High' ? 'High' : (fullC.severity === 'Medium' ? 'Med' : 'Low');
+        const summaryTitle = getClusterTitle(fullC.ai_summary || fullC.description);
+        
+        // Confidence
+        const score = fullC.confidence_score || 0;
+        let confClass = 'bg-slate-100 text-slate-600';
+        let confLabel = 'Low';
+        if (score >= 4) { confClass = 'bg-green-100 text-green-700'; confLabel = 'High'; }
+        else if (score >= 3) { confClass = 'bg-yellow-100 text-yellow-700'; confLabel = 'Med'; }
+        
+        return `
+        <tr class="hover:bg-slate-50 cursor-pointer transition-colors border-b border-slate-50 last:border-0" onclick="showClusterDetail(allClustersData.find(x => x.id === ${fullC.id}))">
+            <td class="px-4 py-3 pl-8"> <!-- Indented slightly -->
+                <div class="flex flex-col gap-1.5 items-start">
+                    <div class="flex items-center gap-2">
+                         <span class="text-[10px] font-mono text-slate-400">#${fullC.id}</span>
+                         <span class="font-medium text-slate-900 text-sm leading-snug" title="${summaryTitle || 'Untitled Cluster'}">${summaryTitle || 'Untitled Cluster'}</span>
+                    </div>
+                    <div class="flex items-center gap-2 mt-0.5">
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium ${sevClass}">
+                            ${sevLabel}
+                        </span>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                            ${fullC.category || 'Uncategorized'}
+                        </span>
+                    </div>
+                </div>
+            </td>
+            <td class="px-4 py-3">
+                <div class="text-sm text-slate-600 font-semibold">
+                    ${fullC.failures_count || c.failures_in_module || '?'} <span class="text-xs font-normal text-slate-400">tests</span>
+                </div>
+            </td>
+            <td class="px-4 py-3 text-xs">
+                <div class="flex items-center gap-2">
+                     <div class="flex gap-0.5 text-slate-300">
+                        ${Array(5).fill(0).map((_, i) => 
+                            `<svg class="w-3 h-3 ${i < score ? 'text-amber-400' : ''}" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>`
+                        ).join('')}
+                    </div>
+                    <span class="px-1.5 py-0.5 rounded font-bold ${confClass}">${confLabel}</span>
+                </div>
+            </td>
+            <td class="px-4 py-3 text-sm text-slate-600">${fullC.suggested_assignment || '-'}</td>
+             <td class="px-4 py-3">
+                ${fullC.redmine_issue_id && redmineBaseUrl
+                ? `<div class="flex flex-col gap-1">
+                     <a href="${redmineBaseUrl}/issues/${fullC.redmine_issue_id}" target="_blank" class="text-blue-600 hover:underline text-xs">#${fullC.redmine_issue_id}</a>
+                     ${fullC.redmine_status ? `<span class="px-1.5 py-0.5 rounded text-[10px] inline-block ${getStatusColor(fullC.redmine_status)}">${fullC.redmine_status}</span>` : ''}
+                   </div>`
+                : (fullC.redmine_issue_id
+                    ? `<span class="text-xs text-slate-600">#${fullC.redmine_issue_id}</span>`
+                    : '<span class="text-xs text-slate-400 italic">None</span>')}
+            </td>
+            <td class="px-4 py-3">
+                <button onclick="showClusterDetail(allClustersData.find(c => c.id === ${fullC.id}))" 
+                     class="group flex items-center gap-1.5 px-3 py-1.5 text-blue-600 text-xs font-medium rounded-lg hover:bg-blue-50 transition-all">
+                    <span>Analyze</span>
+                    <svg class="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                    </svg>
+                </button>
+            </td>
+        </tr>
+        `;
+    }).join('');
+}
+
+function toggleModuleRow(index) {
+    const content = document.getElementById(`module-content-${index}`);
+    const arrow = document.getElementById(`module-arrow-${index}`);
+    
+    if (content.classList.contains('hidden')) {
+        content.classList.remove('hidden');
+        arrow.classList.add('rotate-90');
+    } else {
+        content.classList.add('hidden');
+        arrow.classList.remove('rotate-90');
+    }
+}
+
+function renderEmptySyncedState(tbody) {
+    tbody.innerHTML = `
+    <tr>
+        <td colspan="7" class="px-8 py-12 text-center">
+             <div class="flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-300">
+                 <div class="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center border-4 border-green-50 shadow-sm mb-2">
+                     <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+                     </svg>
+                 </div>
+                 <div>
+                     <h3 class="text-slate-900 font-bold text-lg">All Issues Synced</h3>
+                     <p class="text-slate-500 text-sm mt-1">Great job! All identified clusters have been assigned to Redmine.</p>
+                     <button onclick="document.getElementById('filter-no-redmine').click()" class="mt-4 text-sm text-blue-600 hover:text-blue-800 font-medium hover:underline">
+                        Show all clusters
+                     </button>
+                 </div>
+             </div>
+        </td>
+    </tr>`;
 }
 
 async function showClusterDetail(cluster) {

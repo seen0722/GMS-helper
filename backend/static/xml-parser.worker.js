@@ -27,11 +27,11 @@ class StreamingXMLParser {
         let match;
         
         while (true) {
-            // Skip whitespace
-            this.buffer = this.buffer.trimStart();
+            // Buffer management: don't trim start to preserve whitespace in text nodes
+            // But we need to handle whitespace if we are looking for a tag
             if (!this.buffer) break;
 
-            // CDATA section
+            // Check for CDATA
             if (this.buffer.startsWith('<![CDATA[')) {
                 const endIdx = this.buffer.indexOf(']]>');
                 if (endIdx === -1) break; // Need more data
@@ -97,14 +97,32 @@ class StreamingXMLParser {
                 continue;
             }
 
-            // Text content
+            // Text content (including whitespace)
             const nextTagIdx = this.buffer.indexOf('<');
-            if (nextTagIdx === -1) break;
+            if (nextTagIdx === -1) {
+                // If no tag found, and we are not at end of stream (implied by break), we wait for more data.
+                // However, there is a risk: what if the text really doesn't have a tag after it (end of file)?
+                // The 'end()' method calls parse() one last time, but no new data added.
+                // We should handle that case, but for streaming, we assume well-formed XML ends with >.
+                // BUT: We could be parsing text like "  " which is just waiting for <.
+                break;
+            }
+            
             if (nextTagIdx > 0) {
                 const text = this.buffer.slice(0, nextTagIdx);
-                if (this.onText && text.trim()) this.onText(this.decodeXML(text));
+                // Send ALL text, even if whitespace, to preserve formatting
+                if (this.onText) this.onText(this.decodeXML(text));
                 this.buffer = this.buffer.slice(nextTagIdx);
+                continue;
             }
+            
+            // If nextTagIdx === 0, it means we have '<'.
+            // But we already checked startsWith('<') above?
+            // Yes, so we shouldn't reach here if buffer starts with '<'.
+            // Wait, if nextTagIdx === 0, buffer starts with '<'. 
+            // The checks above cover it.
+            // If we are here, it means buffer DOES NOT start with '<', '<?', '<!--', etc.
+            // So logic flows safely to Text content block.
         }
     }
 
@@ -219,6 +237,11 @@ async function parseXMLFile(file) {
                 if (currentTest) {
                     currentTest.error_message = tag.attributes.message || null;
                     currentFailure = currentTest;
+                    // Start collecting potential direct text stack trace
+                    // Buffer is reset here, but if there's a subsequent StackTrace tag, it will reset again.
+                    // This allows capturing text directly inside Failure.
+                    stackTraceText = '';
+                    collectingStackTrace = true;
                 }
                 break;
 
@@ -248,14 +271,19 @@ async function parseXMLFile(file) {
                     currentFailure.stack_trace = stackTraceText.trim();
                 }
                 collectingStackTrace = false;
-                stackTraceText = '';
+                // Don't clear stackTraceText yet, let Failure close handle fallback if needed?
+                // Actually, if we had a StackTrace tag, we are done.
+                // If we treat Failure content as fallback, we don't want to mix them.
+                stackTraceText = ''; 
                 break;
 
             case 'Failure':
                 // Get stack trace from collected text if not in StackTrace element
+                // And only if we have collected something (maybe just whitespace?)
                 if (currentFailure && !currentFailure.stack_trace && stackTraceText.trim()) {
                     currentFailure.stack_trace = stackTraceText.trim();
                 }
+                collectingStackTrace = false;
                 break;
 
             case 'Test':

@@ -341,5 +341,90 @@ def get_cluster_failures(cluster_id: int, db: Session = Depends(get_db)):
     # Get all failures associated with this cluster
     failures = db.query(models.TestCase).join(models.FailureAnalysis).filter(
         models.FailureAnalysis.cluster_id == cluster_id
-    ).limit(50).all() # Limit to 50 for now
+    ).distinct().limit(50).all() # Limit to 50 for now
     return failures
+
+
+@router.get("/run/{run_id}/clusters/by-module")
+def get_clusters_by_module(run_id: int, db: Session = Depends(get_db)):
+    """
+    Get clusters grouped by module for hierarchical UI display.
+    PRD Phase 5: Hierarchical UI
+    """
+    # Get all test cases with their cluster info for this run
+    results = db.query(
+        models.TestCase.module_name,
+        models.FailureCluster,
+        models.FailureAnalysis
+    ).join(
+        models.FailureAnalysis, models.TestCase.id == models.FailureAnalysis.test_case_id
+    ).join(
+        models.FailureCluster, models.FailureAnalysis.cluster_id == models.FailureCluster.id
+    ).filter(
+        models.TestCase.test_run_id == run_id
+    ).all()
+    
+    if not results:
+        return {"modules": []}
+    
+    # Group by module
+    module_data = {}
+    cluster_failures = {}  # cluster_id -> count
+    
+    for module_name, cluster, analysis in results:
+        # Track failures per cluster
+        if cluster.id not in cluster_failures:
+            cluster_failures[cluster.id] = 0
+        cluster_failures[cluster.id] += 1
+        
+        # Initialize module if new
+        if module_name not in module_data:
+            module_data[module_name] = {
+                "name": module_name,
+                "total_failures": 0,
+                "clusters": {},  # cluster_id -> cluster_info
+            }
+        
+        module_data[module_name]["total_failures"] += 1
+        
+        # Add cluster to module if not already there
+        if cluster.id not in module_data[module_name]["clusters"]:
+            module_data[module_name]["clusters"][cluster.id] = {
+                "id": cluster.id,
+                "description": cluster.description,
+                "severity": cluster.severity,
+                "category": cluster.category,
+                "ai_summary": cluster.ai_summary[:200] if cluster.ai_summary else None,
+                "failures_in_module": 0
+            }
+        
+        module_data[module_name]["clusters"][cluster.id]["failures_in_module"] += 1
+    
+    # Calculate priority and convert to list format
+    modules_list = []
+    for module_name, data in module_data.items():
+        # Determine priority based on total failures and severity
+        total = data["total_failures"]
+        has_high_severity = any(c["severity"] == "High" for c in data["clusters"].values())
+        
+        if has_high_severity:
+            priority = "P0"
+        elif total > 15:
+            priority = "P1"
+        elif total >= 5:
+            priority = "P2"
+        else:
+            priority = "P3"
+        
+        modules_list.append({
+            "name": module_name,
+            "total_failures": total,
+            "priority": priority,
+            "cluster_count": len(data["clusters"]),
+            "clusters": list(data["clusters"].values())
+        })
+    
+    # Sort by total failures descending
+    modules_list.sort(key=lambda x: (-x["total_failures"], x["name"]))
+    
+    return {"modules": modules_list}

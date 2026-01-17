@@ -36,11 +36,28 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
             test_run.build_type = metadata.get("build_type")
             test_run.security_patch = metadata.get("security_patch")
             test_run.android_version = metadata.get("android_version")
+            test_run.build_version_incremental = metadata.get("build_version_incremental")
             test_run.suite_version = metadata.get("suite_version")
             test_run.suite_plan = metadata.get("suite_plan")
             test_run.suite_build_number = metadata.get("suite_build_number")
             test_run.host_name = metadata.get("host_name")
-            # test_run.start_time = ... # Update if parsed
+            test_run.start_display = metadata.get("start_display")
+            test_run.end_display = metadata.get("end_display")
+            
+            # Parse start and end times (integers in milliseconds)
+            if metadata.get("start_time"):
+                try:
+                    ts = int(metadata.get("start_time")) / 1000.0
+                    test_run.start_time = datetime.fromtimestamp(ts)
+                except Exception as e:
+                    print(f"Failed to parse start_time: {e}")
+
+            if metadata.get("end_time"):
+                try:
+                    ts = int(metadata.get("end_time")) / 1000.0
+                    test_run.end_time = datetime.fromtimestamp(ts)
+                except Exception as e:
+                    print(f"Failed to parse end_time: {e}")
             db.commit()
         except Exception as e:
             print(f"Metadata parsing failed: {e}")
