@@ -3,7 +3,12 @@ from typing import Optional, Dict, List, Any
 
 class RedmineClient:
     def __init__(self, url: str, api_key: str):
-        self.url = url.rstrip('/')
+        # Smart URL handling: 
+        # If running in Docker (implied by this code running on backend) and URL provides localhost, 
+        # swap to host.docker.internal to allow connection to host machine.
+        processed_url = url.replace('localhost', 'host.docker.internal').replace('127.0.0.1', 'host.docker.internal')
+        
+        self.url = processed_url.rstrip('/')
         self.api_key = api_key
         self.headers = {
             'X-Redmine-API-Key': self.api_key,

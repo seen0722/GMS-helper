@@ -9,6 +9,7 @@ let allFailuresData = [];
 let currentFailuresPage = 1;
 let currentFailuresQuery = '';
 const failuresPerPage = 50;
+let redmineProjectsCache = []; // Cache for project name lookup
 
 // Java Stack Trace syntax highlighting
 function highlightStackTrace(text) {
@@ -1704,8 +1705,13 @@ function renderClusterView(tbody, filterNoRedmine) {
                 </div>
             </td>
             <td class="px-4 py-3">
-                <div class="text-sm text-slate-600 font-semibold">
-                    ${cluster.failures_count || '?'} <span class="text-xs font-normal text-slate-400">tests</span>
+                <div class="flex flex-col items-start gap-0.5">
+                    <div class="text-sm text-slate-600 font-semibold">
+                        ${cluster.failures_count || '?'} <span class="text-xs font-normal text-slate-400">tests</span>
+                    </div>
+                     <div class="text-xs text-slate-500 font-medium" title="${cluster.module_names ? cluster.module_names.join(', ') : ''}">
+                        ${cluster.module_names ? cluster.module_names.length : 0} <span class="text-[10px] font-normal text-slate-400">modules</span>
+                    </div>
                 </div>
             </td>
             <td class="px-4 py-3 text-xs">
@@ -1753,7 +1759,7 @@ function renderClusterView(tbody, filterNoRedmine) {
             <td class="px-4 py-3">
                 ${cluster.redmine_issue_id && redmineBaseUrl
                 ? `<div class="flex flex-col gap-1">
-                     <a href="${redmineBaseUrl}/issues/${cluster.redmine_issue_id}" target="_blank" class="text-blue-600 hover:underline text-xs">#${cluster.redmine_issue_id}</a>
+                     <a href="${redmineBaseUrl}/issues/${cluster.redmine_issue_id}" target="_blank" class="text-blue-600 hover:underline text-xs" onclick="event.stopPropagation()">#${cluster.redmine_issue_id}</a>
                      ${cluster.redmine_status ? `<span class="px-1.5 py-0.5 rounded text-[10px] inline-block ${getStatusColor(cluster.redmine_status)}">${cluster.redmine_status}</span>` : ''}
                    </div>`
                 : (cluster.redmine_issue_id
@@ -1850,16 +1856,18 @@ function renderModuleView(tbody, filterNoRedmine) {
                     </div>
                     
                     <!-- Batch Sync Button (only show if unsynced) -->
+
                     ${unsyncedCount > 0 ? `
-                    <button onclick="event.stopPropagation(); batchSyncModule('${module.name}')" 
-                            class="ml-3 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5">
+                    <button onclick="event.stopPropagation(); syncModule('${module.name}')" 
+                            class="ml-3 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm hover:shadow">
                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"></path>
+                           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
                         </svg>
-                        Sync All
+                        <span>Sync All</span>
                     </button>
                     ` : ''}
                 </div>
+
                 
                 <!-- Expanded Clusters inside Module -->
                 <div id="module-content-${index}" class="hidden pl-8 pr-4 py-2 bg-white border-t border-slate-200">
@@ -1985,7 +1993,7 @@ function renderModuleClusters(clusters, filterNoRedmine) {
              <td class="px-4 py-3">
                 ${fullC.redmine_issue_id && redmineBaseUrl
                 ? `<div class="flex flex-col gap-1">
-                     <a href="${redmineBaseUrl}/issues/${fullC.redmine_issue_id}" target="_blank" class="text-blue-600 hover:underline text-xs">#${fullC.redmine_issue_id}</a>
+                     <a href="${redmineBaseUrl}/issues/${fullC.redmine_issue_id}" target="_blank" class="text-blue-600 hover:underline text-xs" onclick="event.stopPropagation()">#${fullC.redmine_issue_id}</a>
                      ${fullC.redmine_status ? `<span class="px-1.5 py-0.5 rounded text-[10px] inline-block ${getStatusColor(fullC.redmine_status)}">${fullC.redmine_status}</span>` : ''}
                    </div>`
                 : (fullC.redmine_issue_id
@@ -2937,8 +2945,10 @@ async function loadRedmineSettings() {
         const keyInput = document.getElementById('current-redmine-key');
 
         if (data.is_set && data.url) {
-            redmineBaseUrl = data.url; // Store for link generation
-            if (urlInput) urlInput.value = data.url;
+            // Frontend-facing URL: Replace host.docker.internal with localhost
+            redmineBaseUrl = data.url.replace('host.docker.internal', 'localhost');
+            
+            if (urlInput) urlInput.value = data.url; // Show actual backend config in input
             if (keyInput) keyInput.value = data.masked_key || '';
         } else {
             if (urlInput) urlInput.value = '';
@@ -3595,6 +3605,8 @@ async function loadRedmineProjects() {
     try {
         const res = await fetch(`${API_BASE}/integrations/redmine/projects`);
         const projects = await res.json();
+        redmineProjectsCache = projects.projects || []; // Update cache (Extract from response wrapper)
+        console.log("Loaded Redmine Projects:", redmineProjectsCache);
 
         const select = document.getElementById('redmine-project');
         if (!select) return;
@@ -3855,62 +3867,172 @@ async function executeBulkCreate() {
     }
 }
 
-// --- Batch Sync for Single Module (PRD Phase 4) ---
-async function batchSyncModule(moduleName) {
-    if (!router.currentParams || !router.currentParams.id) {
+// --- Unified Sync Logic with Custom Modal (PRD Phase 5) ---
+
+// Modal Helper
+async function showRedmineSyncModal(stats, onConfirm) {
+    const modal = document.getElementById('redmine-sync-modal');
+    if (!modal) {
+        console.error("Redmine sync modal not found in DOM");
+        // Fallback to native confirm if modal missing
+        if (confirm(`Sync ${stats.count} issues for module ${stats.moduleName}?`)) {
+            onConfirm();
+        }
+        return;
+    }
+
+    const urlSpan = document.getElementById('sync-modal-url');
+    const projectSpan = document.getElementById('sync-modal-project');
+    const moduleSpan = document.getElementById('sync-modal-module');
+    const countSpan = document.getElementById('sync-modal-count');
+    const confirmBtn = document.getElementById('btn-confirm-sync');
+    const cancelBtn = document.getElementById('btn-cancel-sync');
+
+    // Populate Data
+    if (urlSpan) urlSpan.textContent = redmineBaseUrl || 'Not configured';
+
+    // Ensure cache is loaded
+    if (redmineProjectsCache.length === 0) {
+        await loadRedmineProjects();
+    }
+    
+    // Find project name if possible, or show ID
+    if (projectSpan) {
+        const project = redmineProjectsCache.find(p => p.id == stats.projectId);
+        projectSpan.textContent = project ? project.name : (stats.projectId || 'Default');
+    }
+    
+    if (moduleSpan) moduleSpan.textContent = stats.moduleName;
+    if (countSpan) countSpan.textContent = stats.count;
+
+    // Show Modal
+    modal.classList.remove('hidden');
+
+    // Button Handlers
+    const close = () => {
+        modal.classList.add('hidden');
+        // Cleanup listeners
+        if (confirmBtn) confirmBtn.onclick = null;
+        if (cancelBtn) cancelBtn.onclick = null;
+    };
+
+    if (confirmBtn) {
+        confirmBtn.onclick = () => {
+            close();
+            onConfirm();
+        };
+    }
+
+    if (cancelBtn) {
+        cancelBtn.onclick = () => {
+            close();
+        };
+    }
+}
+
+// Unified Sync Function (Replaces batchSyncModule)
+async function syncModule(moduleName) {
+    // 1. Calculate stats (Count unsynced clusters for this module)
+    const runId = router.currentParams.id;
+    if (!runId) {
         showNotification('No test run selected', 'error');
         return;
     }
 
-    // Show quick confirmation
-    const confirmed = confirm(`Sync all unsynced clusters for module "${moduleName}"?\n\nThis will create Redmine issues for clusters in this module only.`);
-    if (!confirmed) return;
+    // Filter clusters for this module that are NOT already synced
+    // Note: Clusters have a 'module_names' array, not a single 'module_name'
+    const clustersToSync = allClustersData.filter(c => {
+        const hasModule = c.module_names && c.module_names.includes(moduleName);
+        const unsynced = !c.redmine_issue_id;
+        return hasModule && unsynced;
+    });
 
-    showNotification(`Syncing clusters for ${moduleName}...`, 'info');
+    if (clustersToSync.length === 0) {
+        console.warn(`No unsynced clusters found for module: "${moduleName}"`);
+        showNotification(`No unsynced clusters found for module "${moduleName || 'Unknown'}".`, 'warning');
+        return;
+    }
 
-    try {
-        // Get default project ID from config
-        const defaultProjectId = currentModuleOwnerMapConfig?.default_settings?.default_project_id || 1;
+    // 2. Get Default Project ID (or specific rule project)
+    const defaultProjectId = currentModuleOwnerMapConfig?.default_settings?.default_project_id || 1;
+
+    // 3. Show Custom Modal
+    console.log("Showing Redmine Sync Modal for module:", moduleName);
+    await showRedmineSyncModal({
+        moduleName: moduleName,
+        count: clustersToSync.length,
+        projectId: defaultProjectId,
+        url: redmineBaseUrl
+    }, async () => {
+        // 4. Actual Sync Logic (On Confirm)
+        console.log("User confirmed sync for module:", moduleName);
         
-        const res = await fetch(`${API_BASE}/integrations/redmine/smart-bulk-create`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                run_id: parseInt(router.currentParams.id),
-                project_id: defaultProjectId,
-                module_name: moduleName  // Filter to only this module
-            })
-        });
-
-        const result = await res.json();
-
-        if (res.ok) {
-            const createdCount = result.created || 0;
-            const skippedCount = result.skipped || 0;
-            
-            if (createdCount > 0) {
-                showNotification(`✅ Created ${createdCount} issues for ${moduleName}`, 'success');
-            } else if (skippedCount > 0) {
-                showNotification(`ℹ️ All clusters already synced for ${moduleName}`, 'info');
-            } else {
-                showNotification(`ℹ️ No unsynced clusters found for ${moduleName}`, 'info');
+        // Find the button to show loading state (search for both syncModule and batchSyncModule for safety)
+        const btns = document.querySelectorAll(`button`);
+        let targetBtn = null;
+        for (let b of btns) {
+            const onClickStr = b.getAttribute('onclick') || '';
+            if (onClickStr.includes(`syncModule('${moduleName}')`) || onClickStr.includes(`batchSyncModule('${moduleName}')`)) {
+                targetBtn = b;
+                break;
             }
-            
-            // Reload clusters with a delay to ensure DB is updated
-            const runId = router.currentParams.id;
-            if (runId) {
+        }
+
+        const originalContent = targetBtn ? targetBtn.innerHTML : '';
+        if (targetBtn) {
+            targetBtn.innerHTML = `<svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+            targetBtn.disabled = true;
+        }
+
+        showNotification(`Syncing clusters for ${moduleName}...`, 'info');
+
+        try {
+            console.log("Sending sync request to API...");
+            const res = await fetch(`${API_BASE}/integrations/redmine/smart-bulk-create`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    run_id: parseInt(runId),
+                    project_id: defaultProjectId,
+                    module_name: moduleName  // Filter to only this module
+                })
+            });
+
+            console.log("API Response status:", res.status);
+            const result = await res.json();
+            console.log("API Response body:", result);
+
+            if (res.ok) {
+                const createdCount = result.created || 0;
+                
+                if (createdCount > 0) {
+                    showNotification(`✅ Successfully created ${createdCount} issues for ${moduleName}`, 'success');
+                } else {
+                    showNotification(`ℹ️ No new issues created (checked ${clustersToSync.length} clusters)`, 'info');
+                }
+                
+                // Reload data to reflect changes
                 setTimeout(async () => {
                     await loadClusters(runId);
                 }, 300);
+            } else {
+                console.error("Sync failed:", result);
+                showNotification(`❌ Sync failed: ${result.detail || 'Unknown error'}`, 'error');
             }
-        } else {
-            showNotification(`❌ Failed: ${result.detail || 'Unknown error'}`, 'error');
+        } catch (e) {
+            console.error("Sync error exception", e);
+            showNotification(`❌ Error: ${e.message}`, 'error');
+        } finally {
+            if (targetBtn) {
+                targetBtn.innerHTML = originalContent;
+                targetBtn.disabled = false;
+            }
         }
-    } catch (e) {
-        console.error("Batch sync error", e);
-        showNotification(`❌ Error: ${e.message}`, 'error');
-    }
+    });
 }
+
+// Alias for backward compatibility if needed
+const batchSyncModule = syncModule;
 
 // --- Export Report ---
 function exportRunReport() {

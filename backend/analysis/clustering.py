@@ -311,19 +311,105 @@ class ImprovedFailureClusterer:
         failures: List[Dict]
     ) -> Tuple[List[int], Dict[str, Any]]:
         """
-        Cluster failures using enriched features and HDBSCAN.
+        Cluster failures using a Module-First Hierarchical Strategy.
         
-        Args:
-            failures: List of failure dicts (see create_enriched_features)
+        Phase 1: Partition by Module Name (Hard Constraint)
+        Phase 2: Local Clustering within each module group
         
-        Returns:
-            Tuple of:
-            - labels: List of cluster assignments (-1 for outliers with HDBSCAN)
-            - metrics: Dict containing clustering quality information
+        This ensures failures from different modules (e.g., Audio vs NFC) are NEVER merged,
+        guaranteeing clean ownership assignment.
         """
         if not failures:
             return [], {'n_clusters': 0, 'method': 'empty'}
+
+        # 1. Partition by Module
+        module_groups = defaultdict(list)
+        # Store original indices to reconstruct result order
+        original_indices = defaultdict(list)
         
+        for i, f in enumerate(failures):
+            module = f.get('module_name') or 'Unknown'
+            module_groups[module].append(f)
+            original_indices[module].append(i)
+            
+        final_labels = [0] * len(failures)
+        global_cluster_offset = 0
+        total_clusters = 0
+        total_outliers = 0
+        
+        detailed_metrics = {}
+        
+        # 2. Process each module group independently
+        for module, group_failures in module_groups.items():
+            n_samples = len(group_failures)
+            
+            # Dynamic SVD: Disable if samples are too few to support it
+            # We need at least n_components + 1 samples.
+            # Also, for small N, SVD hurts more than it helps.
+            use_svd = self.svd is not None and n_samples >= 50 and n_samples > self.svd_components
+            
+            # Run core clustering on this group
+            local_labels, local_metrics = self._cluster_core(group_failures, use_svd_override=use_svd)
+            
+            # Post-processing per module (Outliers & Merging)
+            # We handle outliers locally to keep them within the module
+            local_labels = self.handle_outliers(group_failures, local_labels)
+            local_labels = self.merge_small_clusters(group_failures, local_labels)
+            
+            # Map local labels to global unique IDs
+            # Local labels are 0, 1, 2...
+            # We shift them by global_cluster_offset
+            
+            # Identify unique clusters in this batch
+            unique_local = sorted(list(set(l for l in local_labels if l >= 0)))
+            mapping = {l: l + global_cluster_offset for l in unique_local}
+            
+            # Apply mapping and store in final results
+            indices = original_indices[module]
+            for local_idx, global_idx in enumerate(indices):
+                lbl = local_labels[local_idx]
+                if lbl >= 0:
+                    final_labels[global_idx] = mapping[lbl]
+                else:
+                    # strict outlier handling should have removed -1, but just in case
+                    # fallback to a new unique cluster for this outlier
+                    final_labels[global_idx] = global_cluster_offset + len(unique_local)
+                    # (This case shouldn't happen if handle_outliers works)
+
+            # Update offset for next module
+            # If we had 3 clusters (0, 1, 2), next starts at 3
+            # We use len(unique_local) because handle_outliers might have created new clusters
+            n_local_clusters = len(set(l for l in local_labels if l >= 0))
+            global_cluster_offset += n_local_clusters
+            
+            total_clusters += n_local_clusters
+            total_outliers += local_metrics.get('n_outliers', 0)
+            detailed_metrics[module] = local_metrics
+
+        # 3. Aggregate Metrics
+        self._last_metrics = {
+            'method': 'hierarchical_module_first',
+            'n_clusters': total_clusters,
+            'n_outliers': total_outliers,
+            'n_samples': len(failures),
+            'n_modules': len(module_groups),
+            'details': detailed_metrics
+        }
+        
+        return final_labels, self._last_metrics
+
+    def _cluster_core(
+        self, 
+        failures: List[Dict],
+        use_svd_override: bool = True
+    ) -> Tuple[List[int], Dict[str, Any]]:
+        """
+        Core clustering logic (formerly cluster_failures).
+        Runs TF-IDF -> SVD (Optional) -> HDBSCAN/KMeans.
+        """
+        if not failures:
+            return [], {'n_clusters': 0}
+            
         enriched_texts = self.create_enriched_features(failures)
         
         # Filter empty texts
@@ -331,61 +417,36 @@ class ImprovedFailureClusterer:
         valid_texts = [t for t, v in zip(enriched_texts, valid_mask) if v]
         
         if not valid_texts:
+            return [0] * len(failures), {'n_clusters': 1, 'note': 'all_empty'}
+        
+        # Heuristic for tiny groups: If < 3 samples, just put them in one cluster
+        if len(valid_texts) < 3:
             labels = [0] * len(failures)
-            self._last_metrics = {'n_clusters': 1, 'method': 'all_empty_fallback'}
-            return labels, self._last_metrics
-        
-        if len(valid_texts) == 1:
-            # Single failure, assign to cluster 0
-            labels = [0 if v else -1 for v in valid_mask]
-            self._last_metrics = {'n_clusters': 1, 'method': 'single_sample'}
-            return labels, self._last_metrics
-        
+            return labels, {'n_clusters': 1, 'method': 'tiny_group_heuristic'}
+
         try:
-            # Vectorize with TF-IDF
+            # Vectorize
             tfidf_matrix = self.vectorizer.fit_transform(valid_texts)
-            original_dims = tfidf_matrix.shape[1]
             
-            # PRD Phase 2: Apply SVD dimensionality reduction
-            if self.svd is not None and tfidf_matrix.shape[1] > self.svd_components:
-                # Ensure n_components doesn't exceed features
-                n_components = min(self.svd_components, tfidf_matrix.shape[1] - 1, len(valid_texts) - 1)
-                if n_components > 0:
-                    self.svd.n_components = n_components
-                    reduced_matrix = self.svd.fit_transform(tfidf_matrix)
-                    # Convert to sparse-like format for consistency
-                    feature_matrix = reduced_matrix
-                    reduced_dims = reduced_matrix.shape[1]
+            # SVD (Dimensionality Reduction) - Conditional
+            if use_svd_override and self.svd is not None and tfidf_matrix.shape[1] > self.svd_components:
+                # Ensure n_components logic
+                n_avail = min(self.svd_components, tfidf_matrix.shape[1] - 1, len(valid_texts) - 1)
+                if n_avail > 2: # Only if SVD is meaningful
+                    self.svd.n_components = n_avail
+                    feature_matrix = self.svd.fit_transform(tfidf_matrix)
                 else:
                     feature_matrix = tfidf_matrix
-                    reduced_dims = original_dims
             else:
                 feature_matrix = tfidf_matrix
-                reduced_dims = original_dims
             
-            # Debug logging
-            with open("clustering_debug.log", "a") as f:
-                f.write(f"\n--- Clustering Run ---\n")
-                f.write(f"Using HDBSCAN: {self.use_hdbscan}\n")
-                f.write(f"Valid texts count: {len(valid_texts)}\n")
-                f.write(f"Original TF-IDF dims: {original_dims}\n")
-                f.write(f"After SVD dims: {reduced_dims}\n")
-                if valid_texts:
-                    f.write(f"Sample Text 0:\n{valid_texts[0]}\n")
-                
-                # Check features
-                feature_names = self.vectorizer.get_feature_names_out()
-                f.write(f"Feature count: {len(feature_names)}\n")
-                f.write(f"First 50 features: {feature_names[:50]}\n")
-                f.write(f"Is 'assertionerror' in features? {'assertionerror' in feature_names}\n")
-                f.write(f"Is 'java' in features? {'java' in feature_names}\n")
-            
+            # Clustering Algo
             if self.use_hdbscan:
                 labels, metrics = self._cluster_hdbscan(feature_matrix, valid_texts)
             else:
                 labels, metrics = self._cluster_kmeans(feature_matrix, valid_texts)
             
-            # Map back to original indices (mark invalid as outliers)
+            # Map back to full length
             full_labels = []
             valid_idx = 0
             for is_valid in valid_mask:
@@ -395,22 +456,13 @@ class ImprovedFailureClusterer:
                 else:
                     full_labels.append(-1)
             
-            self._last_metrics = metrics
-            
-            with open("clustering_debug.log", "a") as f:
-                f.write(f"Metrics: {metrics}\n")
-                f.write(f"Labels: {full_labels}\n")
-
             return full_labels, metrics
-            
+
         except Exception as e:
-            print(f"Clustering failed: {e}")
-            import traceback
-            traceback.print_exc()
-            labels = [0] * len(failures)
-            self._last_metrics = {'n_clusters': 1, 'method': 'error', 'error': str(e)}
-            return labels, self._last_metrics
-    
+            print(f"Core clustering failed for group: {e}")
+            return [0] * len(failures), {'method': 'error', 'error': str(e)}
+
+    # _cluster_hdbscan remains unchanged below...
     def _cluster_hdbscan(
         self, 
         feature_matrix, 
@@ -423,6 +475,7 @@ class ImprovedFailureClusterer:
         and can identify outliers (noise points with label=-1).
         """
         # Convert sparse matrix to dense for HDBSCAN (SVD output is already dense)
+        # Check if sparse
         if hasattr(feature_matrix, 'toarray'):
             dense_matrix = feature_matrix.toarray()
         else:
