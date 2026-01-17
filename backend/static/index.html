@@ -1133,6 +1133,28 @@
                 </div>
             </div>
 
+            <!-- General Settings -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <h3 class="text-xl font-bold text-slate-800 mb-6">General Settings</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-2">Application Base URL</label>
+                        <div class="flex items-center gap-2">
+                             <input type="text" id="app-base-url" placeholder="http://localhost:8000"
+                                class="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white transition-colors">
+                             <button onclick="saveAppUrl()" id="btn-save-app-url"
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                                Save
+                             </button>
+                        </div>
+                        <p class="mt-1.5 text-xs text-slate-500">
+                            The base URL used for generating deep links (e.g., in Redmine tickets). 
+                            Set this to your server's IP/domain if deploying (e.g., <code>http://10.0.0.5:8000</code>).
+                        </p>
+                    </div>
+                </div>
+            </div>
+
             <!-- Redmine Integration -->
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
                 <h3 class="text-xl font-bold text-slate-800 mb-6">Redmine Integration</h3>
@@ -1309,7 +1331,77 @@
 
 
 
-    <script src="/static/app.js?v=83"></script>
+    <template id="tmpl-test-case">
+        <div class="max-w-4xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <!-- Header -->
+            <div class="bg-white px-8 py-6 rounded-2xl shadow-apple border border-slate-100 relative overflow-hidden">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-red-500"></div>
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Test Case Failure</div>
+                        <h3 class="text-xl font-display font-bold text-slate-900 font-mono break-all" id="tc-name">-</h3>
+                        <div class="flex items-center gap-3 mt-3">
+                            <span class="px-2.5 py-1 rounded text-xs font-medium bg-slate-100 text-slate-600 font-mono" id="tc-module">-</span>
+                            <span class="text-slate-300">|</span>
+                            <a href="#" id="tc-run-link" class="text-sm text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                                Back to Run #<span id="tc-run-id"></span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Message -->
+            <div class="bg-red-50 rounded-2xl border border-red-100 p-6">
+                <h4 class="text-sm font-bold text-red-900 uppercase tracking-wide mb-3 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    Error Message
+                </h4>
+                <div class="bg-white/60 p-4 rounded-xl border border-red-100/50 text-red-700 font-mono text-sm whitespace-pre-wrap break-words" id="tc-error"></div>
+            </div>
+
+            <!-- Stack Trace -->
+            <div class="bg-slate-900 rounded-2xl border border-slate-800 p-6 overflow-hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h4 class="text-sm font-bold text-slate-400 uppercase tracking-wide flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>
+                        Stack Trace
+                    </h4>
+                    <button onclick="copyToClipboard(document.getElementById('tc-stack').innerText)" class="text-xs bg-slate-800 text-slate-300 hover:text-white px-3 py-1.5 rounded-lg transition-colors border border-slate-700">
+                        Copy
+                    </button>
+                </div>
+                <pre class="text-slate-300 font-mono text-xs overflow-x-auto whitespace-pre-wrap leading-relaxed code-scroll max-h-[600px]" id="tc-stack"></pre>
+            </div>
+            
+             <!-- AI Analysis (If Available) -->
+            <div id="tc-analysis-card" class="hidden bg-white rounded-2xl shadow-apple border border-slate-100 p-6">
+                 <div class="flex items-center gap-2 mb-4">
+                    <div class="p-2 bg-purple-50 text-purple-600 rounded-lg">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-slate-900">AI Analysis</h4>
+                        <div class="text-xs text-slate-500">Part of Cluster <a href="#" id="tc-cluster-link" class="text-blue-600 hover:underline">#<span id="tc-cluster-id"></span></a></div>
+                    </div>
+                 </div>
+                 
+                 <div class="space-y-4">
+                     <div>
+                         <div class="text-xs font-bold text-slate-500 uppercase mb-1">Root Cause</div>
+                         <div class="text-sm text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100" id="tc-root-cause"></div>
+                     </div>
+                     <div>
+                         <div class="text-xs font-bold text-slate-500 uppercase mb-1">Solution</div>
+                         <div class="text-sm text-slate-700 bg-slate-50 p-3 rounded-lg border border-slate-100" id="tc-solution"></div>
+                     </div>
+                 </div>
+            </div>
+        </div>
+    </template>
+
+    <script src="/static/app.js?v=84"></script>
     <!-- Redmine Sync Confirmation Modal -->
     <div id="redmine-sync-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-300">
         <div class="bg-white rounded-2xl shadow-apple-elevated w-full max-w-md overflow-hidden transform transition-all scale-100 animate-in fade-in zoom-in duration-200">

@@ -61,6 +61,18 @@ def get_run_failures(run_id: int, db: Session = Depends(get_db)):
     ).all()
     return failures
 
+@router.get("/test-cases/{test_case_id}")
+def get_test_case_details(test_case_id: int, db: Session = Depends(get_db)):
+    """Get details for a specific test case."""
+    test_case = db.query(models.TestCase).options(
+        joinedload(models.TestCase.failure_analysis).joinedload(models.FailureAnalysis.cluster)
+    ).filter(models.TestCase.id == test_case_id).first()
+    
+    if not test_case:
+        raise HTTPException(status_code=404, detail="Test case not found")
+        
+    return test_case
+
 @router.delete("/runs/{run_id}")
 def delete_test_run(run_id: int, db: Session = Depends(get_db)):
     """Delete a test run and all associated test cases."""

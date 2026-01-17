@@ -101,6 +101,7 @@ class Settings(Base):
     openai_api_key = Column(String, nullable=True)
     redmine_url = Column(String, nullable=True)
     redmine_api_key = Column(String, nullable=True)
+    app_base_url = Column(String, default="http://localhost:8000")
     
     # LLM Provider Settings
     llm_provider = Column(String, default="openai")  # openai | internal | cambrian

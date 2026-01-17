@@ -40,6 +40,10 @@ def test_redmine_connection(db: Session = Depends(get_db)):
     success = client.test_connection()
     return {"success": success}
 
+def get_app_base_url(db: Session) -> str:
+    settings = db.query(models.Settings).first()
+    return settings.app_base_url or "http://localhost:8000"
+
 @router.get("/redmine/projects")
 def get_redmine_projects(db: Session = Depends(get_db)):
     client = get_redmine_client(db)
@@ -196,14 +200,20 @@ def bulk_create_redmine_issues(request: BulkCreateRequest, db: Session = Depends
             
             # Format failures list
             failures_text = ""
+            base_url = get_app_base_url(db)
             if failures:
-                for idx, f in enumerate(failures):
-                    stack_trace = f.test_case.stack_trace[:800] + ('\n...\n(truncated)' if len(f.test_case.stack_trace or '') > 800 else '') if f.test_case.stack_trace else 'N/A'
+                for idx, f in enumerate(failures): 
+                    # Use f.test_case since we are iterating over FailureAnalysis objects in this endpoint
+                    tc = f.test_case
+                    stack_trace = tc.stack_trace[:800] + ('\n...\n(truncated)' if len(tc.stack_trace or '') > 800 else '') if tc.stack_trace else 'N/A'
+                    
+                    test_link = f'"{tc.class_name}#{tc.method_name}":{base_url}/?page=test-case&id={tc.id}'
+                    
                     failures_text += f"""
 h4. Failure {idx + 1}
 
-* *Module:* @{f.test_case.module_name}@
-* *Test Case:* @{f.test_case.class_name}#{f.test_case.method_name}@
+* *Module:* @{tc.module_name}@
+* *Test Case:* {test_link}
 * *Stack Trace:*
 
 <pre><code class="java">
@@ -377,7 +387,8 @@ def preview_issue_content(request: SmartPreviewRequest, db: Session = Depends(ge
             "class_name": f.class_name,
             "method_name": f.method_name,
             "error_message": f.error_message,
-            "stack_trace": f.stack_trace
+            "stack_trace": f.stack_trace,
+            "id": f.id
         }
         for f in failures
     ]
@@ -400,7 +411,8 @@ def preview_issue_content(request: SmartPreviewRequest, db: Session = Depends(ge
     }
     
     # Generate content
-    content = generate_issue_content(cluster_data, run_data, module_name, failure_dicts)
+    app_url = get_app_base_url(db)
+    content = generate_issue_content(cluster_data, run_data, module_name, failure_dicts, app_url)
     
     # Get assignment resolution
     resolver = get_assignment_resolver()
@@ -466,7 +478,7 @@ def smart_create_issue(request: SmartCreateRequest, db: Session = Depends(get_db
     else:
         failure_dicts = [
             {"class_name": f.class_name, "method_name": f.method_name,
-             "error_message": f.error_message, "stack_trace": f.stack_trace}
+             "error_message": f.error_message, "stack_trace": f.stack_trace, "id": f.id}
             for f in failures
         ]
         run_data = {
@@ -480,7 +492,7 @@ def smart_create_issue(request: SmartCreateRequest, db: Session = Depends(get_db
             "common_solution": cluster.common_solution,
             "severity": cluster.severity, "category": cluster.category
         }
-        content = generate_issue_content(cluster_data, run_data, module_name, failure_dicts)
+        content = generate_issue_content(cluster_data, run_data, module_name, failure_dicts, get_app_base_url(db))
         subject = request.subject_override or content["subject"]
         description = request.description_override or content["description"]
     
@@ -613,11 +625,11 @@ def smart_bulk_create_by_module(request: ModuleCentricBulkRequest, db: Session =
             try:
                 failure_dicts = [
                     {"class_name": f.class_name, "method_name": f.method_name,
-                     "error_message": f.error_message, "stack_trace": f.stack_trace}
+                     "error_message": f.error_message, "stack_trace": f.stack_trace, "id": f.id}
                     for f in module_failures
                 ]
                 
-                content = generate_issue_content(cluster_data, run_data, module_name, failure_dicts)
+                content = generate_issue_content(cluster_data, run_data, module_name, failure_dicts, get_app_base_url(db))
                 
                 assignment = resolver.resolve_assignment(
                     module_name=module_name,
@@ -871,7 +883,7 @@ def smart_create_with_deduplication(request: SmartCreateWithDedupRequest, db: Se
         "severity": cluster.severity, "category": cluster.category
     }
     
-    content = generate_issue_content(cluster_data, run_data, module_name, failure_dicts)
+    content = generate_issue_content(cluster_data, run_data, module_name, failure_dicts, get_app_base_url(db))
     
     assignment = resolver.resolve_assignment(
         module_name=module_name,

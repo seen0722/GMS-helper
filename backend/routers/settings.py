@@ -17,6 +17,10 @@ class RedmineSettingsUpdate(BaseModel):
     api_key: str
 
 
+class AppUrlUpdate(BaseModel):
+    url: str
+
+
 class LLMProviderUpdate(BaseModel):
     provider: str  # openai | internal | cambrian
     internal_url: Optional[str] = None
@@ -139,6 +143,32 @@ def update_redmine_settings(data: RedmineSettingsUpdate, db: Session = Depends(g
         db.rollback()
         print(f"Error saving Redmine settings: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save Redmine settings: {str(e)}")
+
+
+@router.get("/app-url")
+def get_app_url(db: Session = Depends(get_db)):
+    """Get the application base URL."""
+    settings = get_or_create_settings(db)
+    return {"url": settings.app_base_url or "http://localhost:8000"}
+
+
+@router.put("/app-url")
+def update_app_url(data: AppUrlUpdate, db: Session = Depends(get_db)):
+    """Update the application base URL."""
+    if not data.url or not data.url.strip():
+        raise HTTPException(status_code=400, detail="URL cannot be empty")
+        
+    try:
+        settings = get_or_create_settings(db)
+        # Remove trailing slash for consistency
+        settings.app_base_url = data.url.strip().rstrip('/')
+        db.commit()
+        
+        return {"message": "Application URL updated successfully", "url": settings.app_base_url}
+    except Exception as e:
+        db.rollback()
+        print(f"Error saving App URL: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save App URL: {str(e)}")
 
 
 @router.get("/llm-provider")
@@ -549,6 +579,7 @@ def get_all_settings(db: Session = Depends(get_db)):
             "url": settings.redmine_url,
             "is_configured": bool(settings.redmine_url and settings.redmine_api_key)
         },
+        "app_url": settings.app_base_url or "http://localhost:8000",
         "llm_provider": settings.llm_provider or "openai",
         "module_owner_map": module_map,
         "default_project_id": module_map.get("default_settings", {}).get("default_project_id", 1)

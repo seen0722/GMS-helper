@@ -372,6 +372,7 @@ const router = {
             if (page === 'dashboard') loadDashboard();
             if (page === 'upload') setupUpload();
             if (page === 'run-details') loadRunDetails(params.id);
+            if (page === 'test-case') loadTestCase(params.id);
             if (page === 'settings') loadSettings();
 
             // Update Title
@@ -1389,7 +1390,7 @@ function renderFailuresTable() {
                 </svg>
             </div>
             <div id="${contentId}" class="hidden divide-y divide-slate-100 border-t border-slate-200">
-                ${group.failures.map(f => {
+                 ${group.failures.map(f => {
             const errorMsg = f.error_message || 'No error message';
             const stackTrace = f.stack_trace ? f.stack_trace.trim() : '';
             return `
@@ -1398,12 +1399,19 @@ function renderFailuresTable() {
                             <div class="text-xs font-semibold text-slate-500">${f.module_name}</div>
                             <div class="font-medium text-slate-700 font-mono text-sm break-all">${f.class_name}#${f.method_name}</div>
                             <div class="text-sm text-red-600 break-words">${escapeHtml(errorMsg)}</div>
-                            ${stackTrace ? `
-                                <details class="group mt-1">
-                                    <summary class="text-xs text-blue-600 cursor-pointer hover:underline select-none w-fit">Show Stack Trace</summary>
-                                    <pre class="mt-2 p-3 bg-slate-900 text-slate-50 rounded text-xs overflow-x-auto code-scroll font-mono max-h-60 whitespace-pre-wrap break-all">${escapeHtml(stackTrace)}</pre>
-                                </details>
-                            ` : ''}
+                            <div class="flex items-center gap-4 mt-1">
+                                ${stackTrace ? `
+                                    <details class="group">
+                                        <summary class="text-xs text-blue-600 cursor-pointer hover:underline select-none">Show Stack Trace</summary>
+                                        <pre class="mt-2 p-3 bg-slate-900 text-slate-50 rounded text-xs overflow-x-auto code-scroll font-mono max-h-60 whitespace-pre-wrap break-all">${escapeHtml(stackTrace)}</pre>
+                                    </details>
+                                ` : ''}
+                                <a href="#" onclick="event.preventDefault(); router.navigate('test-case', { id: ${f.id} })" 
+                                   class="text-xs text-slate-500 hover:text-blue-600 font-medium flex items-center gap-1 transition-colors ml-auto">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                    View Full Details
+                                </a>
+                            </div>
                         </div>
                     </div>
                     `;
@@ -2279,6 +2287,74 @@ async function loadSettings() {
     
     // Load Module Owner Map settings
     loadModuleOwnerMap();
+
+    // Load App URL
+    loadAppUrl();
+}
+
+
+async function loadAppUrl() {
+    try {
+        const res = await fetch(`${API_BASE}/settings/app-url`);
+        const data = await res.json();
+        
+        const input = document.getElementById('app-base-url');
+        if (input && data.url) {
+            input.value = data.url;
+        }
+    } catch (e) {
+        console.error("Failed to load app url", e);
+    }
+}
+
+async function saveAppUrl() {
+    const input = document.getElementById('app-base-url');
+    const btn = document.getElementById('btn-save-app-url');
+    
+    if (!input) return;
+    
+    const url = input.value.trim();
+    if (!url) {
+        alert('Please enter a valid URL');
+        return;
+    }
+    
+    const originalText = 'Save';
+    btn.textContent = 'Saving...';
+    btn.disabled = true;
+    
+    try {
+        const res = await fetch(`${API_BASE}/settings/app-url`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url })
+        });
+        
+        if (res.ok) {
+            const data = await res.json();
+            input.value = data.url; // Update with sanitized URL
+            
+            btn.textContent = 'Saved!';
+            btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+            btn.classList.add('bg-green-600', 'hover:bg-green-700');
+            
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                btn.disabled = false;
+            }, 2000);
+        } else {
+            alert('Failed to save App URL');
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    } catch (e) {
+        console.error("Error saving app url", e);
+        alert('Error saving App URL');
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
 }
 
 // LLM Provider Functions
@@ -2926,6 +3002,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (page === 'run-details' && id) {
         router.navigate('run-details', { id: id });
+    } else if (page === 'test-case' && id) {
+        router.navigate('test-case', { id: id });
+    } else if (page) {
+        router.navigate(page);
     } else {
         router.navigate('dashboard');
     }
@@ -3503,62 +3583,63 @@ function switchRedmineTab(tab) {
             }
 
             if (descInput && !descInput.value) {
-                const desc = `h2. Failure Analysis Report
+                // Get representative stack trace
+                const repFailure = (currentCluster.failures && currentCluster.failures[0]) || {};
+                const stackTrace = repFailure.stack_trace || 'N/A';
+                const truncatedStack = stackTrace.split('\n').slice(0, 50).join('\n') + (stackTrace.split('\n').length > 50 ? '\n... (truncated)' : '');
+                
+                // Get list of tests (names only)
+                const failureList = (currentCluster.failures || []).slice(0, 50).map((f, idx) => {
+                    const testName = `${f.class_name || 'Unknown'}#${f.method_name || 'unknown'}`;
+                    return `${idx + 1}. ${testName}`;
+                }).join('\n');
+                
+                const moreCount = (currentCluster.failures || []).length - 50;
 
-h3. Cluster Summary
+                // Helper to quote lines
+                const toBlockquote = (text) => {
+                    if (!text) return '> N/A';
+                    return text.split('\n').map(l => `> ${l}`).join('\n');
+                };
 
-|_. Property|_. Value|
-|Cluster ID|#${currentCluster.id}|
-|Severity|${currentCluster.severity || 'Unknown'}|
-|Category|${currentCluster.category || 'Uncategorized'}|
-|Confidence|${currentCluster.confidence_score}/5|
-|Impact|${currentCluster.failures_count || '?'} failures|
+                const desc = `### AI Analysis
 
-h3. System Information
+**Root Cause**
+${toBlockquote(currentCluster.common_root_cause)}
 
-|_. Property|_. Value|
-|Fingerprint|@${currentRunDetails?.device_fingerprint || 'N/A'}@|
-|Build ID|@${currentRunDetails?.build_id || 'N/A'}@|
-|Product|${currentRunDetails?.build_product || 'N/A'}|
-|Model|${currentRunDetails?.build_model || 'N/A'}|
-|Android Version|${currentRunDetails?.android_version || 'N/A'}|
-|Security Patch|${currentRunDetails?.security_patch || 'N/A'}|
-|Test Suite|${currentRunDetails?.test_suite_name || 'N/A'}|
+**Suggestion**
+${toBlockquote(currentCluster.common_solution)}
 
-h3. AI Analysis
+**Impact Analysis**
+* **Severity**: ${currentCluster.severity || 'Medium'}
+* **Impact**: ${currentCluster.failures_count || '?'} test(s) failed (Cluster ID: #${currentCluster.id})
 
-*Summary:*
-${currentCluster.ai_summary || 'N/A'}
+---
 
-*Root Cause:*
-<pre>
-${currentCluster.common_root_cause || 'N/A'}
-</pre>
+### Environment
 
-*Suggested Solution:*
-${currentCluster.common_solution || 'N/A'}
+* **Product**: ${currentRunDetails?.build_product || 'N/A'}
+* **Build ID**: ${currentRunDetails?.build_id || 'N/A'}
+* **Fingerprint**: ${currentRunDetails?.device_fingerprint || 'N/A'}
+* **Suite Version**: ${currentRunDetails?.test_suite_name || 'N/A'}
 
-h3. Technical Details
+---
 
-*Stack Trace Signature:*
-<pre><code>
+### Technical Details
+
+**Stack Trace Signature**
+\`\`\`text
 ${currentCluster.signature || 'N/A'}
-</code></pre>
+\`\`\`
 
-h3. Affected Test Cases
+**Representative Stack Trace**
+\`\`\`java
+${truncatedStack}
+\`\`\`
 
-${currentCluster.failures && currentCluster.failures.length > 0 ? currentCluster.failures.slice(0, 5).map((f, idx) => `
-h4. Failure ${idx + 1}
-
-* *Module:* @${f.module_name}@
-* *Test Case:* @${f.class_name}#${f.method_name}@
-* *Stack Trace:*
-
-<pre><code class="java">
-${f.stack_trace ? f.stack_trace.substring(0, 800) + (f.stack_trace.length > 800 ? '\n...\n(truncated)' : '') : 'N/A'}
-</code></pre>
-`).join('\n') : 'No failure details available.'}
-${currentCluster.failures && currentCluster.failures.length > 5 ? `\np(. _... and ${currentCluster.failures.length - 5} more failures not shown_` : ''}
+### Affected Tests (Top 50)
+${failureList || 'No failure details available.'}
+${moreCount > 0 ? `\n... and ${moreCount} more` : ''}
 `;
                 descInput.value = desc;
             }
@@ -4320,3 +4401,55 @@ function renderSparkline(containerId, data, color) {
         </svg>
     `;
 }
+
+async function loadTestCase(testCaseId) {
+    try {
+        const res = await fetch(`${API_BASE}/reports/test-cases/${testCaseId}`);
+        if (!res.ok) throw new Error('Test case not found');
+        
+        const tc = await res.json();
+        
+        document.getElementById('tc-name').textContent = `${tc.class_name}.${tc.method_name}`;
+        document.getElementById('tc-module').textContent = tc.module_name || 'Unknown Module';
+        document.getElementById('tc-run-id').textContent = tc.test_run_id;
+        document.getElementById('tc-run-link').onclick = (e) => {
+            e.preventDefault();
+            router.navigate('run-details', { id: tc.test_run_id });
+        };
+        
+        document.getElementById('tc-error').textContent = tc.error_message || 'No error message';
+        document.getElementById('tc-stack').innerHTML = highlightStackTrace(tc.stack_trace || '');
+        
+        const analysisCard = document.getElementById('tc-analysis-card');
+        if (tc.failure_analysis) {
+            analysisCard.classList.remove('hidden');
+            const fa = tc.failure_analysis;
+            
+            if (fa.cluster_id) {
+                document.getElementById('tc-cluster-id').textContent = fa.cluster_id;
+                document.getElementById('tc-cluster-link').onclick = (e) => {
+                    e.preventDefault();
+                    router.navigate('run-details', { id: tc.test_run_id });
+                };
+            }
+            
+            document.getElementById('tc-root-cause').innerHTML = formatMultilineText(fa.root_cause || '-');
+            document.getElementById('tc-solution').innerHTML = formatMultilineText(fa.suggested_solution || '-');
+        } else {
+             analysisCard.classList.add('hidden');
+        }
+        
+    } catch (e) {
+        console.error("Failed to load test case", e);
+        document.getElementById('app-content').innerHTML = `
+            <div class="text-center py-20">
+                <div class="text-xl font-bold text-slate-800">Test Case Not Found</div>
+                <div class="text-slate-500 mt-2">${e.message}</div>
+                <button onclick="router.navigate('dashboard')" class="mt-6 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                    Go to Dashboard
+                </button>
+            </div>
+        `;
+    }
+}
+

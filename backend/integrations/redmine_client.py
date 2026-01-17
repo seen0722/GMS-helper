@@ -213,7 +213,8 @@ def generate_issue_content(
     cluster_data: Dict[str, Any],
     run_data: Dict[str, Any],
     module_name: str,
-    failures: List[Dict[str, Any]]
+    failures: List[Dict[str, Any]],
+    app_url: str = "http://localhost:8000"
 ) -> Dict[str, str]:
     """
     Generate standardized Redmine issue subject and description.
@@ -223,6 +224,7 @@ def generate_issue_content(
         run_data: Test run metadata (build_id, fingerprint, etc.)
         module_name: The module this ticket is for
         failures: List of failures in this cluster for this module
+        app_url: The application base URL for deep links
         
     Returns:
         Dict with 'subject' and 'description' keys
@@ -241,6 +243,14 @@ def generate_issue_content(
     solution = cluster_data.get('common_solution', 'N/A')
     severity = cluster_data.get('severity', 'Medium')
     
+    # helper to quote logical blocks
+    def to_blockquote(text):
+        if not text: return "> N/A"
+        return '\n'.join([f"> {line}" for line in text.split('\n')])
+
+    quoted_root_cause = to_blockquote(root_cause)
+    quoted_solution = to_blockquote(solution)
+    
     # Get representative failure
     rep_failure = failures[0] if failures else {}
     stack_trace = rep_failure.get('stack_trace', 'No stack trace available')
@@ -250,38 +260,59 @@ def generate_issue_content(
     if len(stack_lines) == 50:
         truncated_stack += '\n... (truncated)'
     
-    # Build affected tests list (top 10)
+    # Build affected tests list (All)
     affected_tests = []
-    for i, f in enumerate(failures[:10]):
-        test_name = f"{f.get('class_name', 'Unknown')}.{f.get('method_name', 'unknown')}"
-        affected_tests.append(f"{i+1}. {test_name}")
+    # Base URL for deep links
+    base_url = app_url.rstrip('/')
     
-    description = f"""**[AI Analysis]**
-* **Root Cause**: {root_cause}
-* **Impact**: {len(failures)} test(s) failed (Cluster ID: #{cluster_data.get('id', 'N/A')})
-* **Severity**: {severity}
-* **Suggestion**: {solution}
+    for i, f in enumerate(failures):
+        test_name = f"{f.get('class_name', 'Unknown')}.{f.get('method_name', 'unknown')}"
+        # Determine TC ID to build link (assuming 'id' is available in failure dict)
+        tc_id = f.get('id')
+        if tc_id:
+            link = f"{base_url}/?page=test-case&id={tc_id}"
+            affected_tests.append(f"{i+1}. [{test_name}]({link})")
+        else:
+            affected_tests.append(f"{i+1}. {test_name}")
+    
+    description = f"""### AI Analysis
 
-**[Environment]**
+**Root Cause**
+{quoted_root_cause}
+
+**Suggestion**
+{quoted_solution}
+
+**Impact Analysis**
+* **Severity**: {severity}
+* **Impact**: {len(failures)} test(s) failed (Cluster ID: #{cluster_data.get('id', 'N/A')})
+
+---
+
+### Environment
+
 * **Product**: {run_data.get('build_product', 'N/A')}
 * **Build ID**: {run_data.get('build_id', 'N/A')}
 * **Fingerprint**: {run_data.get('device_fingerprint', 'N/A')}
 * **Suite Version**: {run_data.get('suite_version', 'N/A')}
 
-**[Representative Failure]**
-* **Test Class**: {rep_failure.get('class_name', 'N/A')}
-* **Test Method**: {rep_failure.get('method_name', 'N/A')}
-* **Error Message**: 
+---
+
+### Technical Details
+
+**Stack Trace Signature**
+```text
+{cluster_data.get('signature', 'N/A')}
 ```
-{rep_failure.get('error_message', 'N/A')}
-```
-* **Stack Trace**:
+
+**Representative Stack Trace**
 ```java
 {truncated_stack}
 ```
 
-**[Affected Tests (Top 10)]**
-{chr(10).join(affected_tests) if affected_tests else 'N/A'}
+### Affected Tests (Top 50)
+{chr(10).join(affected_tests[:50])}
+{f"{chr(10)}... and {len(affected_tests) - 50} more" if len(affected_tests) > 50 else ""}
 """
     
     return {
