@@ -78,21 +78,70 @@
         .segmented-control {
             background: rgba(118, 118, 128, 0.12);
             padding: 2px;
-            border-radius: 8px;
+            border-radius: 9px;
             display: inline-flex;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
         }
         
         .segmented-item {
-            padding: 2px 12px;
+            padding: 6px 16px;
             border-radius: 7px;
             font-size: 13px;
             font-weight: 500;
-            transition: all 0.2s ease;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .segmented-item:active {
+            transform: scale(0.97);
         }
 
         .segmented-item.active {
             background: white;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 2px 6px rgba(0,0,0,0.08);
+        }
+
+        /* iOS-style Toggle Switch */
+        .ios-toggle {
+            position: relative;
+            width: 51px;
+            height: 31px;
+            background: #E9E9EA;
+            border-radius: 16px;
+            border: none;
+            cursor: pointer;
+            transition: background 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            padding: 0;
+            flex-shrink: 0;
+        }
+
+        .ios-toggle[aria-checked="true"] {
+            background: #34C759;
+        }
+
+        .ios-toggle-dot {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 27px;
+            height: 27px;
+            background: white;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2), 0 1px 2px rgba(0,0,0,0.1);
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .ios-toggle[aria-checked="true"] .ios-toggle-dot {
+            transform: translateX(20px);
+        }
+
+        .ios-toggle:active .ios-toggle-dot {
+            width: 31px;
+        }
+
+        .ios-toggle[aria-checked="true"]:active .ios-toggle-dot {
+            transform: translateX(16px);
         }
 
         /* Custom scrollbar for code blocks */
@@ -202,11 +251,84 @@
 
         /* Button Press States */
         .btn-press {
-            transition: transform 0.1s ease-out, box-shadow 0.1s ease-out;
+            transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-press:hover {
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
         }
 
         .btn-press:active {
             transform: scale(0.97);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
+
+        /* Primary Button Enhanced */
+        .btn-primary {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-primary:hover {
+            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary:active {
+            transform: scale(0.98) translateY(0);
+            box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2);
+        }
+
+        /* Success Checkmark Animation */
+        @keyframes checkmark-draw {
+            0% { stroke-dashoffset: 24; }
+            100% { stroke-dashoffset: 0; }
+        }
+
+        @keyframes success-pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.9; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .success-checkmark {
+            stroke-dasharray: 24;
+            stroke-dashoffset: 24;
+            animation: checkmark-draw 0.4s ease-out forwards, success-pulse 0.6s ease-in-out 0.4s;
+        }
+
+        .success-icon {
+            animation: success-pulse 0.6s ease-in-out;
+        }
+
+        /* Enhanced Focus Rings (Apple HIG) */
+        input:focus, select:focus, button:focus-visible, textarea:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35), 0 0 0 1px rgba(59, 130, 246, 0.5);
+        }
+
+        .segmented-item:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
+        }
+
+        /* Details/Summary Expand Animation */
+        details {
+            overflow: hidden;
+        }
+
+        details[open] > div {
+            animation: slide-down 0.3s ease-out;
+        }
+
+        @keyframes slide-down {
+            from {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         /* Card Hover Elevation */
@@ -981,24 +1103,24 @@
     <!-- Settings Template -->
     <template id="tmpl-settings">
         <div class="max-w-2xl mx-auto space-y-6">
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <h3 class="text-xl font-bold text-slate-800 mb-6">AI Settings</h3>
+            <div class="bg-white p-6 rounded-2xl shadow-apple border border-slate-100">
+                <h3 class="text-lg font-semibold text-slate-900 mb-6">AI Settings</h3>
                 
                 <div class="space-y-5">
                     <!-- Apple-style Segmented Control -->
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-3">AI Provider</label>
-                        <div class="inline-flex rounded-lg bg-slate-100 p-1" role="group">
+                        <div class="segmented-control" role="group">
                             <button type="button" id="seg-openai" onclick="selectProvider('openai')"
-                                class="px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 bg-white text-slate-800 shadow-sm">
+                                class="segmented-item active">
                                 OpenAI
                             </button>
                             <button type="button" id="seg-internal" onclick="selectProvider('internal')"
-                                class="px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 text-slate-600 hover:text-slate-800">
+                                class="segmented-item">
                                 Internal (Ollama/vLLM)
                             </button>
                             <button type="button" id="seg-cambrian" onclick="selectProvider('cambrian')"
-                                class="px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 text-slate-600 hover:text-slate-800">
+                                class="segmented-item">
                                 Cambrian
                             </button>
                         </div>
@@ -1013,7 +1135,7 @@
                             <label class="block text-sm font-medium text-slate-700 mb-2">API Key</label>
                             <div class="flex items-center gap-2">
                                 <input type="text" id="current-api-key" readonly
-                                    class="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl bg-slate-50 text-slate-600 font-mono text-sm"
+                                    class="flex-1 px-4 py-2.5 border border-slate-200 rounded-lg bg-slate-50 text-slate-600 font-mono text-sm"
                                     placeholder="No API key set">
                                 <button onclick="toggleAPIKeyVisibility()" id="btn-toggle-key"
                                     class="px-3 py-2 text-sm text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
@@ -1024,15 +1146,15 @@
                                     Delete
                                 </button>
                             </div>
-                            <p class="mt-1.5 text-xs text-slate-400">Encrypted and stored securely</p>
+                            <p class="mt-1.5 text-xs text-slate-500">Encrypted and stored securely</p>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-2">Update API Key</label>
                             <div class="flex items-center gap-2">
                                 <input type="password" id="new-api-key" placeholder="sk-proj-..."
-                                    class="flex-1 px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white">
+                                    class="flex-1 px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white">
                                 <button onclick="saveAPIKey()" id="btn-save-key"
-                                    class="px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors">
+                                    class="px-4 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors btn-press">
                                     Save Key
                                 </button>
                             </div>
@@ -1050,14 +1172,14 @@
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-2">Server URL</label>
                             <input type="text" id="internal-llm-url" placeholder="http://localhost:11434/v1"
-                                class="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white">
-                            <p class="mt-1.5 text-xs text-slate-400">Ollama: http://localhost:11434/v1 | vLLM: http://server:8000/v1</p>
+                                class="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white">
+                            <p class="mt-1.5 text-xs text-slate-500">Ollama: http://localhost:11434/v1 | vLLM: http://server:8000/v1</p>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-2">Model</label>
                             <div class="relative">
                                 <select id="internal-llm-model"
-                                    class="w-full px-4 py-2.5 pr-10 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white appearance-none cursor-pointer">
+                                    class="w-full px-4 py-2.5 pr-10 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white appearance-none cursor-pointer">
                                     <option value="">Select a model...</option>
                                 </select>
                                 <button type="button" onclick="refreshModelList()" id="btn-refresh-models"
@@ -1084,14 +1206,14 @@
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-2">API Token</label>
                             <input type="password" id="cambrian-token" placeholder="Enter your Cambrian API token"
-                                class="w-full px-4 py-2.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white">
-                            <p class="mt-1.5 text-xs text-slate-400">Your token will be encrypted and stored securely</p>
+                                class="w-full px-4 py-2.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white">
+                            <p class="mt-1.5 text-xs text-slate-500">Your token will be encrypted and stored securely</p>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-slate-700 mb-2">Model</label>
                             <div class="relative">
                                 <select id="cambrian-model"
-                                    class="w-full px-4 py-2.5 pr-10 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white appearance-none cursor-pointer">
+                                    class="w-full px-4 py-2.5 pr-10 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white appearance-none cursor-pointer">
                                     <option value="LLAMA 3.3 70B">LLAMA 3.3 70B</option>
                                 </select>
                                 <button type="button" onclick="refreshCambrianModels()" id="btn-refresh-cambrian-models"
@@ -1110,11 +1232,11 @@
                     <!-- Action Buttons -->
                     <div class="pt-4 flex items-center gap-3 border-t border-slate-100">
                         <button onclick="saveLLMProvider()" id="btn-save-llm-provider"
-                            class="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-colors shadow-sm">
+                            class="px-5 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm btn-press">
                             Save Settings
                         </button>
                         <button onclick="testLLMConnection()" id="btn-test-llm"
-                            class="px-5 py-2.5 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors flex items-center gap-2">
+                            class="px-5 py-2.5 border border-slate-200 text-slate-600 text-sm font-medium rounded-lg hover:bg-slate-50 transition-colors flex items-center gap-2 btn-press">
                             <span id="test-icon">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
@@ -1128,8 +1250,8 @@
             </div>
 
             <!-- General Settings -->
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <h3 class="text-xl font-bold text-slate-800 mb-6">General Settings</h3>
+            <div class="bg-white p-6 rounded-2xl shadow-apple border border-slate-100">
+                <h3 class="text-lg font-semibold text-slate-900 mb-6">General Settings</h3>
                 <div class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-slate-700 mb-2">Application Base URL</label>
@@ -1137,7 +1259,7 @@
                              <input type="text" id="app-base-url" placeholder="http://localhost:8000"
                                 class="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-slate-50 focus:bg-white transition-colors">
                              <button onclick="saveAppUrl()" id="btn-save-app-url"
-                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium btn-press">
                                 Save
                              </button>
                         </div>
@@ -1150,8 +1272,8 @@
             </div>
 
             <!-- Redmine Integration -->
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <h3 class="text-xl font-bold text-slate-800 mb-6">Redmine Integration</h3>
+            <div class="bg-white p-6 rounded-2xl shadow-apple border border-slate-100">
+                <h3 class="text-lg font-semibold text-slate-900 mb-6">Redmine Integration</h3>
 
                 <div class="space-y-4">
                     <!-- Current Settings Display -->
@@ -1169,7 +1291,7 @@
                                 class="flex-1 px-4 py-2 border border-slate-300 rounded-lg bg-slate-50 text-slate-600 font-mono text-sm"
                                 placeholder="No API key set">
                             <button onclick="testRedmineConnection()" id="btn-test-redmine"
-                                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
+                                class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors btn-press">
                                 Test
                             </button>
                         </div>
@@ -1186,7 +1308,7 @@
                             <input type="password" id="new-redmine-key" placeholder="Enter Redmine API key"
                                 class="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
                             <button onclick="saveRedmineSettings()" id="btn-save-redmine"
-                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                                class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors btn-press">
                                 Save
                             </button>
                         </div>
@@ -1196,22 +1318,29 @@
                 </div>
             </div>
 
-            <!-- Module Owner Map Configuration -->
-            <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="text-xl font-bold text-slate-800">Module-Owner Assignment</h3>
+            <!-- Module Owner Map Configuration (Collapsible) -->
+            <details class="bg-white rounded-2xl shadow-apple border border-slate-100 group">
+                <summary class="flex items-center justify-between p-6 cursor-pointer select-none hover:bg-slate-50/50 transition-colors rounded-2xl">
+                    <div class="flex items-center gap-3">
+                        <svg class="w-4 h-4 text-slate-400 transition-transform duration-200 group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                        </svg>
+                        <h3 class="text-lg font-semibold text-slate-900">Module-Owner Assignment</h3>
+                        <span class="text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">Advanced</span>
+                    </div>
                     <div class="flex items-center gap-2">
-                        <button onclick="resetModuleOwnerMap()" 
-                            class="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">
+                        <button onclick="event.stopPropagation(); resetModuleOwnerMap()" 
+                            class="px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors btn-press">
                             Reset to Default
                         </button>
-                        <button onclick="saveModuleOwnerMap()" id="btn-save-module-map"
-                            class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">
+                        <button onclick="event.stopPropagation(); saveModuleOwnerMap()" id="btn-save-module-map"
+                            class="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors btn-press">
                             Save Configuration
                         </button>
                     </div>
-                </div>
+                </summary>
 
+                <div class="px-6 pb-6 pt-2">
                 <p class="text-sm text-slate-500 mb-4">Configure module-to-team mappings and default settings for Redmine issue creation.</p>
 
                 <div class="space-y-4">
@@ -1299,7 +1428,8 @@
                     <!-- Status Message -->
                     <div id="module-map-status" class="hidden text-sm p-3 rounded-lg"></div>
                 </div>
-            </div>
+                </div>
+            </details>
 
             <!-- Info Box -->
             <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">

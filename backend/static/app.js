@@ -2407,14 +2407,12 @@ function selectProvider(provider, animate = true) {
     const cambrianSettings = document.getElementById('cambrian-llm-settings');
     const openaiSettings = document.getElementById('openai-settings');
     
-    // Active styles
-    const activeClass = 'bg-white text-slate-800 shadow-sm';
-    const inactiveClass = 'text-slate-600 hover:text-slate-800';
-    
-    // Reset all to inactive
-    if (segOpenAI) segOpenAI.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${inactiveClass}`;
-    if (segInternal) segInternal.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${inactiveClass}`;
-    if (segCambrian) segCambrian.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${inactiveClass}`;
+    // Reset all to inactive using CSS classes
+    [segOpenAI, segInternal, segCambrian].forEach(btn => {
+        if (btn) {
+            btn.classList.remove('active');
+        }
+    });
     
     // Hide all settings
     if (openaiSettings) openaiSettings.classList.add('hidden');
@@ -2423,20 +2421,20 @@ function selectProvider(provider, animate = true) {
     
     // Activate selected
     if (provider === 'internal') {
-        if (segInternal) segInternal.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${activeClass}`;
+        if (segInternal) segInternal.classList.add('active');
         if (internalSettings) {
             internalSettings.classList.remove('hidden');
             if (animate) internalSettings.classList.add('animate-fadeIn');
         }
     } else if (provider === 'cambrian') {
-        if (segCambrian) segCambrian.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${activeClass}`;
+        if (segCambrian) segCambrian.classList.add('active');
         if (cambrianSettings) {
             cambrianSettings.classList.remove('hidden');
             if (animate) cambrianSettings.classList.add('animate-fadeIn');
         }
     } else {
         // Default to OpenAI
-        if (segOpenAI) segOpenAI.className = `px-5 py-2 text-sm font-medium rounded-md transition-all duration-200 ${activeClass}`;
+        if (segOpenAI) segOpenAI.classList.add('active');
         if (openaiSettings) openaiSettings.classList.remove('hidden');
     }
 }
@@ -2557,9 +2555,9 @@ async function saveLLMProvider() {
     const statusSpan = document.getElementById('llm-provider-status');
     const saveBtn = document.getElementById('btn-save-llm-provider');
     
-    // Check which provider is selected by checking the button class
-    const isInternal = segInternal?.className.includes('bg-white');
-    const isCambrian = segCambrian?.className.includes('bg-white');
+    // Check which provider is selected by checking the active class
+    const isInternal = segInternal?.classList.contains('active');
+    const isCambrian = segCambrian?.classList.contains('active');
     
     let provider = 'openai';
     if (isInternal) provider = 'internal';
@@ -2598,9 +2596,9 @@ async function saveLLMProvider() {
         
         if (res.ok) {
             statusSpan.innerHTML = `
-                <span class="inline-flex items-center gap-1 text-green-600">
+                <span class="inline-flex items-center gap-1 text-green-600 success-icon">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        <path class="success-checkmark" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                     </svg>
                     Saved
                 </span>
@@ -2645,8 +2643,8 @@ async function testLLMConnection() {
     statusSpan.innerHTML = '';
     
     // Check which provider is selected
-    const isInternal = segInternal?.className.includes('bg-white');
-    const isCambrian = segCambrian?.className.includes('bg-white');
+    const isInternal = segInternal?.classList.contains('active');
+    const isCambrian = segCambrian?.classList.contains('active');
     const body = {};
     
     if (isCambrian) {
@@ -2694,11 +2692,11 @@ async function testLLMConnection() {
                     </span>
                 `;
             } else {
-                // Full success - green checkmark
+                // Full success - green checkmark with animation
                 statusSpan.innerHTML = `
-                    <span class="inline-flex items-center gap-1 text-green-600">
+                    <span class="inline-flex items-center gap-1 text-green-600 success-icon">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                            <path class="success-checkmark" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
                         </svg>
                         ${data.message}
                     </span>
