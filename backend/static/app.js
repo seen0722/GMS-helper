@@ -3662,9 +3662,10 @@ async function loadRedmineUsers(projectId) {
 
         const res = await fetch(url);
         if (res.ok) {
-            const users = await res.json();
+            const data = await res.json();
+            const userList = data.users || [];
             assigneeSelect.innerHTML = '<option value="">Unassigned</option>';
-            users.forEach(user => {
+            userList.forEach(user => {
                 const option = document.createElement('option');
                 option.value = user.id;
                 option.textContent = user.name || `${user.firstname} ${user.lastname}`;
@@ -3692,8 +3693,8 @@ async function loadRedmineProjects() {
         const select = document.getElementById('redmine-project');
         if (!select) return;
 
-        select.innerHTML = projects.length > 0
-            ? projects.map(p => `<option value="${p.id}">${p.name}</option>`).join('')
+        select.innerHTML = redmineProjectsCache.length > 0
+            ? redmineProjectsCache.map(p => `<option value="${p.id}">${p.name}</option>`).join('')
             : '<option value="">No projects found</option>';
     } catch (e) {
         console.error("Failed to load projects", e);
