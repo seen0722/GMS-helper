@@ -23,6 +23,43 @@ class LinkIssueRequest(BaseModel):
     issue_id: int
     cluster_id: int
 
+
+def _prepare_issue_context(cluster, run, failures):
+    """
+    Helper to prepare standardized data dictionaries for issue generation.
+    Used by both preview (single) and bulk create functions to ensure consistency.
+    """
+    run_data = {
+        "android_version": run.android_version,
+        "build_id": run.build_id,
+        "build_product": run.build_product,
+        "device_fingerprint": run.device_fingerprint,
+        "suite_version": run.suite_version
+    }
+    
+    cluster_data = {
+        "id": cluster.id,
+        "ai_summary": cluster.ai_summary,
+        "common_root_cause": cluster.common_root_cause,
+        "common_solution": cluster.common_solution,
+        "severity": cluster.severity,
+        "category": cluster.category,
+        "signature": cluster.signature
+    }
+    
+    failure_dicts = [
+        {
+            "class_name": f.class_name,
+            "method_name": f.method_name,
+            "error_message": f.error_message,
+            "stack_trace": f.stack_trace,
+            "id": f.id
+        }
+        for f in failures
+    ]
+    
+    return cluster_data, run_data, failure_dicts
+
 def get_redmine_client(db: Session) -> RedmineClient:
     settings = db.query(models.Settings).first()
     if not settings or not settings.redmine_url or not settings.redmine_api_key:
@@ -156,6 +193,7 @@ class BulkCreateRequest(BaseModel):
 @router.post("/redmine/bulk-create")
 def bulk_create_redmine_issues(request: BulkCreateRequest, db: Session = Depends(get_db)):
     client = get_redmine_client(db)
+    resolver = get_assignment_resolver()
     
     # Get all clusters for this run that don't have Redmine issues
     clusters = db.query(models.FailureCluster).join(models.FailureAnalysis).join(models.TestCase).filter(
@@ -178,100 +216,56 @@ def bulk_create_redmine_issues(request: BulkCreateRequest, db: Session = Depends
             # Get failures for this cluster
             failures = db.query(models.FailureAnalysis).filter(
                 models.FailureAnalysis.cluster_id == cluster.id
-            ).limit(5).all()
+            ).all()
+
+            if not failures:
+                continue
+
+            # Check if this cluster already has an issue linked (race condition check)
+            db.refresh(cluster)
+            if cluster.redmine_issue_id:
+                continue
+
+            # Determine dominant module
+            module_counts = {}
+            for f in failures:
+                # Need to access test_case relationship if f is FailureAnalysis
+                # Or just use f.module_name if available on the join
+                # models.FailureAnalysis usually links to models.TestCase
+                # Let's inspect failures structure. failures are FailureAnalysis objects.
+                # FailureAnalysis has a relationship 'test_case'
+                tc = f.test_case
+                mod = tc.module_name or "Unknown"
+                module_counts[mod] = module_counts.get(mod, 0) + 1
             
-            # Determine suite tag
-            suite_tag = "GMS"
-            if run.test_suite_name:
-                name_upper = run.test_suite_name.upper()
-                if "CTS" in name_upper: suite_tag = "CTS"
-                elif "GTS" in name_upper: suite_tag = "GTS"
-                elif "VTS" in name_upper: suite_tag = "VTS"
-                elif "STS" in name_upper: suite_tag = "STS"
-                else: suite_tag = run.test_suite_name
-
-            # Build issue subject - use first line of summary as title
-            summary = cluster.ai_summary or cluster.description or "Unknown Issue"
-            # Extract first line as title
-            title = summary.split('\n')[0] if summary else "Unknown Issue"
-            subject = f"[ {suite_tag} ] {title}"
-            if len(subject) > 100:
-                subject = subject[:97] + "..."
+            sorted_modules = sorted(module_counts.items(), key=lambda x: x[1], reverse=True)
+            primary_module_name = sorted_modules[0][0] if sorted_modules else "Unknown"
             
-            # Format failures list
-            failures_text = ""
-            base_url = get_app_base_url(db)
-            if failures:
-                for idx, f in enumerate(failures): 
-                    # Use f.test_case since we are iterating over FailureAnalysis objects in this endpoint
-                    tc = f.test_case
-                    stack_trace = tc.stack_trace[:800] + ('\n...\n(truncated)' if len(tc.stack_trace or '') > 800 else '') if tc.stack_trace else 'N/A'
-                    
-                    test_link = f'"{tc.class_name}#{tc.method_name}":{base_url}/?page=test-case&id={tc.id}'
-                    
-                    failures_text += f"""
-h4. Failure {idx + 1}
-
-* *Module:* @{tc.module_name}@
-* *Test Case:* {test_link}
-* *Stack Trace:*
-
-<pre><code class="java">
-{stack_trace}
-</code></pre>
-"""
-                if len(failures) == 5:
-                     failures_text += f"\np(. _... and more failures not shown_\n"
-
-            description = f"""h2. Failure Analysis Report
-
-h3. Cluster Summary
-
-|_. Property|_. Value|
-|Cluster ID|#{ cluster.id}|
-|Severity|{cluster.severity or 'Unknown'}|
-|Category|{cluster.category or 'Uncategorized'}|
-|Confidence|{cluster.confidence_score or 0}/5|
-|Impact|{len(failures)} failures|
-
-h3. System Information
-
-|_. Property|_. Value|
-|Fingerprint|@{run.device_fingerprint or 'N/A'}@|
-|Build ID|@{run.build_id or 'N/A'}@|
-|Product|{run.build_product or 'N/A'}|
-|Model|{run.build_model or 'N/A'}|
-|Android Version|{run.android_version or 'N/A'}|
-|Security Patch|{run.security_patch or 'N/A'}|
-|Test Suite|{run.test_suite_name or 'N/A'}|
-
-h3. AI Analysis
-
-*Summary:*
-{cluster.ai_summary or 'N/A'}
-
-*Root Cause:*
-<pre>
-{cluster.common_root_cause or 'N/A'}
-</pre>
-
-*Suggested Solution:*
-{cluster.common_solution or 'N/A'}
-
-h3. Technical Details
-
-*Stack Trace Signature:*
-<pre><code>
-{cluster.signature or 'N/A'}
-</code></pre>
-
-h3. Affected Test Cases
-
-{failures_text}
-"""
+            # Use common helper
+            # Note: _prepare_issue_context expects 'failures' to have class_name, method_name etc.
+            # If 'failures' is a list of FailureAnalysis, we need to extract test cases or make sure helper handles it
+            # The helper implementation assumes `f.class_name` works. 
+            # FailureAnalysis usually doesn't duplicate those fields, they are on TestCase.
+            # I must convert FailureAnalysis list to a list of objects that have these attributes.
+            failure_objs = [f.test_case for f in failures]
             
-            # Create parent issue
-            issue = client.create_issue(request.project_id, subject, description)
+            cluster_data, run_data, failure_dicts = _prepare_issue_context(cluster, run, failure_objs)
+            
+            content = generate_issue_content(cluster_data, run_data, primary_module_name, failure_dicts, get_app_base_url(db))
+            
+            assignment = resolver.resolve_assignment(
+                module_name=primary_module_name,
+                severity=cluster.severity or "Medium"
+            )
+            
+            # Create issue
+            issue = client.create_issue(
+                project_id=request.project_id,
+                subject=content["subject"],
+                description=content["description"],
+                priority_id=assignment["priority_id"],
+                assigned_to_id=assignment["user_id"]
+            )
             
             if issue:
                 # Link cluster to issue
@@ -279,33 +273,6 @@ h3. Affected Test Cases
                 db.commit()
                 created_count += 1
                 results.append({"cluster_id": cluster.id, "issue_id": issue['id'], "status": "created"})
-                
-                # Create child issues if requested
-                if request.create_children:
-                    all_failures = db.query(models.FailureAnalysis).filter(
-                        models.FailureAnalysis.cluster_id == cluster.id
-                    ).all()
-                    
-                    for analysis in all_failures:
-                        test_case = analysis.test_case
-                        child_subject = f"[Failure] {test_case.module_name} - {test_case.class_name}#{test_case.method_name}"
-                        child_desc = f"""*Module:* {test_case.module_name}
-*Test Case:* {test_case.class_name}#{test_case.method_name}
-*Error Message:*
-<pre>
-{test_case.error_message or 'N/A'}
-</pre>
-
-*Stack Trace:*
-<pre>
-{test_case.stack_trace[:800] if test_case.stack_trace else 'N/A'}
-</pre>"""
-                        client.create_issue(
-                            project_id=request.project_id,
-                            subject=child_subject,
-                            description=child_desc,
-                            parent_issue_id=issue['id']
-                        )
             else:
                 failed_count += 1
                 results.append({"cluster_id": cluster.id, "status": "failed"})
@@ -346,7 +313,11 @@ class SmartCreateRequest(BaseModel):
     priority_id_override: Optional[int] = None
 
 
-@router.post("/redmine/preview-issue")
+
+
+
+
+@router.post("/redmine/preview")
 def preview_issue_content(request: SmartPreviewRequest, db: Session = Depends(get_db)):
     """
     Generate and preview issue content without creating it.
@@ -381,34 +352,8 @@ def preview_issue_content(request: SmartPreviewRequest, db: Session = Depends(ge
     # Determine module name
     module_name = request.module_name or failures[0].module_name or "Unknown"
     
-    # Convert to dict format for generate_issue_content
-    failure_dicts = [
-        {
-            "class_name": f.class_name,
-            "method_name": f.method_name,
-            "error_message": f.error_message,
-            "stack_trace": f.stack_trace,
-            "id": f.id
-        }
-        for f in failures
-    ]
-    
-    run_data = {
-        "android_version": run.android_version,
-        "build_id": run.build_id,
-        "build_product": run.build_product,
-        "device_fingerprint": run.device_fingerprint,
-        "suite_version": run.suite_version
-    }
-    
-    cluster_data = {
-        "id": cluster.id,
-        "ai_summary": cluster.ai_summary,
-        "common_root_cause": cluster.common_root_cause,
-        "common_solution": cluster.common_solution,
-        "severity": cluster.severity,
-        "category": cluster.category
-    }
+    # Use common helper to prepare data
+    cluster_data, run_data, failure_dicts = _prepare_issue_context(cluster, run, failures)
     
     # Generate content
     app_url = get_app_base_url(db)
@@ -574,11 +519,6 @@ def smart_bulk_create_by_module(request: ModuleCentricBulkRequest, db: Session =
     if not clusters:
         return {"message": "No clusters without Redmine issues", "created": 0, "results": [], "module_filter": request.module_name}
     
-    run_data = {
-        "android_version": run.android_version, "build_id": run.build_id,
-        "build_product": run.build_product, "device_fingerprint": run.device_fingerprint,
-        "suite_version": run.suite_version
-    }
     
     results = []
     created_count = 0
@@ -603,71 +543,59 @@ def smart_bulk_create_by_module(request: ModuleCentricBulkRequest, db: Session =
             models.TestCase.test_run_id == request.run_id
         ).all()
         
-        # Group by module
-        modules: Dict[str, List] = {}
+        if not failures:
+            continue
+
+        # Determine dominant module (most frequent)
+        module_counts: Dict[str, int] = {}
         for f in failures:
             mod = f.module_name or "Unknown"
-            if mod not in modules:
-                modules[mod] = []
-            modules[mod].append(f)
+            module_counts[mod] = module_counts.get(mod, 0) + 1
         
-        cluster_data = {
-            "id": cluster.id, "ai_summary": cluster.ai_summary,
-            "common_root_cause": cluster.common_root_cause,
-            "common_solution": cluster.common_solution,
-            "severity": cluster.severity, "category": cluster.category
-        }
+        # Sort by count desc
+        sorted_modules = sorted(module_counts.items(), key=lambda x: x[1], reverse=True)
+        primary_module_name = sorted_modules[0][0] if sorted_modules else "Unknown"
         
-        first_issue_id = None
-        
-        # Create one ticket per module (Module-Centric Splitting)
-        for module_name, module_failures in modules.items():
-            try:
-                failure_dicts = [
-                    {"class_name": f.class_name, "method_name": f.method_name,
-                     "error_message": f.error_message, "stack_trace": f.stack_trace, "id": f.id}
-                    for f in module_failures
-                ]
-                
-                content = generate_issue_content(cluster_data, run_data, module_name, failure_dicts, get_app_base_url(db))
-                
-                assignment = resolver.resolve_assignment(
-                    module_name=module_name,
-                    severity=cluster.severity or "Medium"
-                )
-                
-                issue = client.create_issue(
-                    project_id=request.project_id,
-                    subject=content["subject"],
-                    description=content["description"],
-                    priority_id=assignment["priority_id"],
-                    assigned_to_id=assignment["user_id"]
-                )
-                
-                # Mark cluster as synced with the FIRST issue created
-                # This prevents duplicate issues if user clicks again
-                if first_issue_id is None:
-                    first_issue_id = issue['id']
-                    cluster.redmine_issue_id = first_issue_id
-                    db.commit()
-                
-                created_count += 1
-                results.append({
-                    "cluster_id": cluster.id,
-                    "module": module_name,
-                    "issue_id": issue['id'],
-                    "status": "created",
-                    "assigned_to_id": assignment["user_id"],
-                    "resolved_from": assignment["resolved_from"]
-                })
-                
-            except Exception as e:
-                results.append({
-                    "cluster_id": cluster.id,
-                    "module": module_name,
-                    "status": "error",
-                    "error": str(e)
-                })
+        try:
+            # Use common helper
+            cluster_data, run_data, failure_dicts = _prepare_issue_context(cluster, run, failures)
+            
+            content = generate_issue_content(cluster_data, run_data, primary_module_name, failure_dicts, get_app_base_url(db))
+            
+            assignment = resolver.resolve_assignment(
+                module_name=primary_module_name,
+                severity=cluster.severity or "Medium"
+            )
+            
+            issue = client.create_issue(
+                project_id=request.project_id,
+                subject=content["subject"],
+                description=content["description"],
+                priority_id=assignment["priority_id"],
+                assigned_to_id=assignment["user_id"]
+            )
+            
+            # Link cluster to the issue
+            cluster.redmine_issue_id = issue['id']
+            db.commit()
+            
+            created_count += 1
+            results.append({
+                "cluster_id": cluster.id,
+                "module": primary_module_name,
+                "issue_id": issue['id'],
+                "status": "created",
+                "assigned_to_id": assignment["user_id"],
+                "resolved_from": assignment["resolved_from"]
+            })
+            
+        except Exception as e:
+            results.append({
+                "cluster_id": cluster.id,
+                "module": primary_module_name,
+                "status": "error",
+                "error": str(e)
+            })
     
     return {
         "message": f"Created {created_count} module-centric tickets, skipped {skipped_count}",

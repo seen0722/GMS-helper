@@ -809,6 +809,9 @@ function setupUpload() {
 // --- Run Details Logic ---
 async function loadRunDetails(runId) {
     try {
+        // Reset view mode to default (Cluster) on page load
+        currentViewMode = 'cluster';
+
         // Load Run Info
         const runRes = await fetch(`${API_BASE}/reports/runs/${runId}`);
         const run = await runRes.json();
@@ -3861,14 +3864,40 @@ async function openBulkCreateModal() {
     const modal = document.getElementById('bulk-create-modal');
     if (!modal) return;
 
+    // Check if configuration is loaded, if not try to load it
+    if (!currentModuleOwnerMapConfig) {
+        try {
+            await loadModuleOwnerMap();
+        } catch (e) {
+            console.error("Failed to load module map on open modal", e);
+        }
+    }
+
+    // Check if configuration has defaults
+    const defaults = currentModuleOwnerMapConfig?.default_settings;
+    if (!defaults || !defaults.default_project_id) {
+        alert('Please configure a Default Project in Settings > Module Owner Map first.');
+        return;
+    }
+
     modal.classList.remove('hidden');
 
-    // Load projects
-    await loadRedmineProjects();
-    const projectSelect = document.getElementById('bulk-create-project');
-    const redmineSelect = document.getElementById('redmine-project');
-    if (projectSelect && redmineSelect) {
-        projectSelect.innerHTML = redmineSelect.innerHTML;
+    // Display project info
+    const label = document.getElementById('bulk-confirm-project');
+    if (label) {
+        // Try to find project name from cache if available, else show ID
+        const pid = defaults.default_project_id;
+        let pName = `ID: ${pid}`;
+        
+        // Optimistically check cache if empty try loading once
+        if (redmineProjectsCache.length === 0) {
+             try { await loadRedmineProjects(); } catch(e) {}
+        }
+        
+        const proj = redmineProjectsCache.find(p => p.id == pid);
+        if (proj) pName = proj.name;
+        
+        label.textContent = pName;
     }
 }
 
@@ -3885,15 +3914,18 @@ function closeBulkCreateModal() {
 }
 
 async function executeBulkCreate() {
-    const projectId = parseInt(document.getElementById('bulk-create-project').value);
-    const createChildren = document.getElementById('bulk-create-children').checked;
     const button = document.getElementById('btn-execute-bulk');
     const status = document.getElementById('bulk-create-status');
 
-    if (!projectId) {
-        alert('Please select a project');
+    const defaults = currentModuleOwnerMapConfig?.default_settings;
+    if (!defaults || !defaults.default_project_id) {
+        alert('Missing Default Project configuration.');
         return;
     }
+    
+    const projectId = defaults.default_project_id;
+    // Always create children for bulk actions as per new flow
+    const createChildren = true; 
 
     if (!router.currentParams || !router.currentParams.id) {
         alert('No test run selected');
