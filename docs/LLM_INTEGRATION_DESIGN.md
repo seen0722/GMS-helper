@@ -1,10 +1,10 @@
 # LLM Integration & Connection Design
 
-> **Version**: 1.0
-> **Date**: 2026-01-08
-> **Status**: Approved
+> **Version**: 2.0
+> **Date**: 2026-01-20
+> **Status**: Live / Production
 
-This document details the architectural design for connecting the GMS-helper application to various LLM backend providers, specifically OpenAI and Internal LLMs (like vLLM or Ollama).
+This document details the architectural design for connecting the GMS-helper application to various LLM backend providers, specifically **OpenAI**, **Internal LLMs** (vLLM/Ollama), and **Cambrian LLM** (Internal Enterprise).
 
 ## 1. Architecture Overview
 
@@ -29,12 +29,20 @@ classDiagram
         +analyze_failure(failure_text)
     }
     
+    class CambrianLLMClient {
+        -client: httpx.AsyncClient
+        -base_url: str
+        -token: str
+        +analyze_failure(failure_text)
+    }
+    
     class MockLLMClient {
         +analyze_failure(failure_text)
     }
 
     LLMClient <|-- OpenAILLMClient
     LLMClient <|-- InternalLLMClient
+    LLMClient <|-- CambrianLLMClient
     LLMClient <|-- MockLLMClient
 ```
 
@@ -46,51 +54,33 @@ classDiagram
 ## 2. Connection Protocols
 
 ### 2.1 OpenAI Connection
+*   **Protocol**: HTTPS (Standard OpenAI API).
+*   **Library**: Official `openai` Python SDK.
+*   **Authentication**: Bearer Token (API Key).
 
-*   **Protocol**: HTTPS (Standard OpenAI API)
-*   **Library**: Official `openai` Python SDK
-*   **Authentication**: Bearer Token (API Key)
-*   **Endpoint**: Default OpenAI endpoints (e.g., `https://api.openai.com/v1`)
+### 2.2 Internal LLM (vLLM / Ollama)
+Standard OpenAI-compatible endpoints on the local network.
+*   **Library**: Official `openai` Python SDK (reconfigured).
+*   **Endpoint**: Custom `base_url` (e.g., `http://localhost:11434/v1`).
+*   **Authentication**: Often unrestricted or dummy key.
 
-**Implementation Detail**:
-```python
-# Standard initialization
-self.client = OpenAI(api_key=settings.openai_api_key)
-```
-
-### 2.2 Internal LLM (vLLM / Ollama) Connection
-
-Most modern internal LLM servers (vLLM, Ollama, TGI) provide an **OpenAI-compatible API**. This allows us to reuse the same client library and request format, changing only the connection parameters.
-
-*   **Protocol**: HTTP/HTTPS
-*   **Library**: Official `openai` Python SDK (reused)
-*   **Authentication**: Optional (often unrestricted on internal networks) or Custom Key.
-*   **Endpoint**: Custom `base_url` pointing to the internal server.
-
-**Implementation Detail**:
-```python
-# Configuring OpenAI SDK to point to internal server
-self.client = OpenAI(
-    base_url="http://internal-llm.company.local:8000/v1",  # Key configuration
-    api_key="not-needed"  # Often required by SDK validation but ignored by server
-)
-```
-
-**Supported Internal Backends**:
-*   **Ollama**: `http://localhost:11434/v1`
-*   **vLLM**: `http://<server-ip>:8000/v1`
-*   **LocalAI**: `http://localhost:8080/v1`
+### 2.3 Cambrian LLM (Enterprise Internal)
+A specialized internal LLM service requiring specific authentication headers.
+*   **Protocol**: HTTPS (Internal PKI).
+*   **Library**: `httpx` (Direct REST calls).
+*   **Authentication**: Custom Header (`Authorization: <token>`).
+*   **Endpoint**: `https://api.cambrian.pegatroncorp.com` (Default).
+*   **SSL Verification**: Configurable (often `verify=False` for internal self-signed certs).
 
 ## 3. Configuration Management
 
-The system determines which provider to use based on a priority hierarchy:
+The system determines which provider to use based on the `Settings` table in the database:
 
-1.  **Database Settings**: (Primary) Configured via UI `Settings` page.
-    *   `llm_provider`: `openai` | `internal`
-    *   `internal_llm_url`: URL for internal server
-    *   `internal_llm_model`: Model name (e.g., `llama3.1`)
-2.  **Environment Variables**: (Fallback) `OPENAI_API_KEY`
-3.  **Mock Fallback**: Used if no configuration is found or connections fail.
+1.  **Provider Selection**: `llm_provider` enum (`openai`, `internal`, `cambrian`).
+2.  **Provider-Specific Settings**:
+    *   **OpenAI**: `openai_api_key`.
+    *   **Internal**: `internal_llm_url`, `internal_llm_model`.
+    *   **Cambrian**: `cambrian_url`, `cambrian_token`, `cambrian_model`.
 
 ## 4. Request Flow Sequence
 
@@ -100,42 +90,31 @@ sequenceDiagram
     participant Factory as get_llm_client()
     participant DB
     participant Client as LLMClient
-    participant Provider as External LLM (OpenAI/Internal)
+    participant Provider as External Service
 
     AnalysisRouter->>Factory: Request Client Instance
-    Factory->>DB: Fetch Config (Provider, URL, Key)
-    DB-->>Factory: Config Data
+    Factory->>DB: Fetch Config
+    DB-->>Factory: {provider: "cambrian", token: "...", ...}
     
-    alt Provider = Internal
-        Factory->>Client: Init InternalLLMClient(base_url, model)
-    else Provider = OpenAI
-        Factory->>Client: Init OpenAILLMClient(api_key)
+    alt Provider = Cambrian
+        Factory->>Client: Init CambrianLLMClient()
+    else Provider = Internal
+        Factory->>Client: Init InternalLLMClient()
     end
     
     Factory-->>AnalysisRouter: Return Client Instance
     
     AnalysisRouter->>Client: analyze_failure(failure_text)
     
-    Note over Client,Provider: Using JSON Mode Response Format
-    
-    Client->>Provider: POST /chat/completions
+    Client->>Provider: POST /chat/completions (or equivalent)
     Provider-->>Client: JSON Response
-    Client-->>AnalysisRouter: Parsed Dictionary
+    Client-->>AnalysisRouter: Standardized Analysis Dict
 ```
 
 ## 5. Security & Error Handling
 
-*   **API Keys**: Stored in the database using **Fernet Symmetric Encryption**. Never stored in plain text.
-*   **Error Handling**:
-    *   Network timeouts or 5xx errors from providers are caught.
-    *   Fallback to a structured "Error Analysis" result (severity: Low) instead of crashing the application.
-    *   Errors are logged to the server console for debugging.
-
-## 6. Future Extensibility
-
-To add a new provider (e.g., **Azure OpenAI** or **Google Vertex AI**):
-
-1.  Create `AzureLLMClient` inheriting from `LLMClient`.
-2.  Implement `analyze_failure` using the Azure SDK.
-3.  Update `models.py` to add Azure-specific settings (Endpoint, Deployment Name).
-4.  Update `get_llm_client` factory to handle the new `azure` provider type.
+*   **API Keys/Tokens**: Stored encrypted in the database using **Fernet Symmetric Encryption**.
+*   **Error Resilience**:
+    *   If the primary configured LLM fails (timeout/500), the system catches the exception.
+    *   Returns a "Manual Analysis Required" placeholder rather than crashing.
+    *   Logs detailed errors for administrator review.
