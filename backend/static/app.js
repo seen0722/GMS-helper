@@ -1407,7 +1407,10 @@ function renderFailuresTable() {
             return `
                     <div class="p-4 hover:bg-slate-50 transition-colors">
                         <div class="flex flex-col gap-2">
-                            <div class="text-xs font-semibold text-slate-500">${f.module_name}</div>
+                            <div class="flex items-center gap-2">
+                                <div class="text-xs font-semibold text-slate-500">${f.module_name}</div>
+                                ${f.module_abi ? `<span class="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-semibold rounded">${f.module_abi}</span>` : ''}
+                            </div>
                             <div class="font-medium text-slate-700 font-mono text-sm break-all">${f.class_name}#${f.method_name}</div>
                             <div class="text-sm text-red-600 break-words">${escapeHtml(errorMsg)}</div>
                             <div class="flex items-center gap-4 mt-1">
@@ -2173,6 +2176,7 @@ async function showClusterDetail(cluster) {
             const shortClass = f.class_name.length > 60 ? '...' + f.class_name.slice(-55) : f.class_name;
             item.innerHTML = `
                 <span class="font-semibold text-slate-700 shrink-0">${f.module_name}</span>
+                ${f.module_abi ? `<span class="px-1 py-0.5 bg-purple-100 text-purple-700 text-[9px] font-semibold rounded shrink-0">${f.module_abi}</span>` : ''}
                 <span class="text-slate-300">/</span>
                 <span class="text-slate-500 truncate">${shortClass}#${f.method_name}</span>
             `;
