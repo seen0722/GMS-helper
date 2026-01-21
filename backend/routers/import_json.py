@@ -39,6 +39,8 @@ class StatsPayload(BaseModel):
     total_modules: int = 0
     passed_modules: int = 0
     failed_modules: int = 0
+    xml_modules_done: int = 0
+    xml_modules_total: int = 0
 
 
 class FailurePayload(BaseModel):
@@ -87,6 +89,8 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
             total_modules=data.stats.total_modules,
             passed_modules=data.stats.passed_modules,
             failed_modules=data.stats.failed_modules,
+            xml_modules_done=data.stats.xml_modules_done,
+            xml_modules_total=data.stats.xml_modules_total,
             status="completed"
         )
         

@@ -1,5 +1,8 @@
 # PRD: Redmine 智慧自動提單策略 (Smart Redmine Automation Strategy)
 
+> **Version**: 2.0 (Updated 2026-01-20)
+> **Status**: Live / Production
+
 ## 1. 核心理念 (Core Philosophy)
 
 站在 BSP Tech Leader 的角度，自動化提單系統成功的關鍵在於**「降噪 (Noise Reduction)」**與**「精準 (Accuracy)」**。系統不應成為製造垃圾工單 (Spam) 的機器，而應成為協助 RD 快速定位問題的助手。
@@ -47,126 +50,126 @@
 
 ## 3. 智慧工作流 (Smart Workflow)
 
-系統應具備「智慧去重」與「生命週期管理」能力，而非單純的單向拋送。
+系統已實作「智慧去重 (Smart Deduplication)」與「生命週期管理」。
 
-### 2.1 流程圖
+### 3.1 狀態機流程圖
 
 ```mermaid
-graph TD
-    A[XML 上傳 & AI 分群] --> B{檢查 Redmine 重複工單}
-    B -->|發現 Open 工單| C[更新模式 (Update Mode)]
-    B -->|發現 Closed 工單| D[回歸模式 (Regression Mode)]
-    B -->|無重複| E[新建模式 (Create Mode)]
+stateDiagram-v2
+    [*] --> CheckDuplicate
     
-    subgraph Update Mode
-    C --> C1[新增 Note: "Issue reproduced in build <Build_ID>"]
-    C --> C2[更新 Custom Fields: <Fail_Count>, <Last_Seen_Build>]
-    end
+    CheckDuplicate --> DuplicateFound: Existing Ticket Found
+    CheckDuplicate --> NoDuplicate: No Matching Ticket
     
-    subgraph Regression Mode
-    D --> D1[Reopen Issue]
-    D --> D2[設定 Priority = High]
-    D --> D3[新增 Note: "Regression detected in build <Build_ID>"]
-    end
+    state DuplicateFound {
+        [*] --> CheckStatus
+        CheckStatus --> Open: Status = New/Open/Assigned
+        CheckStatus --> Closed: Status = Closed/Resolved
+        
+        Open --> AddNote: Action: ADD_NOTE
+        AddNote --> [*]: "Reproduced in Build X"
+        
+        Closed --> Reopen: Action: REOPEN
+        Reopen --> [*]: "Regression Detected"
+    }
     
-    subgraph Create Mode
-    E --> E1[生成標準化標題 & 內容]
-    E --> E2[自動分派 (Assignment Matrix)]
-    E --> E3[設定 Priority]
-    end
+    state NoDuplicate {
+        [*] --> CreateNew: Action: CREATE_NEW
+        CreateNew --> Assign: Auto-Assignment
+        Assign --> [*]: Ticket Created
+    }
 ```
 
-### 2.2 去重機制 (Deduplication Logic)
-*   **Search Key**: 使用 Cluster 的 `Signature` (Stack Trace Hash) 或 `Module Name` + `Error Type` 組合進行搜尋。
-*   **判定標準**: 標題相似度 > 80% 或 Signature 精確匹配。
+### 3.2 去重邏輯 (Deduplication Logic)
+實作於 `DeduplicationService` class：
+
+1.  **Check 1: Database Link**: 先檢查資料庫中該 Cluster 是否已有 `redmine_issue_id`。
+2.  **Check 2: Subject Search**: 若無，則使用 `Module Name` + `AI Summary` 前 50 字元作為 Search Key，搜尋 Redmine 中標題相似的工單。
+3.  **Action Determination**:
+    *   若找到 **Open** 工單 -> **ADD_NOTE** (累積證據，降噪)。
+    *   若找到 **Closed** 工單 -> **REOPEN** (抓出 Regression)。
+    *   若無 -> **CREATE_NEW** (正常提單)。
 
 ---
 
-## 3. 工單內容標準 (Ticket Template)
+## 4. 工單內容標準 (Ticket Template)
 
-所有自動/半自動建立的工單必須遵循以下格式，確保 RD 擁有修解所需的一切資訊。
+所有自動/半自動建立的工單遵循以下格式 (`RedmineClient.generate_issue_content`)：
 
-### 3.1 標題格式 (Subject)
+### 4.1 標題格式 (Subject)
 ```text
-[GMS][<Android_Version>][<Module_Name>] <AI_Summary>
+[GMS][<Android_Version>][<Module_Name>] <AI_Summary_Title>
 ```
-*   **範例**: `[GMS][14][CtsMediaTestCases] AudioTrack timestamp mismatch causing buffer underrun`
 
-### 3.2 內容格式 (Description)
-使用 Markdown 格式，包含以下區塊：
+### 4.2 內容格式 (Description)
+使用 Markdown 格式，自動填入 AI 分析結果與代表性 Log。
 
 ```markdown
-**[AI Analysis]**
-*   **Root Cause**: <AI_Root_Cause>
-*   **Impact**: 共 <Fail_Count> 個測項失敗 (關聯 Cluster ID: #<Cluster_ID>)
-*   **Suggestion**: <AI_Solution>
+### AI Analysis
 
-**[Environment]**
-*   **Project**: <Build_Product>
-*   **Build ID**: <Build_ID>
-*   **Fingerprint**: <Device_Fingerprint>
-*   **Suite Version**: <Suite_Version>
+**Root Cause**
+> <AI_Root_Cause>
 
-**[Representative Failure]**
-*   **Test Class**: <Class_Name>
-*   **Test Method**: <Method_Name>
-*   **Error Message**:
-    ```
-    <Error_Message>
-    ```
-*   **Stack Trace (Top 50 lines)**:
-    ```java
-    <Stack_Trace>
-    ```
+**Suggestion**
+> <AI_Solution>
 
-**[Affected Tests (Top 10)]**
-1. <Test_Case_1>
-2. <Test_Case_2>
-...
+**Impact Analysis**
+* **Severity**: High
+* **Impact**: 45 test(s) failed (Cluster ID: #123)
+
+---
+
+### Environment
+
+* **Product**: T70
+* **Build ID**: T70_20260120_User
+* **Fingerprint**: google/pixel/t70...
+* **Suite Version**: 14_r3
+
+---
+
+### Technical Details
+
+**Stack Trace Signature**
+```text
+a1b2c3d4
+```
+
+**Representative Stack Trace**
+```java
+java.lang.AssertionError: Expected true but was false
+    at android.media.cts.AudioTrackTest.testPlay(AudioTrackTest.java:123)
+    ...
+```
+
+### Affected Tests (Top 50)
+1. [android.media.cts.AudioTrackTest#testPlay](http://gms-helper/test-case/1)
+2. ...
 ```
 
 ---
 
-## 4. 自動分派矩陣 (Assignment Matrix)
+## 5. 自動分派矩陣 (Assignment Matrix)
 
-建立 `Module_Owner_Map`，根據 Module Name 前綴自動分派給對應團隊。
+實作於 `AssignmentResolver` class，讀取 `config/module_owner_map.json` 進行分派。
 
-| Module Pattern | Target Team | Note |
+**邏輯**:
+1.  **Pattern Match**: 檢查 Module Name 是否符合 `CtsMedia*` 等 Pattern。
+2.  **Severity Map**: 根據 AI Severity ("High", "Medium") 決定 Priority ID (5, 4)。
+3.  **Project**: 使用 Default Project ID (設定檔定義)。
+
+| Module Pattern | Target (Abstract) | Priority (High/Med) |
 | :--- | :--- | :--- |
-| `CtsMedia*` | Multimedia Team | Audio/Video 相關 |
-| `CtsCamera*` | Camera Team | |
-| `CtsWifi*`, `CtsNet*`, `CtsBluetooth*` | Connectivity Team | |
-| `CtsSystemUi*`, `CtsView*` | Framework Team | UI 相關 |
-| `CtsKernel*`, `CtsFs*` | BSP/Kernel Team | 底層驅動/檔案系統 |
-| `CtsSecurity*` | Security Team | |
-| `*` (Default) | System QA / GMS Owners | 無法歸類者 |
-
----
-
-## 5. 實施階段規劃 (Implementation Roadmap)
-
-### Phase 1: 輔助提單模式 (Assisted Mode) - *Current Target*
-*   **機制**: 用戶點擊 "Create Issue" -> 彈出 Modal -> 系統預填好上述標準 Template -> 用戶確認/修改 -> 提交。
-*   **目標**: 建立標準化工單，減少人工 Copy-Paste 時間。
-
-### Phase 2: 自動備註模式 (Auto-Comment Mode)
-*   **機制**: 系統在背景掃描。若發現相同 Cluster 已有對應工單，自動在該工單下留言 "Reproduced in build XYZ"。
-*   **目標**: 減少重複工單 (Duplicate Tickets)，轉而累積現有工單的證據力。
-
-### Phase 3: 全自動 regression 偵測 (Regression Guard)
-*   **機制**: 若發現已 Close 的工單對應的 Cluster 再次出現，自動 Reopen 並通知相關人員。
-*   **目標**: 防止已修復問題回歸 (Regression)。
-
-### Phase 4: 高信心全自動提單 (Fully Autonomous)
-*   **機制**: 僅當 `Confidence Score > 4` (高信心) 且 `Severity = High` 時，系統才自動建立新工單，無需人工介入。
-*   **目標**: 實現無人值守的 Nightly Run Triage。
+| `CtsMedia*` | User ID: 10 (Audio Lead) | 5 / 4 |
+| `CtsCamera*` | User ID: 12 (Camera Lead)| 5 / 4 |
+| `*` (Default) | User ID: 5 (System QA) | 4 / 3 |
 
 ---
 
 ## 6. 風險控管 (Risk Management)
 
-| 風險 | 緩解措施 |
-| :--- | :--- |
-| **Notification Spam** (通知轟炸) | 實作 Rate Limiting，同一小時內對同一 Assignee 發送不超過 N 封通知；善用 "Update" 而非 "Create"。 |
-| **False Positives** (誤判) | 初期僅由人工審核 (Phase 1)，AI 信心分數需經校準後才開啟自動化。 |
-| **Redmine API 限制** | 實作 Queue 機制與 Retry 邏輯，避免併發過高拖垮 Redmine。 |
+| 風險 | 緩解措施 | 實作狀態 |
+| :--- | :--- | :--- |
+| **Notification Spam** | 優先使用 ADD_NOTE 而非開新單。 | ✅ 已實作 (DeduplicationService) |
+| **False Positives** | 提供 `/preview` API 讓前端先預覽再送出。 | ✅ 已實作 (SmartPreviewRequest) |
+| **Race Condition** | 在 Bulk Create 迴圈中二次檢查 DB lock 狀態。 | ✅ 已實作 |

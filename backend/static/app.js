@@ -971,22 +971,30 @@ class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-cen
                 <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-100 mt-6">
                     <h4 class="font-semibold text-slate-800 mb-4">Test Results Summary</h4>
                     ${hasModuleStats ? `
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                         <div class="text-center p-4 bg-green-50 rounded-lg border border-green-100">
-                            <div class="text-3xl font-bold text-green-600">${stats.passed_tests.toLocaleString()}</div>
-                            <div class="text-sm text-slate-600 mt-1">Tests Passed</div>
+                            <div class="text-2xl font-bold text-green-600">${stats.passed_tests.toLocaleString()}</div>
+                            <div class="text-xs text-slate-600 mt-1">Tests Passed</div>
                         </div>
                         <div class="text-center p-4 bg-red-50 rounded-lg border border-red-100">
-                            <div class="text-3xl font-bold text-red-600">${stats.failed_tests.toLocaleString()}</div>
-                            <div class="text-sm text-slate-600 mt-1">Tests Failed</div>
+                            <div class="text-2xl font-bold text-red-600">${stats.failed_tests.toLocaleString()}</div>
+                            <div class="text-xs text-slate-600 mt-1">Tests Failed</div>
+                        </div>
+                        <div class="text-center p-4 bg-purple-50 rounded-lg border border-purple-100">
+                            <div class="text-2xl font-bold text-purple-600">${stats.xml_modules_done || 0}/${stats.xml_modules_total || 0}</div>
+                            <div class="text-xs text-slate-600 mt-1">Modules Completed</div>
                         </div>
                         <div class="text-center p-4 bg-blue-50 rounded-lg border border-blue-100">
-                            <div class="text-3xl font-bold text-blue-600">${stats.passed_modules.toLocaleString()}</div>
-                            <div class="text-sm text-slate-600 mt-1">Modules Done</div>
+                            <div class="text-2xl font-bold text-blue-600">${stats.passed_modules.toLocaleString()}</div>
+                            <div class="text-xs text-slate-600 mt-1">Modules Passed</div>
+                        </div>
+                        <div class="text-center p-4 bg-orange-50 rounded-lg border border-orange-100">
+                            <div class="text-2xl font-bold text-orange-600">${stats.failed_modules.toLocaleString()}</div>
+                            <div class="text-xs text-slate-600 mt-1">Modules Failed</div>
                         </div>
                         <div class="text-center p-4 bg-slate-50 rounded-lg border border-slate-200">
-                            <div class="text-3xl font-bold text-slate-700">${stats.total_modules.toLocaleString()}</div>
-                            <div class="text-sm text-slate-600 mt-1">Modules Total</div>
+                            <div class="text-2xl font-bold text-slate-700">${stats.total_modules.toLocaleString()}</div>
+                            <div class="text-xs text-slate-600 mt-1">Module-ABI Total</div>
                         </div>
                     </div>
                     ` : `

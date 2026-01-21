@@ -20,7 +20,9 @@ class XMLParser(BaseParser):
             "suite_build_number": "Unknown",
             "host_name": "Unknown",
             "start_time": None,
-            "end_time": None
+            "end_time": None,
+            "modules_done": 0,
+            "modules_total": 0
         }
         
         try:
@@ -55,10 +57,18 @@ class XMLParser(BaseParser):
                     metadata["security_patch"] = elem.get('build_version_security_patch', 'Unknown')
                     metadata["android_version"] = elem.get('build_version_release', 'Unknown')
                     metadata["build_version_incremental"] = elem.get('build_version_incremental', 'Unknown')
+                elif elem.tag.endswith('Summary'):
+                    try:
+                        metadata["modules_done"] = int(elem.get('modules_done', 0))
+                        metadata["modules_total"] = int(elem.get('modules_total', 0))
+                    except (ValueError, TypeError):
+                        pass
                 
                 # We only need the top-level info, so we can stop early if we have everything
-                # But often these are at the top. Let's just read the first few elements.
-                if metadata["test_suite_name"] != "Unknown" and metadata["device_fingerprint"] != "Unknown":
+                # Summary comes after Build, so check for it too
+                if (metadata["test_suite_name"] != "Unknown" and 
+                    metadata["device_fingerprint"] != "Unknown" and
+                    metadata["modules_total"] > 0):
                     break
                 
                 # Clear element to save memory

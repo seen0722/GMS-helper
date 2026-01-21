@@ -164,8 +164,10 @@ async function parseXMLFile(file) {
         passed_tests: 0,
         failed_tests: 0,
         ignored_tests: 0,
-        modules: new Set(),
-        failed_modules: new Set()
+        module_abi_pairs: new Set(),         // "module_name:abi" for unique counting
+        failed_module_abi_pairs: new Set(),
+        xml_modules_done: 0,                  // From XML <Summary modules_done>
+        xml_modules_total: 0                  // From XML <Summary modules_total>
     };
 
     const failures = [];
@@ -201,10 +203,16 @@ async function parseXMLFile(file) {
                 metadata.android_version = tag.attributes.build_version_release || null;
                 break;
 
+            case 'Summary':
+                stats.xml_modules_done = parseInt(tag.attributes.modules_done || '0', 10);
+                stats.xml_modules_total = parseInt(tag.attributes.modules_total || '0', 10);
+                break;
+
             case 'Module':
                 currentModule = tag.attributes.name || 'Unknown';
                 currentModuleAbi = tag.attributes.abi || 'Unknown';
-                stats.modules.add(currentModule);
+                // Use module:abi as unique key to properly count ABI variants
+                stats.module_abi_pairs.add(`${currentModule}:${currentModuleAbi}`);
                 break;
 
             case 'TestCase':
@@ -227,7 +235,7 @@ async function parseXMLFile(file) {
                     stats.passed_tests++;
                 } else if (currentTest.status === 'fail') {
                     stats.failed_tests++;
-                    stats.failed_modules.add(currentModule);
+                    stats.failed_module_abi_pairs.add(`${currentModule}:${currentModuleAbi}`);
                 } else {
                     stats.ignored_tests++;
                 }
@@ -344,9 +352,11 @@ async function parseXMLFile(file) {
             passed_tests: stats.passed_tests,
             failed_tests: stats.failed_tests,
             ignored_tests: stats.ignored_tests,
-            total_modules: stats.modules.size,
-            passed_modules: stats.modules.size - stats.failed_modules.size,
-            failed_modules: stats.failed_modules.size
+            total_modules: stats.module_abi_pairs.size,
+            passed_modules: stats.module_abi_pairs.size - stats.failed_module_abi_pairs.size,
+            failed_modules: stats.failed_module_abi_pairs.size,
+            xml_modules_done: stats.xml_modules_done,
+            xml_modules_total: stats.xml_modules_total
         },
         failures: failures
     };

@@ -38,6 +38,8 @@ class TestRun(Base):
     total_modules = Column(Integer, default=0)
     passed_modules = Column(Integer, default=0)
     failed_modules = Column(Integer, default=0)
+    xml_modules_done = Column(Integer, default=0)   # From XML <Summary modules_done>
+    xml_modules_total = Column(Integer, default=0)  # From XML <Summary modules_total>
     status = Column(String, default="pending") # pending, processing, completed, failed
     analysis_status = Column(String, default="pending") # pending, analyzing, completed, failed
     

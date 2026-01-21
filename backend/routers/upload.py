@@ -58,6 +58,10 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
                     test_run.end_time = datetime.fromtimestamp(ts)
                 except Exception as e:
                     print(f"Failed to parse end_time: {e}")
+            
+            # Save XML Summary values
+            test_run.xml_modules_done = metadata.get("modules_done", 0)
+            test_run.xml_modules_total = metadata.get("modules_total", 0)
             db.commit()
         except Exception as e:
             print(f"Metadata parsing failed: {e}")
@@ -71,24 +75,28 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
         failed = 0
         ignored = 0
         
-        all_modules = set()
+        all_modules = set()       # Set of "module_name:abi" pairs
         failed_modules_set = set()
         
         for test_case_data in parser.parse(file_path):
             total += 1
             status = test_case_data.get("status")
             module_name = test_case_data.get("module_name")
+            module_abi = test_case_data.get("module_abi", "")
+            
+            # Use module:abi as unique key to properly count ABI variants
+            module_key = f"{module_name}:{module_abi}" if module_name else None
             
             # Update stats
-            if module_name:
-                all_modules.add(module_name)
+            if module_key:
+                all_modules.add(module_key)
             
             if status == "pass":
                 passed += 1
             elif status == "fail":
                 failed += 1
-                if module_name:
-                    failed_modules_set.add(module_name)
+                if module_key:
+                    failed_modules_set.add(module_key)
             else:
                 ignored += 1
                 

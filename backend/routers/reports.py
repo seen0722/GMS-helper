@@ -34,6 +34,8 @@ def get_run_stats(run_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Test run not found")
     
     return {
+        "xml_modules_done": run.xml_modules_done or 0,
+        "xml_modules_total": run.xml_modules_total or 0,
         "total_modules": run.total_modules or 0,
         "passed_modules": run.passed_modules or 0,
         "failed_modules": run.failed_modules or 0,
