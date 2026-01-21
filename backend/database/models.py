@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Enum, Float
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Enum, Float, Index
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -9,6 +9,21 @@ class TestResultStatus(str, enum.Enum):
     FAIL = "fail"
     IGNORED = "ignored"
     ASSUMPTION_FAILURE = "assumption_failure"
+
+
+class Submission(Base):
+    __tablename__ = "submissions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, index=True) # e.g., "Submission for fingerpint X"
+    status = Column(String, default="draft") # draft, analyzing, ready, published
+    gms_version = Column(String, nullable=True) # e.g., "14_r3"
+    lab_name = Column(String, nullable=True)
+    target_fingerprint = Column(String, index=True, nullable=True) # Auto-grouping Key
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    test_runs = relationship("TestRun", back_populates="submission")
 
 class TestRun(Base):
     __tablename__ = "test_runs"
@@ -45,6 +60,9 @@ class TestRun(Base):
     status = Column(String, default="pending") # pending, processing, completed, failed
     analysis_status = Column(String, default="pending") # pending, analyzing, completed, failed
     
+    submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=True)
+    submission = relationship("Submission", back_populates="test_runs")
+
     test_cases = relationship("TestCase", back_populates="test_run", cascade="all, delete-orphan")
 
 class TestCase(Base):

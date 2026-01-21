@@ -62,6 +62,34 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
             # Save XML Summary values
             test_run.xml_modules_done = metadata.get("modules_done", 0)
             test_run.xml_modules_total = metadata.get("modules_total", 0)
+
+            # --- Submission Auto-Grouping Logic ---
+            fingerprint = test_run.device_fingerprint
+            if fingerprint and fingerprint != "Pending...":
+                # Find existing submission by fingerprint
+                submission = db.query(models.Submission).filter(models.Submission.target_fingerprint == fingerprint).first()
+                
+                if not submission:
+                    # Create new submission
+                    prod = test_run.build_product or "Unknown Device"
+                    # Default name format: [Product] - [Date]
+                    # We can refine this later or allow renaming
+                    sub_name = f"Submission {prod} - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+                    
+                    submission = models.Submission(
+                        name=sub_name,
+                        target_fingerprint=fingerprint,
+                        status="analyzing",
+                        gms_version=test_run.android_version # Heuristic
+                    )
+                    db.add(submission)
+                    db.flush() # Generate ID
+                    print(f"Created new Submission ID: {submission.id} for fingerprint: {fingerprint}")
+                else:
+                    print(f"Found existing Submission ID: {submission.id} for fingerprint: {fingerprint}")
+                
+                test_run.submission_id = submission.id
+            # --------------------------------------
             db.commit()
         except Exception as e:
             print(f"Metadata parsing failed: {e}")
