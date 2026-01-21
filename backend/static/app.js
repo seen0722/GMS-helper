@@ -2169,24 +2169,66 @@ async function showClusterDetail(cluster) {
             currentCluster.failures = failures;
         }
 
-        countSpan.textContent = failures.length;
-        list.innerHTML = '';
-
-        if (failures.length === 0) {
-            list.innerHTML = '<div class="p-2 text-xs text-slate-500">No specific test cases found.</div>';
-            return;
-        }
-
+        // Group for Apple-style display
+        const failureGroups = new Map();
         failures.forEach(f => {
+            const key = `${f.module_name}|${f.module_abi}|${f.class_name}|${f.method_name}`;
+            if (!failureGroups.has(key)) {
+                failureGroups.set(key, {
+                    module_name: f.module_name,
+                    module_abi: f.module_abi,
+                    class_name: f.class_name,
+                    method_name: f.method_name,
+                    count: 0,
+                    runs: new Set()
+                });
+            }
+            const group = failureGroups.get(key);
+            group.count++;
+            if (f.test_run_id) group.runs.add(f.test_run_id);
+        });
+
+        countSpan.textContent = `${failureGroups.size} unique (${failures.length} total)`;
+        list.innerHTML = ''; // Clear loading state
+        list.className = "space-y-1 mt-2"; // Add spacing
+
+        const sortedGroups = Array.from(failureGroups.values()).sort((a,b) => b.count - a.count);
+
+        sortedGroups.forEach(g => {
             const item = document.createElement('div');
-            item.className = 'py-1.5 px-3 border-b border-slate-100 last:border-0 hover:bg-slate-50 text-[11px] font-mono text-slate-600 flex items-center gap-1 overflow-hidden';
-            // Truncate long class names for display
-            const shortClass = f.class_name.length > 60 ? '...' + f.class_name.slice(-55) : f.class_name;
+            item.className = 'py-2 px-3 border border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm transition-all rounded-lg group select-none cursor-default';
+            
+            const runCount = g.runs.size;
+            const runIds = Array.from(g.runs).sort((a,b)=>a-b).join(', #');
+            
             item.innerHTML = `
-                <span class="font-semibold text-slate-700 shrink-0">${f.module_name}</span>
-                ${f.module_abi ? `<span class="px-1 py-0.5 bg-purple-100 text-purple-700 text-[9px] font-semibold rounded shrink-0">${f.module_abi}</span>` : ''}
-                <span class="text-slate-300">/</span>
-                <span class="text-slate-500 truncate">${shortClass}#${f.method_name}</span>
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0 flex-1">
+                         <div class="flex items-center gap-2 text-[10px] text-slate-500 mb-0.5">
+                            <span class="font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">${g.module_name}</span>
+                            ${g.module_abi ? `<span class="px-1.5 py-0.5 bg-slate-50 text-slate-400 border border-slate-100 rounded">${g.module_abi}</span>` : ''}
+                        </div>
+                        <div class="font-mono text-[12px] leading-snug text-slate-700" title="${g.class_name}#${g.method_name}">
+                            <!-- RTL direction ensures end of string (Class Name) is visible if truncated -->
+                            <div class="truncate direction-rtl text-left text-slate-500" style="direction: rtl; text-align: left;">
+                                ${g.class_name}
+                            </div>
+                            <div class="font-bold text-slate-800 break-all">#${g.method_name}</div>
+                        </div>
+                    </div>
+                    ${runCount > 1 ? `
+                    <div class="shrink-0 flex flex-col items-end" title="Runs: #${runIds}">
+                        <span class="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-100 shadow-sm">
+                           ${runCount} runs
+                        </span>
+                    </div>` : `
+                    <div class="shrink-0" title="Run #${runIds}">
+                         <span class="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-medium bg-slate-50 text-slate-400 border border-slate-100">
+                           Run #${runIds}
+                        </span>
+                    </div>
+                    `}
+                </div>
             `;
             list.appendChild(item);
         });
@@ -3225,7 +3267,7 @@ async function saveModuleOwnerMap() {
     const config = {
         module_patterns: modulePatterns,
         default_settings: {
-            default_project_id: projectSelect?.value ? parseInt(projectSelect.value) : 1,
+            default_project_id: projectSelect?.value ? parseInt(projectSelect.value) : null,
             default_priority_id: prioritySelect?.value ? parseInt(prioritySelect.value) : 4,
             fallback_user_id: assigneeSelect?.value ? parseInt(assigneeSelect.value) : null
         }
@@ -3610,13 +3652,38 @@ function switchRedmineTab(tab) {
                 const stackTrace = repFailure.stack_trace || 'N/A';
                 const truncatedStack = stackTrace.split('\n').slice(0, 50).join('\n') + (stackTrace.split('\n').length > 50 ? '\n... (truncated)' : '');
                 
-                // Get list of tests (names only)
-                const failureList = (currentCluster.failures || []).slice(0, 50).map((f, idx) => {
+                // Group tests by signature (Apple-style grouping)
+                const failureGroups = new Map();
+                (currentCluster.failures || []).forEach(f => {
                     const testName = `${f.class_name || 'Unknown'}#${f.method_name || 'unknown'}`;
-                    return `${idx + 1}. ${testName}`;
+                    if (!failureGroups.has(testName)) {
+                        failureGroups.set(testName, { count: 0, runs: new Set() });
+                    }
+                    const group = failureGroups.get(testName);
+                    group.count++;
+                    if (f.test_run_id) group.runs.add(f.test_run_id);
+                });
+
+                // Convert groups to sorted list
+                const sortedGroups = Array.from(failureGroups.entries())
+                    .sort((a, b) => b[1].count - a[1].count) // Sort by frequency
+                    .slice(0, 50);
+
+                const failureList = sortedGroups.map(([name, stats], idx) => {
+                    let meta = '';
+                    if (stats.count > 1) {
+                        const runIds = Array.from(stats.runs).sort((a,b)=>a-b).join(', #');
+                        // Concise Apple-style secondary text
+                        meta = ` (${stats.count} hits in Runs: #${runIds})`;
+                    } else if (stats.runs.size > 0) {
+                        meta = ` (Run #${Array.from(stats.runs)[0]})`;
+                    }
+                    return `${idx + 1}. ${name}${meta}`;
                 }).join('\n');
                 
-                const moreCount = (currentCluster.failures || []).length - 50;
+                const uniqueCount = failureGroups.size;
+                const totalCount = (currentCluster.failures || []).length;
+                const moreCount = uniqueCount - 50;
 
                 // Helper to quote lines
                 const toBlockquote = (text) => {
@@ -3634,7 +3701,7 @@ ${toBlockquote(currentCluster.common_solution)}
 
 **Impact Analysis**
 * **Severity**: ${currentCluster.severity || 'Medium'}
-* **Impact**: ${currentCluster.failures_count || '?'} test(s) failed (Cluster ID: #${currentCluster.id})
+* **Impact**: ${uniqueCount} unique test case(s) across ${totalCount} failure events (Cluster ID: #${currentCluster.id})
 
 ---
 
@@ -3895,7 +3962,7 @@ async function openBulkCreateModal() {
     // Check if configuration has defaults
     const defaults = currentModuleOwnerMapConfig?.default_settings;
     if (!defaults || !defaults.default_project_id) {
-        alert('Please configure a Default Project in Settings > Module Owner Map first.');
+        showAlertModal('Please configure a Target Project in Settings > Module Owner Assignment first.');
         return;
     }
 
@@ -3938,7 +4005,7 @@ async function executeBulkCreate() {
 
     const defaults = currentModuleOwnerMapConfig?.default_settings;
     if (!defaults || !defaults.default_project_id) {
-        alert('Missing Default Project configuration.');
+        showAlertModal('Missing Target Project configuration. Configure in Settings first.');
         return;
     }
     
@@ -4086,8 +4153,13 @@ async function syncModule(moduleName) {
         return;
     }
 
-    // 2. Get Default Project ID (or specific rule project)
-    const defaultProjectId = currentModuleOwnerMapConfig?.default_settings?.default_project_id || 1;
+    // 2. Validate Target Project ID
+    const defaults = currentModuleOwnerMapConfig?.default_settings;
+    if (!defaults || !defaults.default_project_id) {
+        showAlertModal('Missing Target Project configuration. Please configure it in Settings > Module Owner Assignment first.');
+        return;
+    }
+    const defaultProjectId = defaults.default_project_id;
 
     // 3. Show Custom Modal
     console.log("Showing Redmine Sync Modal for module:", moduleName);
@@ -4505,3 +4577,40 @@ async function loadTestCase(testCaseId) {
     }
 }
 
+
+// --- Global UI Helpers ---
+
+function showAlertModal(message) {
+    const modal = document.getElementById('alert-modal');
+    const msgDiv = document.getElementById('alert-modal-message');
+    const okBtn = document.getElementById('alert-modal-ok');
+    
+    if (!modal || !msgDiv) {
+        console.warn('Alert modal not found, falling back to window.alert');
+        alert(message); // Fallback
+        return;
+    }
+    
+    // Set message
+    msgDiv.textContent = message;
+    
+    // Show modal
+    modal.classList.remove('hidden');
+    
+    // Close handler
+    const close = () => {
+        modal.classList.add('hidden');
+        // Clean up events to avoid duplicates/leaks if reused? 
+        // Actually simplistic approach is fine here as it's just add hidden
+    };
+    
+    if (okBtn) okBtn.onclick = close;
+    
+    // Click outside to close
+    modal.onclick = (e) => {
+        if (e.target === modal) close();
+    };
+    
+    // Add Esc key listener one-time? 
+    // Usually handled globally, but for now this suffices.
+}    

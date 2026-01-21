@@ -479,7 +479,7 @@ def get_default_module_owner_map() -> Dict[str, Any]:
         "default_settings": {
             "default_team": "Default",
             "default_priority_id": 4,
-            "default_project_id": 1,
+            "default_project_id": null,
             "fallback_user_id": None
         }
     }
@@ -582,6 +582,6 @@ def get_all_settings(db: Session = Depends(get_db)):
         "app_url": settings.app_base_url or "http://localhost:8000",
         "llm_provider": settings.llm_provider or "openai",
         "module_owner_map": module_map,
-        "default_project_id": module_map.get("default_settings", {}).get("default_project_id", 1)
+        "default_project_id": module_map.get("default_settings", {}).get("default_project_id", null)
     }
 
