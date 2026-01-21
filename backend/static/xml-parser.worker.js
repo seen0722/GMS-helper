@@ -191,6 +191,8 @@ async function parseXMLFile(file) {
                 metadata.host_name = tag.attributes.host_name || null;
                 metadata.start_time = tag.attributes.start || null;
                 metadata.end_time = tag.attributes.end || null;
+                metadata.start_display = tag.attributes.start_display || null;
+                metadata.end_display = tag.attributes.end_display || null;
                 break;
 
             case 'Build':
@@ -201,6 +203,8 @@ async function parseXMLFile(file) {
                 metadata.build_type = tag.attributes.build_type || null;
                 metadata.security_patch = tag.attributes.build_version_security_patch || null;
                 metadata.android_version = tag.attributes.build_version_release || null;
+                metadata.build_version_sdk = tag.attributes.build_version_sdk || null;
+                metadata.build_abis = tag.attributes.build_abis || null;
                 break;
 
             case 'Summary':

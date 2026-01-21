@@ -903,7 +903,7 @@ class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-cen
                                 <div class="grid grid-cols-[120px_1fr] items-baseline">
                                     <span class="text-sm text-slate-500">Android Version</span>
                                     <div>
-                                        <div class="text-sm font-medium text-slate-900">Android ${run.android_version || '-'}</div>
+                                        <div class="text-sm font-medium text-slate-900">Android ${run.android_version || '-'}${run.build_version_sdk ? ` (SDK ${run.build_version_sdk})` : ''}</div>
                                         ${run.build_version_incremental ? `<div class="text-xs text-slate-400 font-normal mt-0.5">${run.build_version_incremental}</div>` : ''}
                                     </div>
                                 </div>
@@ -911,6 +911,14 @@ class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-cen
                                     <span class="text-sm text-slate-500">Security Patch</span>
                                     <span class="text-sm font-medium text-slate-900">${run.security_patch || '-'}</span>
                                 </div>
+                                ${run.build_abis ? `
+                                <div class="grid grid-cols-[120px_1fr] items-baseline">
+                                    <span class="text-sm text-slate-500">ABIs</span>
+                                    <div class="flex flex-wrap gap-1">
+                                        ${run.build_abis.split(',').map(abi => `<span class="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-medium rounded border border-indigo-100">${abi.trim()}</span>`).join('')}
+                                    </div>
+                                </div>
+                                ` : ''}
                             </div>
                         </div>
 

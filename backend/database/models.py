@@ -23,6 +23,8 @@ class TestRun(Base):
     security_patch = Column(String)
     android_version = Column(String)
     build_version_incremental = Column(String)
+    build_version_sdk = Column(String)  # SDK version (e.g., "35")
+    build_abis = Column(String)         # ABIs (e.g., "arm64-v8a,armeabi-v7a,armeabi")
     suite_version = Column(String)
     suite_plan = Column(String)
     suite_build_number = Column(String)

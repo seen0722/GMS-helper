@@ -23,12 +23,16 @@ class MetadataPayload(BaseModel):
     build_type: Optional[str] = None
     security_patch: Optional[str] = None
     android_version: Optional[str] = None
+    build_version_sdk: Optional[str] = None
+    build_abis: Optional[str] = None
     suite_version: Optional[str] = None
     suite_plan: Optional[str] = None
     suite_build_number: Optional[str] = None
     host_name: Optional[str] = None
     start_time: Optional[str] = None
     end_time: Optional[str] = None
+    start_display: Optional[str] = None
+    end_display: Optional[str] = None
 
 
 class StatsPayload(BaseModel):
@@ -77,11 +81,15 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
             build_type=data.metadata.build_type,
             security_patch=data.metadata.security_patch,
             android_version=data.metadata.android_version,
+            build_version_sdk=data.metadata.build_version_sdk,
+            build_abis=data.metadata.build_abis,
             suite_version=data.metadata.suite_version,
             suite_plan=data.metadata.suite_plan,
             suite_build_number=data.metadata.suite_build_number,
             host_name=data.metadata.host_name,
             start_time=datetime.utcnow(),  # Use current time as fallback
+            start_display=data.metadata.start_display,
+            end_display=data.metadata.end_display,
             total_tests=data.stats.total_tests,
             passed_tests=data.stats.passed_tests,
             failed_tests=data.stats.failed_tests,
