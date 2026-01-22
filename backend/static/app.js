@@ -374,6 +374,8 @@ const router = {
             if (page === 'run-details') loadRunDetails(params.id);
             if (page === 'test-case') loadTestCase(params.id);
             if (page === 'settings') loadSettings();
+            if (page === 'submissions') loadSubmissions();
+            if (page === 'submission-detail') loadSubmissionDetail(params.id);
 
             // Update Title
             title.textContent = page.charAt(0).toUpperCase() + page.slice(1).replace('-', ' ');
@@ -418,6 +420,7 @@ function getClusterTitle(fullSummary) {
 
 // --- Dashboard Logic ---
 async function loadDashboard() {
+    await fetchSuiteConfig();
     // Show Skeletons
     document.getElementById('stat-total-runs').innerHTML = '<div class="h-8 w-16 skeleton rounded-lg"></div>';
     document.getElementById('stat-avg-pass').innerHTML = '<div class="h-8 w-20 skeleton rounded-lg"></div>';
@@ -610,13 +613,25 @@ function renderDashboardTable() {
         }
         const date = new Date(run.start_time).toLocaleDateString();
 
+        // Identify Suite
+        const suiteName = identifyRunSuite(run, run.target_fingerprint);
+        const config = SUITE_CONFIGS[suiteName];
+        const displayName = config ? (config.display_name || suiteName) : (run.test_suite_name || 'Unknown');
+        
+        let badgeColor = 'bg-slate-100 text-slate-700';
+        if (suiteName.includes('CTS')) badgeColor = 'bg-blue-100 text-blue-700';
+        if (suiteName.includes('CTSonGSI')) badgeColor = 'bg-purple-100 text-purple-700';
+        if (suiteName.includes('GTS')) badgeColor = 'bg-emerald-100 text-emerald-700';
+        if (suiteName.includes('VTS')) badgeColor = 'bg-purple-100 text-purple-700';
+        if (suiteName.includes('STS')) badgeColor = 'bg-orange-100 text-orange-700';
+
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0';
         tr.innerHTML = `
             <td class="px-6 py-4 font-medium text-slate-900">#${run.id}</td>
             <td class="px-6 py-4">
-                <span class="px-2 py-1 rounded text-xs font-semibold ${getSuiteColor(run.test_suite_name)}">
-                    ${run.test_suite_name || 'Unknown'}
+                <span class="px-2 py-1 rounded text-xs font-semibold ${badgeColor}">
+                    ${displayName}
                 </span>
             </td>
             <td class="px-6 py-4 text-slate-600">
@@ -822,7 +837,9 @@ async function loadRunDetails(runId) {
         // Async Guard: Stop if page changed
         if (router.currentPage !== 'run-details' || router.currentParams.id != runId) return;
 
-        document.getElementById('detail-suite-name').textContent = run.test_suite_name;
+        const suiteName = identifyRunSuite(run, run.target_fingerprint);
+        const config = SUITE_CONFIGS[suiteName];
+        document.getElementById('detail-suite-name').textContent = config ? (config.display_name || suiteName) : (run.test_suite_name || 'Unknown');
 
         const deviceEl = document.getElementById('detail-device');
         const model = run.build_model || 'Unknown';
@@ -3632,14 +3649,13 @@ function switchRedmineTab(tab) {
             if (subjectInput && !subjectInput.value) {
                 let suiteTag = 'GMS';
                 if (currentRunDetails && currentRunDetails.test_suite_name) {
-                    // Format suite name: "Cts" -> "CTS", "Gts" -> "GTS", etc.
-                    suiteTag = currentRunDetails.test_suite_name.toUpperCase();
-                    // Handle common cases to ensure they look good
-                    if (suiteTag.includes('CTS')) suiteTag = 'CTS';
-                    else if (suiteTag.includes('GTS')) suiteTag = 'GTS';
-                    else if (suiteTag.includes('VTS')) suiteTag = 'VTS';
-                    else if (suiteTag.includes('STS')) suiteTag = 'STS';
-                    else suiteTag = currentRunDetails.test_suite_name; // Fallback to original if not standard
+                    const sName = identifyRunSuite(currentRunDetails, currentRunDetails.target_fingerprint);
+                    const cfg = SUITE_CONFIGS[sName];
+                    // Prefer display name for issue subject? Or short code?
+                    // Typically Jira/Redmine uses short code.
+                    // If GSI, maybe "CTSonGSI" or just "CTS on GSI"?
+                    // Let's use name key which is "CTSonGSI" or "CTS".
+                    suiteTag = sName;
                 }
                 const summary = currentCluster.ai_summary || currentCluster.description;
                 const title = getClusterTitle(summary);
@@ -4578,6 +4594,510 @@ async function loadTestCase(testCaseId) {
 }
 
 
+// --- Submissions Logic ---
+
+// Current submission being viewed
+let currentSubmissionId = null;
+
+// Required suites for compliance matrix
+// Required suites for compliance matrix (Dynamic)
+let REQUIRED_SUITES = [];
+let SUITE_CONFIGS = {};
+
+async function fetchSuiteConfig() {
+    if (REQUIRED_SUITES.length > 0) return;
+    try {
+        const res = await fetch(`${API_BASE}/config/suites`);
+        if (!res.ok) throw new Error("Failed to load suite config");
+        const configs = await res.json();
+        
+        REQUIRED_SUITES = configs.map(c => c.name);
+        SUITE_CONFIGS = {};
+        configs.forEach(c => SUITE_CONFIGS[c.name] = c);
+        console.log("Loaded suites:", REQUIRED_SUITES);
+    } catch(e) {
+        console.error("Failed to fetch suite config, using fallback", e);
+        // Fallback
+        REQUIRED_SUITES = ['CTS', 'CTSonGSI', 'VTS', 'GTS', 'STS'];
+    }
+}
+
+async function loadSubmissions() {
+    await fetchSuiteConfig();
+    const grid = document.getElementById('submissions-grid');
+    const emptyState = document.getElementById('submissions-empty');
+    
+    if (!grid) return;
+    
+    // Show loading skeleton (Apple Style)
+    grid.innerHTML = `
+        ${[1, 2, 3].map(() => `
+            <div class="bg-white rounded-[20px] shadow-sm border border-slate-100 p-6 relative overflow-hidden">
+                <div class="flex justify-between items-start mb-4">
+                    <div class="space-y-2 w-2/3">
+                        <div class="h-5 w-3/4 skeleton rounded-md"></div>
+                        <div class="h-3 w-full skeleton rounded-md opacity-60"></div>
+                    </div>
+                    <div class="h-6 w-20 skeleton rounded-full"></div>
+                </div>
+                <div class="flex gap-3 mb-4 overflow-hidden">
+                    ${[1,2,3,4,5].map(() => `<div class="h-16 w-16 skeleton rounded-2xl flex-shrink-0"></div>`).join('')}
+                </div>
+                <div class="h-3 w-24 skeleton rounded-md mt-auto opacity-50"></div>
+            </div>
+        `).join('')}
+    `;
+    
+    try {
+        const response = await fetch(`${API_BASE}/submissions/`);
+        const submissions = await response.json();
+        
+        if (submissions.length === 0) {
+            grid.innerHTML = '';
+            emptyState.classList.remove('hidden');
+            return;
+        }
+        
+        emptyState.classList.add('hidden');
+        grid.innerHTML = submissions.map(sub => renderSubmissionCardV2(sub)).join('');
+        
+    } catch (e) {
+        console.error("Failed to load submissions", e);
+        grid.innerHTML = `<div class="col-span-full text-center text-red-500 py-8">Failed to load submissions</div>`;
+    }
+}
+
+function renderSubmissionCard(sub) {
+    // Status styling
+    const statusStyles = {
+        draft: { gradient: 'status-gradient-draft', badge: 'bg-slate-100 text-slate-600' },
+        analyzing: { gradient: 'status-gradient-analyzing', badge: 'bg-amber-100 text-amber-700' },
+        ready: { gradient: 'status-gradient-ready', badge: 'bg-emerald-100 text-emerald-700' },
+        published: { gradient: 'status-gradient-published', badge: 'bg-blue-100 text-blue-700' }
+    };
+    const style = statusStyles[sub.status] || statusStyles.draft;
+    
+    // Format date
+    const date = sub.updated_at ? new Date(sub.updated_at).toLocaleDateString() : '-';
+    
+    // Mini suite indicators - use suite_summary from API
+    const suitesHtml = REQUIRED_SUITES.map(suite => {
+        const suiteData = sub.suite_summary?.[suite] || { status: 'missing' };
+        
+        let bgClass, textClass, displayValue;
+        if (suiteData.status === 'pass') {
+            bgClass = 'bg-emerald-50';
+            textClass = 'text-emerald-600';
+            displayValue = '✓';
+        } else if (suiteData.status === 'fail') {
+            bgClass = 'bg-red-50';
+            textClass = 'text-red-600';
+            displayValue = suiteData.failed;
+        } else {
+            bgClass = 'bg-slate-100';
+            textClass = 'text-slate-400';
+            displayValue = '—';
+        }
+        
+        return `
+            <div class="text-center p-2 rounded-xl ${bgClass}">
+                <div class="text-[10px] font-bold uppercase tracking-wider ${textClass}">${suite}</div>
+                <div class="text-sm font-bold ${textClass}">${displayValue}</div>
+            </div>
+        `;
+    }).join('');
+    
+    return `
+        <div class="submission-card bg-white rounded-2xl shadow-apple border border-slate-100 overflow-hidden cursor-pointer"
+             onclick="router.navigate('submission-detail', { id: ${sub.id} })">
+            <!-- Status Indicator Bar -->
+            <div class="h-1.5 ${style.gradient}"></div>
+            
+            <!-- Card Content -->
+            <div class="p-5">
+                <!-- Header: Name & Status Badge -->
+                <div class="flex justify-between items-start mb-4">
+                    <div class="flex-1 min-w-0">
+                        <h3 class="font-bold text-slate-900 truncate">
+                            <span class="text-slate-400 font-mono mr-1">#${sub.id}</span>
+                            ${escapeHtml(sub.name || 'Unnamed Submission')}
+                        </h3>
+                        <p class="text-xs text-slate-400 mt-0.5 truncate font-mono">${escapeHtml(sub.target_fingerprint || '-')}</p>
+                    </div>
+                    <span class="${style.badge} px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex-shrink-0 ml-3">
+                        ${sub.status || 'draft'}
+                    </span>
+                </div>
+                
+                <!-- Compliance Matrix Mini View -->
+                <div class="grid grid-cols-5 gap-2 mb-4">
+                    ${suitesHtml}
+                </div>
+                
+                <!-- Footer: Meta Info -->
+                <div class="flex items-center justify-between text-xs text-slate-400">
+                    <span class="flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"/>
+                        </svg>
+                        ${sub.run_count || 0} runs
+                    </span>
+                    <span>${date}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+async function loadSubmissionDetail(id) {
+    await fetchSuiteConfig();
+    currentSubmissionId = id;
+    
+    const nameEl = document.getElementById('submission-name');
+    const statusBadge = document.getElementById('submission-status-badge');
+    const statusBar = document.getElementById('submission-status-bar');
+    const fingerprintEl = document.getElementById('submission-fingerprint');
+    const dateEl = document.getElementById('submission-date');
+    const statusControl = document.getElementById('submission-status-control');
+    const matrixEl = document.getElementById('compliance-matrix');
+    const runsListEl = document.getElementById('submission-runs-list');
+    const runsEmptyEl = document.getElementById('submission-runs-empty');
+    
+    // Show loading state
+    if (nameEl) nameEl.textContent = 'Loading...';
+    if (matrixEl) matrixEl.innerHTML = `
+        <div class="col-span-4 flex justify-center py-8">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        </div>
+    `;
+    
+    try {
+        const response = await fetch(`${API_BASE}/submissions/${id}`);
+        if (!response.ok) throw new Error('Submission not found');
+        const sub = await response.json();
+        
+        // Status styling
+        const statusStyles = {
+            draft: { gradient: 'status-gradient-draft', badge: 'bg-slate-100 text-slate-600' },
+            analyzing: { gradient: 'status-gradient-analyzing', badge: 'bg-amber-100 text-amber-700' },
+            ready: { gradient: 'status-gradient-ready', badge: 'bg-emerald-100 text-emerald-700' },
+            published: { gradient: 'status-gradient-published', badge: 'bg-blue-100 text-blue-700' }
+        };
+        const style = statusStyles[sub.status] || statusStyles.draft;
+        
+        // Update header
+        if (nameEl) {
+            nameEl.innerHTML = `
+                <span class="text-slate-400 font-mono mr-2">#${sub.id}</span>
+                ${escapeHtml(sub.name || 'Unnamed Submission')}
+            `;
+        }
+        if (statusBadge) {
+            statusBadge.textContent = sub.status || 'draft';
+            statusBadge.className = `${style.badge} px-3 py-1 rounded-full text-xs font-bold uppercase`;
+        }
+        if (statusBar) {
+            statusBar.className = `absolute top-0 left-0 w-full h-1.5 ${style.gradient}`;
+        }
+        if (fingerprintEl) fingerprintEl.textContent = sub.target_fingerprint || '-';
+        if (dateEl) dateEl.textContent = sub.created_at ? new Date(sub.created_at).toLocaleDateString() : '-';
+        
+        // Update status control
+        if (statusControl) {
+            statusControl.querySelectorAll('.segmented-item').forEach(btn => {
+                const btnStatus = btn.dataset.status;
+                if (btnStatus === sub.status) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+        
+        // Render Warnings (Phase 3 Intelligence)
+        renderSubmissionWarnings(sub.warnings || []);
+        
+        // Render Compliance Matrix
+        renderComplianceMatrix(matrixEl, sub.test_runs || [], sub.target_fingerprint);
+        
+        // Render Test Runs List
+        renderSubmissionRuns(runsListEl, runsEmptyEl, sub.test_runs || [], sub.target_fingerprint);
+        
+    } catch (e) {
+        console.error("Failed to load submission detail", e);
+        if (nameEl) nameEl.textContent = 'Error loading submission';
+    }
+}
+
+function renderSubmissionWarnings(warnings) {
+    const container = document.getElementById('submission-warnings');
+    if (!container) return;
+    
+    if (!warnings || warnings.length === 0) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+    
+    container.classList.remove('hidden');
+    
+    // Generate HTML with opacity-0 for animation
+    container.innerHTML = warnings.map((w, index) => {
+        const isError = w.severity === 'error';
+        const bgClass = isError ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200';
+        const iconColor = isError ? 'text-red-500' : 'text-amber-500';
+        const textColor = isError ? 'text-red-800' : 'text-amber-800';
+        
+        const icon = isError 
+            ? `<svg class="w-5 h-5 ${iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                       d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+               </svg>`
+            : `<svg class="w-5 h-5 ${iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                       d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+               </svg>`;
+        
+        // Add animation delay based on index
+        const animationStyle = `style="animation: slideDown 0.3s ease-out ${index * 0.1}s forwards; opacity: 0; transform: translateY(-10px);"`;
+        
+        return `
+            <div class="flex items-center gap-3 px-4 py-3 rounded-xl border ${bgClass}" ${animationStyle}>
+                ${icon}
+                <span class="text-sm font-medium ${textColor}">${escapeHtml(w.message)}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+function copyFingerprint() {
+    const text = document.getElementById('submission-fingerprint').innerText;
+    if (text && text !== '-') {
+        navigator.clipboard.writeText(text).then(() => {
+            // Show toast or subtle feedback
+            const btn = document.querySelector('button[onclick="copyFingerprint()"]');
+            const originalHtml = btn.innerHTML;
+            
+            // Temporary checkmark
+            btn.innerHTML = `
+                <svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+                </svg>
+            `;
+            
+            setTimeout(() => {
+                btn.innerHTML = originalHtml;
+            }, 2000);
+        });
+    }
+}
+
+
+
+// Helper to identify which suite a run belongs to (considering GSI rules)
+function identifyRunSuite(run, targetFingerprint) {
+    const runName = (run.test_suite_name || '').toUpperCase();
+    
+    // Check against all configured suites in order
+    for (const suiteName of REQUIRED_SUITES) {
+        const config = SUITE_CONFIGS[suiteName];
+        if (!config) continue;
+        
+        let isMatch = false;
+        if (config.match_rule === 'GSI') {
+             isMatch = runName.includes('CTS') && run.device_fingerprint !== targetFingerprint;
+        } else if (config.name === 'CTS') {
+             // Standard CTS excludes GSI
+             const isGsi = run.device_fingerprint !== targetFingerprint;
+             isMatch = runName.includes('CTS') && !isGsi;
+        } else {
+             isMatch = runName.includes(suiteName);
+        }
+        
+        if (isMatch) return suiteName;
+    }
+    
+    return run.test_suite_name; // Fallback
+}
+
+function renderComplianceMatrix(container, runs, targetFingerprint) {
+    if (!container) return;
+    
+    // Group runs by suite type
+    const suiteData = {};
+    REQUIRED_SUITES.forEach(suite => {
+        suiteData[suite] = { runs: [], status: 'missing' };
+    });
+    
+    runs.forEach(run => {
+        const matchedSuite = identifyRunSuite(run, targetFingerprint);
+        if (suiteData[matchedSuite]) {
+            suiteData[matchedSuite].runs.push(run);
+        }
+    });
+    
+    // Calculate stats for each suite
+    const suiteCards = REQUIRED_SUITES.map(suite => {
+        const data = suiteData[suite];
+        
+        if (data.runs.length === 0) {
+            // Missing
+            return `
+                <div class="suite-card suite-missing p-4 rounded-2xl">
+                    <div class="flex justify-between items-center mb-3">
+                        <span class="text-sm font-bold text-slate-400">${suite}</span>
+                        <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                    </div>
+                    <div class="text-center py-4">
+                        <span class="text-sm font-bold text-slate-400">Missing</span>
+                    </div>
+                    <div class="mt-3 pt-3 border-t border-slate-200/50 text-[10px] text-slate-400 text-center">
+                        Not uploaded yet
+                    </div>
+                </div>
+            `;
+        }
+        
+        // Get latest run for this suite
+        const latestRun = data.runs[0];
+        const totalTests = (latestRun.passed_tests || 0) + (latestRun.failed_tests || 0);
+        const passRate = totalTests > 0 ? ((latestRun.passed_tests / totalTests) * 100).toFixed(1) : 0;
+        const hasFails = (latestRun.failed_tests || 0) > 0;
+        
+        const suiteClass = hasFails ? 'suite-fail' : 'suite-pass';
+        const textColor = hasFails ? 'text-red-600' : 'text-emerald-600';
+        const progressColor = hasFails ? 'bg-red-500' : 'bg-emerald-500';
+        const statusIcon = hasFails 
+            ? `<span class="text-sm font-bold text-red-600">${latestRun.failed_tests}</span>`
+            : `<svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`;
+        
+        const runDate = latestRun.start_time ? new Date(latestRun.start_time).toLocaleDateString() : '-';
+        
+        return `
+            <div class="suite-card ${suiteClass} p-4 rounded-2xl">
+                <div class="flex justify-between items-center mb-3">
+                    <span class="text-sm font-bold ${textColor}">${suite}</span>
+                    ${statusIcon}
+                </div>
+                
+                <div class="space-y-2">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-slate-500">Pass Rate</span>
+                        <span class="font-bold ${textColor}">${passRate}%</span>
+                    </div>
+                    <div class="w-full bg-slate-200 rounded-full h-1.5">
+                        <div class="${progressColor} h-1.5 rounded-full transition-all duration-500" style="width: ${passRate}%"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-slate-400">
+                        <span>${(latestRun.passed_tests || 0).toLocaleString()} passed</span>
+                        <span>${(latestRun.failed_tests || 0).toLocaleString()} failed</span>
+                    </div>
+                </div>
+                
+                <div class="mt-3 pt-3 border-t border-slate-200/50 text-[10px] text-slate-400">
+                    Last: ${runDate}
+                </div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = suiteCards.join('');
+}
+
+function renderSubmissionRuns(container, emptyEl, runs, targetFingerprint) {
+    if (!container) return;
+    
+    if (runs.length === 0) {
+        container.innerHTML = '';
+        if (emptyEl) emptyEl.classList.remove('hidden');
+        return;
+    }
+    
+    if (emptyEl) emptyEl.classList.add('hidden');
+    
+    container.innerHTML = runs.map(run => {
+        const totalTests = (run.passed_tests || 0) + (run.failed_tests || 0);
+        const passRate = totalTests > 0 ? ((run.passed_tests / totalTests) * 100).toFixed(1) : 0;
+        const date = run.start_time ? new Date(run.start_time).toLocaleDateString() : '-';
+        const statusColor = run.failed_tests > 0 ? 'text-red-600' : 'text-emerald-600';
+        
+        const suiteName = identifyRunSuite(run, targetFingerprint);
+        const config = SUITE_CONFIGS[suiteName];
+        const displayName = config ? (config.display_name || suiteName) : (run.test_suite_name || 'Unknown');
+        
+        // Badge color logic
+        let badgeColor = 'bg-slate-100 text-slate-700';
+        if (suiteName.includes('CTS')) badgeColor = 'bg-blue-100 text-blue-700';
+        if (suiteName.includes('CTSonGSI')) badgeColor = 'bg-purple-100 text-purple-700'; 
+        if (suiteName.includes('GTS')) badgeColor = 'bg-emerald-100 text-emerald-700';
+        if (suiteName.includes('VTS')) badgeColor = 'bg-purple-100 text-purple-700';
+        if (suiteName.includes('STS')) badgeColor = 'bg-orange-100 text-orange-700';
+        
+        return `
+            <div class="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer"
+                 onclick="router.navigate('run-details', { id: ${run.id} })">
+                <div class="flex items-center gap-4">
+                    <span class="px-2.5 py-1 rounded-lg text-xs font-bold ${badgeColor}">
+                        ${displayName}
+                    </span>
+                    <div>
+                        <div class="text-sm font-medium text-slate-700">Run #${run.id}</div>
+                        <div class="text-xs text-slate-400">${date}</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-6">
+                    <div class="text-right">
+                        <div class="text-sm font-bold ${statusColor}">${passRate}%</div>
+                        <div class="text-[10px] text-slate-400">${run.failed_tests || 0} failures</div>
+                    </div>
+                    <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function updateSubmissionStatus(newStatus) {
+    if (!currentSubmissionId) return;
+    
+    // TODO: Implement backend PATCH endpoint
+    showNotification(`Status update to "${newStatus}" - Backend not implemented yet`, 'info');
+    
+    // Update UI optimistically
+    const statusControl = document.getElementById('submission-status-control');
+    if (statusControl) {
+        statusControl.querySelectorAll('.segmented-item').forEach(btn => {
+            if (btn.dataset.status === newStatus) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+    
+    // Update status bar and badge
+    const statusStyles = {
+        draft: { gradient: 'status-gradient-draft', badge: 'bg-slate-100 text-slate-600' },
+        analyzing: { gradient: 'status-gradient-analyzing', badge: 'bg-amber-100 text-amber-700' },
+        ready: { gradient: 'status-gradient-ready', badge: 'bg-emerald-100 text-emerald-700' },
+        published: { gradient: 'status-gradient-published', badge: 'bg-blue-100 text-blue-700' }
+    };
+    const style = statusStyles[newStatus] || statusStyles.draft;
+    
+    const statusBar = document.getElementById('submission-status-bar');
+    const statusBadge = document.getElementById('submission-status-badge');
+    
+    if (statusBar) statusBar.className = `absolute top-0 left-0 w-full h-1.5 ${style.gradient}`;
+    if (statusBadge) {
+        statusBadge.textContent = newStatus;
+        statusBadge.className = `${style.badge} px-3 py-1 rounded-full text-xs font-bold uppercase`;
+    }
+}
+
 // --- Global UI Helpers ---
 
 function showAlertModal(message) {
@@ -4613,4 +5133,106 @@ function showAlertModal(message) {
     
     // Add Esc key listener one-time? 
     // Usually handled globally, but for now this suffices.
+}
+
+function renderSubmissionCardV2(sub) {
+    // Status styling (Apple Pills)
+    const statusStyles = {
+        draft: { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400' },
+        analyzing: { bg: 'bg-amber-50', text: 'text-amber-700', dot: 'bg-amber-500' },
+        ready: { bg: 'bg-emerald-50', text: 'text-emerald-700', dot: 'bg-emerald-500' },
+        published: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500' }
+    };
+    const style = statusStyles[sub.status] || statusStyles.draft;
+    
+    const date = sub.updated_at ? new Date(sub.updated_at).toISOString().slice(0, 10) : '-';
+    // Use test_runs length logic if available, or fallback
+    const runsCount = sub.test_runs ? sub.test_runs.length : (sub.run_count || 0);
+    
+    // Mini suite indicators
+    const suitesHtml = REQUIRED_SUITES.map(suite => {
+        const suiteData = sub.suite_summary?.[suite] || { status: 'missing' };
+        
+        // Dynamic config lookup for clean names
+        const config = SUITE_CONFIGS[suite];
+        // Shorten "CTS on GSI" to "CTS GSI" or keep clean?
+        // Let's replace " on " with newline or just space?
+        // Actually keep full name but use flexible container
+        const displayName = config ? (config.display_name || suite).replace(' on ', ' ') : suite;
+        
+        let bgClass, textClass, contentHtml, borderClass;
+        
+        if (suiteData.status === 'pass') {
+            bgClass = 'bg-emerald-50/80';
+            textClass = 'text-emerald-700';
+            borderClass = 'border-emerald-100';
+            contentHtml = `<span class="text-lg font-bold">100<span class="text-[10px]">%</span></span>`;
+        } else if (suiteData.status === 'fail') {
+            bgClass = 'bg-red-50/80';
+            textClass = 'text-red-700';
+            borderClass = 'border-red-100';
+            contentHtml = `
+                <span class="text-lg font-bold">${suiteData.failed}</span>
+                <span class="text-[9px] font-medium opacity-70">FAIL</span>`;
+        } else {
+            bgClass = 'bg-slate-50';
+            textClass = 'text-slate-400';
+            borderClass = 'border-slate-100';
+            contentHtml = `<span class="text-lg font-bold text-slate-300">—</span>`;
+        }
+        
+        return `
+            <div class="flex flex-col items-center justify-center p-2 rounded-2xl ${bgClass} border ${borderClass} min-w-[72px] h-[72px] transition-transform hover:scale-105">
+                <div class="text-[9px] font-bold uppercase tracking-widest ${textClass} opacity-80 mb-0.5 max-w-full truncate px-1">${suite}</div>
+                <div class="flex flex-col items-center leading-none ${textClass}">
+                    ${contentHtml}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="group relative bg-white rounded-[24px] p-6 shadow-sm border border-slate-100/60 hover:shadow-apple-elevated hover:border-blue-100/50 transition-all duration-300 cursor-pointer overflow-hidden backdrop-blur-xl"
+             onclick="router.navigate('submission-detail', { id: ${sub.id} })">
+             
+             <!-- Hover Glow -->
+             <div class="absolute -inset-1 bg-gradient-to-r from-blue-50 to-purple-50 opacity-0 group-hover:opacity-20 transition-opacity duration-500 blur-xl pointer-events-none"></div>
+             
+             <!-- Header -->
+             <div class="relative flex justify-between items-start mb-5">
+                 <div class="min-w-0 pr-4">
+                     <h3 class="font-display font-bold text-lg text-slate-900 leading-tight tracking-tight truncate group-hover:text-blue-600 transition-colors">
+                         ${escapeHtml(sub.name || 'Unnamed')}
+                     </h3>
+                     <div class="flex items-center gap-2 mt-1.5">
+                         <div class="font-mono text-[10px] text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 whitespace-nowrap">
+                             ${escapeHtml(sub.target_fingerprint || 'No Fingerprint')}
+                         </div>
+                     </div>
+                 </div>
+                 
+                 <!-- Status Pill -->
+                 <span class="flex-shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wide ${style.bg} ${style.text} border border-white shadow-sm">
+                     <span class="w-1.5 h-1.5 rounded-full ${style.dot} animate-pulse"></span>
+                     ${sub.status}
+                 </span>
+             </div>
+             
+             <!-- Matrix Row (Grid Layout 4-col) -->
+             <div class="grid grid-cols-4 gap-3 mb-4">
+                 ${suitesHtml}
+             </div>
+             
+             <!-- Footer -->
+             <div class="relative mt-4 pt-4 border-t border-slate-50 flex justify-between items-center text-xs text-slate-400 font-medium">
+                 <div class="flex items-center gap-1.5 hover:text-slate-600 transition-colors">
+                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                     <span>${runsCount} Runs</span>
+                 </div>
+                 <div class="flex items-center gap-1.5">
+                     <span>Updated ${date}</span>
+                 </div>
+             </div>
+        </div>
+    `;
 }    

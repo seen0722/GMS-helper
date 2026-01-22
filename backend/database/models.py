@@ -134,3 +134,16 @@ class Settings(Base):
     cambrian_url = Column(String, default="https://api.cambrian.pegatroncorp.com")
     cambrian_token = Column(String, nullable=True)  # Encrypted API token
     cambrian_model = Column(String, default="LLAMA 3.3 70B")
+
+class TestSuiteConfig(Base):
+    """Configuration for Test Suites (CTS, VTS, etc.)"""
+    __tablename__ = "test_suite_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True) # CTS, VTS, CTSonGSI
+    display_name = Column(String) # CTS, CTS on GSI
+    is_required = Column(Integer, default=1) # Boolean logic (1=True)
+    match_rule = Column(String, default="Standard") # Standard, GSI
+    sort_order = Column(Integer, default=0)
+    description = Column(String, nullable=True)
+

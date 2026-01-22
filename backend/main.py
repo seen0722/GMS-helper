@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from backend.routers import upload, reports, analysis, system, settings, integrations, import_json, submissions
+from backend.routers import upload, reports, analysis, system, settings, integrations, import_json, submissions, config
 from backend.database.database import engine, Base
 import os
 
@@ -34,6 +34,7 @@ app.include_router(settings.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(integrations.router, prefix="/api/integrations", tags=["Integrations"])
 app.include_router(import_json.router, prefix="/api/import", tags=["Import"])
 app.include_router(submissions.router, prefix="/api/submissions", tags=["Submissions"])
+app.include_router(config.router, prefix="/api/config", tags=["Config"])
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="backend/static"), name="static")

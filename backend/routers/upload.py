@@ -1,6 +1,6 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
-from sqlalchemy import insert
+from sqlalchemy import insert, desc
 from backend.database.database import get_db
 from backend.database import models
 from backend.parser.xml_parser import XMLParser
@@ -36,6 +36,7 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
             test_run.build_type = metadata.get("build_type")
             test_run.security_patch = metadata.get("security_patch")
             test_run.android_version = metadata.get("android_version")
+            test_run.build_version_sdk = metadata.get("build_version_sdk")
             test_run.build_version_incremental = metadata.get("build_version_incremental")
             test_run.suite_version = metadata.get("suite_version")
             test_run.suite_plan = metadata.get("suite_plan")
@@ -66,8 +67,24 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
             # --- Submission Auto-Grouping Logic ---
             fingerprint = test_run.device_fingerprint
             if fingerprint and fingerprint != "Pending...":
-                # Find existing submission by fingerprint
+                # 1. Try Exact Fingerprint Match
                 submission = db.query(models.Submission).filter(models.Submission.target_fingerprint == fingerprint).first()
+                
+                # 2. Relaxed Grouping for GSI (Same Model + SDK)
+                if not submission:
+                    model = test_run.build_model
+                    sdk = test_run.build_version_sdk
+                    
+                    if model and sdk and model != "Unknown" and sdk != "Unknown":
+                        # Find latest submission that contains a run with same Model + SDK
+                        match = db.query(models.Submission).join(models.TestRun).filter(
+                            models.TestRun.build_model == model,
+                            models.TestRun.build_version_sdk == sdk
+                        ).order_by(desc(models.Submission.updated_at)).first()
+                        
+                        if match:
+                            submission = match
+                            print(f"Grouped by Relaxed Match (Model: {model}, SDK: {sdk}) to Submission {submission.id}")
                 
                 if not submission:
                     # Create new submission

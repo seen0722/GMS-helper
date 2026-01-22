@@ -1,10 +1,10 @@
 {
   "module_patterns": {
     "*Media*": {
-      "redmine_user_id": 6
+      "redmine_user_id": null
     },
     "*Camera*": {
-      "redmine_user_id": 6
+      "redmine_user_id": null
     },
     "CtsWifi*": {
       "redmine_user_id": null
@@ -22,13 +22,13 @@
       "redmine_user_id": null
     },
     "*Security*": {
-      "redmine_user_id": 6
+      "redmine_user_id": null
     },
     "CtsKernel*": {
       "redmine_user_id": null
     },
     "*Fs*": {
-      "redmine_user_id": 6
+      "redmine_user_id": null
     },
     "CtsTelecom*": {
       "redmine_user_id": null
@@ -38,8 +38,8 @@
     }
   },
   "default_settings": {
-    "default_project_id": 1,
+    "default_project_id": null,
     "default_priority_id": 4,
-    "fallback_user_id": 5
+    "fallback_user_id": null
   }
 }

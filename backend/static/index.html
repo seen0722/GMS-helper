@@ -177,6 +177,18 @@
             100% { background-position: 200% 0; }
         }
 
+        /* Slide Down Animation for Warnings */
+        @keyframes slideDown {
+            0% {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         .skeleton {
             background: linear-gradient(
                 90deg,
@@ -216,6 +228,16 @@
 
         .skeleton-circle {
             border-radius: 9999px;
+        }
+
+        /* Utility: Hide Scrollbar but keep functionality */
+        .scrollbar-hide {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;  /* Chrome, Safari and Opera */
         }
 
         /* Page Transition Animations */
@@ -363,6 +385,37 @@
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
+        /* Submission Card Gradients */
+        .status-gradient-draft { background: linear-gradient(90deg, #94a3b8, #cbd5e1); }
+        .status-gradient-analyzing { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+        .status-gradient-ready { background: linear-gradient(90deg, #10b981, #34d399); }
+        .status-gradient-published { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+
+        /* Suite Card Styles */
+        .suite-card {
+            transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+        }
+
+        .suite-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        }
+
+        .suite-pass { background: rgba(16, 185, 129, 0.08); border: 2px solid rgba(16, 185, 129, 0.3); }
+        .suite-fail { background: rgba(239, 68, 68, 0.08); border: 2px solid rgba(239, 68, 68, 0.3); }
+        .suite-missing { background: #f8fafc; border: 2px dashed #cbd5e1; }
+        .suite-analyzing { background: rgba(245, 158, 11, 0.08); border: 2px solid rgba(245, 158, 11, 0.3); }
+
+        /* Submission Card */
+        .submission-card {
+            transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+        }
+
+        .submission-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+        }
+
     </style>
 </head>
 
@@ -386,6 +439,14 @@
                 class="nav-item group flex items-center gap-3 px-4 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all duration-200" id="nav-dashboard">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
                 Dashboard
+            </a>
+            <a href="#" onclick="router.navigate('submissions')"
+                class="nav-item group flex items-center gap-3 px-4 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all duration-200" id="nav-submissions">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/>
+                </svg>
+                Submissions
             </a>
             <a href="#" onclick="router.navigate('upload')"
                 class="nav-item group flex items-center gap-3 px-4 py-2.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all duration-200" id="nav-upload">
@@ -620,6 +681,133 @@
                         <div class="bg-blue-600 h-2.5 rounded-full" style="width: 0%" id="upload-progress"></div>
                     </div>
                     <p class="text-sm text-slate-600" id="upload-message">Uploading...</p>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Submissions List Template -->
+    <template id="tmpl-submissions">
+        <div class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <!-- Page Header with Action -->
+            <div class="flex justify-between items-center">
+                <div>
+                    <h2 class="text-2xl font-display font-bold text-slate-900">Submissions</h2>
+                    <p class="text-sm text-slate-500 mt-1">追蹤 GMS 認證送測進度</p>
+                </div>
+            </div>
+
+            <!-- Submission Cards Grid -->
+            <div id="submissions-grid" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-2 gap-6">
+                <!-- Cards injected via JS -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="submissions-empty" class="hidden text-center py-20">
+                <div class="w-24 h-24 bg-slate-50 rounded-[2rem] flex items-center justify-center mx-auto mb-6 shadow-sm">
+                    <svg class="w-12 h-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" 
+                            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-bold text-slate-700">No Submissions Yet</h3>
+                <p class="text-slate-500 mt-2">上傳測試結果後，系統會自動依據 Fingerprint 建立 Submission</p>
+                <button onclick="router.navigate('upload')" 
+                    class="mt-6 bg-indigo-600 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-indigo-700 transition-all">
+                    Upload Test Result
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <!-- Submission Detail Template -->
+    <template id="tmpl-submission-detail">
+        <div class="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <!-- Back Navigation -->
+            <button onclick="router.navigate('submissions')" 
+                class="flex items-center gap-2 text-slate-500 hover:text-slate-700 transition-colors text-sm font-medium">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+                Back to Submissions
+            </button>
+
+            <!-- Header Card (Frosted Glass) -->
+            <div class="bg-white/80 backdrop-blur-xl rounded-2xl shadow-apple border border-white/20 p-6 relative overflow-hidden transition-all duration-300">
+                <div id="submission-status-bar" class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-slate-400 to-slate-500"></div>
+                
+                <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                        <div class="flex items-center gap-3 mb-2">
+                            <h1 id="submission-name" class="text-2xl font-display font-bold text-slate-900">Loading...</h1>
+                            <span id="submission-status-badge" class="px-3 py-1 rounded-full text-xs font-bold uppercase bg-slate-100 text-slate-600">-</span>
+                        </div>
+                        <div class="flex items-center gap-4 text-sm text-slate-500">
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                                </svg>
+                                <span id="submission-fingerprint" class="font-mono text-xs select-all">-</span>
+                                <button onclick="copyFingerprint()" class="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-md hover:bg-slate-100/50" title="Copy Fingerprint">
+                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                                    </svg>
+                                </button>
+                            </span>
+                            <span class="flex items-center gap-1.5">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                                </svg>
+                                <span id="submission-date">-</span>
+                            </span>
+                        </div>
+                    </div>
+                    
+                    <!-- Status Toggle -->
+                    <div class="flex items-center gap-3">
+                        <div class="segmented-control" id="submission-status-control">
+                            <button onclick="updateSubmissionStatus('draft')" class="segmented-item" data-status="draft">Draft</button>
+                            <button onclick="updateSubmissionStatus('ready')" class="segmented-item" data-status="ready">Ready</button>
+                            <button onclick="updateSubmissionStatus('published')" class="segmented-item" data-status="published">Published</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Intelligence Warnings (Phase 3) -->
+            <div id="submission-warnings" class="hidden space-y-2 transition-all duration-500 ease-in-out">
+                <!-- Warning items injected via JS -->
+            </div>
+
+            <!-- Compliance Matrix -->
+            <div class="bg-white rounded-2xl shadow-apple border border-slate-100 overflow-hidden">
+                <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+                    <h3 class="font-bold text-slate-900">Compliance Matrix</h3>
+                    <button onclick="router.navigate('upload')" 
+                        class="text-sm bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl font-medium transition-all flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Add Test Result
+                    </button>
+                </div>
+                
+                <!-- Matrix Grid -->
+                <div id="compliance-matrix" class="p-6 grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <!-- Suite Cards injected via JS -->
+                </div>
+            </div>
+
+            <!-- Test Runs List -->
+            <div class="bg-white rounded-2xl shadow-apple border border-slate-100 overflow-hidden">
+                <div class="px-6 py-4 border-b border-slate-100">
+                    <h3 class="font-bold text-slate-900">Test Runs</h3>
+                </div>
+                <div id="submission-runs-list" class="divide-y divide-slate-100">
+                    <!-- Run rows injected via JS -->
+                </div>
+                <div id="submission-runs-empty" class="hidden px-6 py-8 text-center text-slate-400">
+                    No test runs yet
                 </div>
             </div>
         </div>
@@ -1544,7 +1732,7 @@
         </div>
     </template>
 
-    <script src="/static/app.js?v=84"></script>
+    <script src="/static/app.js?v=94"></script>
     <!-- Redmine Sync Confirmation Modal -->
     <div id="redmine-sync-modal" class="hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 transition-all duration-300">
         <div class="bg-white rounded-2xl shadow-apple-elevated w-full max-w-md overflow-hidden transform transition-all scale-100 animate-in fade-in zoom-in duration-200">

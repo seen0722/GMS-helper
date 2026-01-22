@@ -4,6 +4,7 @@ Receives parsed test data directly, bypassing server-side XML parsing.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import desc
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
@@ -105,6 +106,51 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
         db.add(test_run)
         db.commit()
         db.refresh(test_run)
+
+        # --- Submission Auto-Grouping Logic ---
+        fingerprint = data.metadata.device_fingerprint
+        if fingerprint and fingerprint != "Unknown":
+            # Find existing submission by fingerprint
+            submission = db.query(models.Submission).filter(
+                models.Submission.target_fingerprint == fingerprint
+            ).first()
+            
+            # Relaxed Grouping: If not found, check for active submission with same Model + SDK
+            if not submission:
+                model = data.metadata.build_model
+                sdk = data.metadata.build_version_sdk
+                
+                if model and sdk:
+                    # Find latest submission that contains a run with same Model + SDK
+                    match = db.query(models.Submission).join(models.TestRun).filter(
+                        models.TestRun.build_model == model,
+                        models.TestRun.build_version_sdk == sdk
+                    ).order_by(desc(models.Submission.updated_at)).first()
+                    
+                    if match:
+                        submission = match
+                        print(f"Grouped by Relaxed Match (Model: {model}, SDK: {sdk}) to Submission {submission.id}")
+            
+            if not submission:
+                # Create new submission
+                prod = data.metadata.build_product or "Unknown Device"
+                sub_name = f"Submission {prod} - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+                
+                submission = models.Submission(
+                    name=sub_name,
+                    target_fingerprint=fingerprint,
+                    status="analyzing",
+                    gms_version=data.metadata.android_version
+                )
+                db.add(submission)
+                db.flush()
+                print(f"Created new Submission ID: {submission.id} for fingerprint: {fingerprint}")
+            else:
+                print(f"Found existing Submission ID: {submission.id} for fingerprint: {fingerprint}")
+            
+            test_run.submission_id = submission.id
+            db.commit()
+        # --------------------------------------
 
         # Bulk insert failures
         if data.failures:

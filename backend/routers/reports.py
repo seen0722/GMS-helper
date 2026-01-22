@@ -8,7 +8,7 @@ router = APIRouter()
 
 @router.get("/runs")
 def get_test_runs(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-    runs = db.query(models.TestRun).order_by(models.TestRun.start_time.desc()).offset(skip).limit(limit).all()
+    runs = db.query(models.TestRun).options(joinedload(models.TestRun.submission)).order_by(models.TestRun.start_time.desc()).offset(skip).limit(limit).all()
     
     # Enhance runs with cluster count
     enhanced_runs = []
@@ -20,6 +20,9 @@ def get_test_runs(skip: int = 0, limit: int = 10, db: Session = Depends(get_db))
         # Convert to dict to add extra field
         run_dict = {c.name: getattr(run, c.name) for c in run.__table__.columns}
         run_dict["cluster_count"] = cluster_count
+        # Add submission target fingerprint for GSI detection
+        run_dict["target_fingerprint"] = run.submission.target_fingerprint if run.submission else None
+        
         enhanced_runs.append(run_dict)
         
     return enhanced_runs
@@ -48,10 +51,19 @@ def get_run_stats(run_id: int, db: Session = Depends(get_db)):
 
 @router.get("/runs/{run_id}")
 def get_test_run_details(run_id: int, db: Session = Depends(get_db)):
-    run = db.query(models.TestRun).filter(models.TestRun.id == run_id).first()
+    run = db.query(models.TestRun).options(joinedload(models.TestRun.submission)).filter(models.TestRun.id == run_id).first()
     if not run:
         raise HTTPException(status_code=404, detail="Test run not found")
-    return run
+    
+    # Convert to dict/schema to include submission target fingerprint
+    # We can rely on Pydantic `from_orm` if we had schemas, but simple dict works for now to match other endpoints approach or flexible return
+    # But wait, other tools might expect raw fields.
+    # Let's attach it as an extra attribute if possible, or return dict.
+    
+    run_dict = {c.name: getattr(run, c.name) for c in run.__table__.columns}
+    run_dict["target_fingerprint"] = run.submission.target_fingerprint if run.submission else None
+    
+    return run_dict
 
 @router.get("/runs/{run_id}/failures")
 def get_run_failures(run_id: int, db: Session = Depends(get_db)):

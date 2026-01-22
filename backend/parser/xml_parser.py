@@ -56,6 +56,7 @@ class XMLParser(BaseParser):
                     metadata["build_type"] = elem.get('build_type', 'Unknown')
                     metadata["security_patch"] = elem.get('build_version_security_patch', 'Unknown')
                     metadata["android_version"] = elem.get('build_version_release', 'Unknown')
+                    metadata["build_version_sdk"] = elem.get('build_version_sdk', 'Unknown')
                     metadata["build_version_incremental"] = elem.get('build_version_incremental', 'Unknown')
                 elif elem.tag.endswith('Summary'):
                     try:
