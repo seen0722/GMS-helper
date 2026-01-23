@@ -6,7 +6,17 @@ from datetime import datetime
 from backend.database.database import get_db
 from backend.database import models
 
+from pydantic import BaseModel
+
 router = APIRouter()
+
+class SubmissionUpdate(BaseModel):
+    name: Optional[str] = None
+    status: Optional[str] = None
+
+class MoveRunsRequest(BaseModel):
+    run_ids: List[int]
+    target_submission_id: int
 
 @router.get("/")
 def get_submissions(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
@@ -65,7 +75,16 @@ def get_submissions(skip: int = 0, limit: int = 20, db: Session = Depends(get_db
             "run_count": run_count,
             "suite_summary": suite_summary
         })
-    return results
+    
+    # Calculate total count for pagination
+    total_count = db.query(models.Submission).count()
+
+    return {
+        "items": results,
+        "total": total_count,
+        "page": (skip // limit) + 1,
+        "size": limit
+    }
 
 @router.get("/{submission_id}")
 def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
@@ -172,4 +191,66 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
         "updated_at": sub.updated_at,
         "test_runs": run_list,
         "warnings": warnings
+    }
+
+@router.delete("/{submission_id}")
+def delete_submission(submission_id: int, db: Session = Depends(get_db)):
+    """Delete a submission and all associated runs."""
+    sub = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    
+    db.delete(sub)
+    db.commit()
+    
+    return {"message": "Submission deleted successfully"}
+
+@router.patch("/{submission_id}")
+def update_submission(submission_id: int, update: SubmissionUpdate, db: Session = Depends(get_db)):
+    """Update a submission's name or status."""
+    sub = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    
+    if update.name is not None:
+        sub.name = update.name
+    if update.status is not None:
+        sub.status = update.status
+        
+    sub.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(sub)
+    
+
+    return {
+        "id": sub.id,
+        "name": sub.name,
+        "status": sub.status,
+        "updated_at": sub.updated_at
+    }
+
+@router.post("/runs/move")
+def move_runs(request: MoveRunsRequest, db: Session = Depends(get_db)):
+    """Move test runs to a different submission."""
+    # Validate target submission
+    target_sub = db.query(models.Submission).filter(models.Submission.id == request.target_submission_id).first()
+    if not target_sub:
+        raise HTTPException(status_code=404, detail="Target submission not found")
+    
+    # Update runs
+    moved_count = 0
+    for run_id in request.run_ids:
+        run = db.query(models.TestRun).filter(models.TestRun.id == run_id).first()
+        if run:
+            run.submission_id = target_sub.id
+            moved_count += 1
+            
+    # Update timestamps
+    target_sub.updated_at = datetime.utcnow()
+    db.commit()
+    
+    return {
+        "message": f"Successfully moved {moved_count} runs", 
+        "target_submission": target_sub.name,
+        "moved_count": moved_count
     }

@@ -110,6 +110,33 @@ function showNotification(message, type = 'info') {
     }, 4000);
 }
 
+// Date Formatting Helper
+function formatFriendlyDate(dateString) {
+    if (!dateString) return '-';
+    
+    // Check if input is ALREADY formatted (simple heuristic)
+    if (dateString.includes('Today at') || (dateString.length < 20 && !dateString.includes('T'))) {
+         // It might be already formatted or simple string
+         // Try parsing
+         const timestamp = Date.parse(dateString);
+         if (isNaN(timestamp)) return dateString; // Return as is if not parseable
+    }
+
+    const dateObj = new Date(dateString);
+    if (isNaN(dateObj.getTime())) return '-';
+
+    const today = new Date();
+    const isToday = dateObj.getDate() === today.getDate() && 
+                    dateObj.getMonth() === today.getMonth() && 
+                    dateObj.getFullYear() === today.getFullYear();
+    
+    if (isToday) {
+        return `Today at ${dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    } else {
+        return dateObj.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+}
+
 /**
  * Reusable Delete Run Modal
  * Shows a confirmation dialog before deleting a test run and all associated data.
@@ -611,7 +638,7 @@ function renderDashboardTable() {
             const twoDecimals = rate.toFixed(2);
             passRate = (twoDecimals === "100.00" && run.failed_tests > 0) ? rate.toFixed(4) : twoDecimals;
         }
-        const date = new Date(run.start_time).toLocaleDateString();
+        const date = formatFriendlyDate(run.start_time);
 
         // Identify Suite
         const suiteName = identifyRunSuite(run, run.target_fingerprint);
@@ -4598,6 +4625,11 @@ async function loadTestCase(testCaseId) {
 
 // Current submission being viewed
 let currentSubmissionId = null;
+let currentSubmissionPage = 1;
+
+// Selection State
+let isRunSelectionMode = false;
+let selectedRunIds = new Set();
 
 // Required suites for compliance matrix
 // Required suites for compliance matrix (Dynamic)
@@ -4622,12 +4654,17 @@ async function fetchSuiteConfig() {
     }
 }
 
-async function loadSubmissions() {
+async function loadSubmissions(page = 1) {
+    currentSubmissionPage = page;
     await fetchSuiteConfig();
     const grid = document.getElementById('submissions-grid');
     const emptyState = document.getElementById('submissions-empty');
+    const pagination = document.getElementById('submissions-pagination');
     
     if (!grid) return;
+    
+    // Clear pagination while loading to avoid confusion
+    if (pagination) pagination.innerHTML = ''; 
     
     // Show loading skeleton (Apple Style)
     grid.innerHTML = `
@@ -4649,10 +4686,16 @@ async function loadSubmissions() {
     `;
     
     try {
-        const response = await fetch(`${API_BASE}/submissions/`);
-        const submissions = await response.json();
+        const limit = 20;
+        const skip = (page - 1) * limit;
+        const response = await fetch(`${API_BASE}/submissions/?skip=${skip}&limit=${limit}`);
+        const res = await response.json();
         
-        if (submissions.length === 0) {
+        // Support both envelope and legacy array (though backend is updated)
+        const submissions = res.items || (Array.isArray(res) ? res : []);
+        const total = res.total || submissions.length;
+        
+        if (submissions.length === 0 && page === 1) {
             grid.innerHTML = '';
             emptyState.classList.remove('hidden');
             return;
@@ -4661,88 +4704,129 @@ async function loadSubmissions() {
         emptyState.classList.add('hidden');
         grid.innerHTML = submissions.map(sub => renderSubmissionCardV2(sub)).join('');
         
+        // Render Pagination
+        renderPagination(total, page, limit);
+        
+        // Scroll to top of grid
+        if (page > 1) {
+             document.getElementById('submissions-header')?.scrollIntoView({ behavior: 'smooth' });
+        }
+        
     } catch (e) {
         console.error("Failed to load submissions", e);
         grid.innerHTML = `<div class="col-span-full text-center text-red-500 py-8">Failed to load submissions</div>`;
     }
 }
 
+function renderPagination(total, page, pageSize) {
+    const container = document.getElementById('submissions-pagination');
+    if (!container) return;
+    
+    const totalPages = Math.ceil(total / pageSize);
+    if (totalPages <= 1) {
+        container.innerHTML = '';
+        return;
+    }
+    
+    container.innerHTML = `
+        <div class="flex items-center gap-2 bg-white rounded-full p-1 shadow-sm border border-slate-100">
+            <button onclick="loadSubmissions(${page - 1})" 
+                class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-600"
+                ${page <= 1 ? 'disabled' : ''}>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            </button>
+            
+            <div class="px-3 text-xs font-medium text-slate-500 font-mono">
+                ${page} / ${totalPages}
+            </div>
+            
+            <button onclick="loadSubmissions(${page + 1})" 
+                class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-slate-600"
+                ${page >= totalPages ? 'disabled' : ''}>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+            </button>
+        </div>
+    `;
+}
+
 function renderSubmissionCard(sub) {
     // Status styling
     const statusStyles = {
         draft: { gradient: 'status-gradient-draft', badge: 'bg-slate-100 text-slate-600' },
-        analyzing: { gradient: 'status-gradient-analyzing', badge: 'bg-amber-100 text-amber-700' },
+        analyzing: { gradient: 'status-gradient-analyzing', badge: 'bg-amber-100 text-amber-700 animate-pulse' },
         ready: { gradient: 'status-gradient-ready', badge: 'bg-emerald-100 text-emerald-700' },
         published: { gradient: 'status-gradient-published', badge: 'bg-blue-100 text-blue-700' }
     };
     const style = statusStyles[sub.status] || statusStyles.draft;
     
-    // Format date
-    const date = sub.updated_at ? new Date(sub.updated_at).toLocaleDateString() : '-';
+    // Format date (Friendly)
+    const dateStr = formatFriendlyDate(sub.updated_at);
     
-    // Mini suite indicators - use suite_summary from API
+    // Mini suite indicators
     const suitesHtml = REQUIRED_SUITES.map(suite => {
         const suiteData = sub.suite_summary?.[suite] || { status: 'missing' };
         
         let bgClass, textClass, displayValue;
         if (suiteData.status === 'pass') {
             bgClass = 'bg-emerald-50';
-            textClass = 'text-emerald-600';
+            textClass = 'text-emerald-700'; // Darker for contrast
             displayValue = '✓';
         } else if (suiteData.status === 'fail') {
-            bgClass = 'bg-red-50';
+            bgClass = 'bg-white border border-red-100'; // Cleaner look
             textClass = 'text-red-600';
             displayValue = suiteData.failed;
         } else {
-            bgClass = 'bg-slate-100';
-            textClass = 'text-slate-400';
-            displayValue = '—';
+            bgClass = 'bg-slate-50';
+            textClass = 'text-slate-300';
+            displayValue = '-';
         }
         
         return `
-            <div class="text-center p-2 rounded-xl ${bgClass}">
-                <div class="text-[10px] font-bold uppercase tracking-wider ${textClass}">${suite}</div>
+            <div class="flex flex-col items-center justify-center p-2 rounded-lg ${bgClass} min-w-[60px] flex-1">
+                <div class="text-[9px] font-bold uppercase tracking-wider ${textClass} mb-0.5">${suite}</div>
                 <div class="text-sm font-bold ${textClass}">${displayValue}</div>
             </div>
         `;
     }).join('');
     
     return `
-        <div class="submission-card bg-white rounded-2xl shadow-apple border border-slate-100 overflow-hidden cursor-pointer"
+        <div class="submission-card bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200"
              onclick="router.navigate('submission-detail', { id: ${sub.id} })">
-            <!-- Status Indicator Bar -->
-            <div class="h-1.5 ${style.gradient}"></div>
             
-            <!-- Card Content -->
             <div class="p-5">
                 <!-- Header: Name & Status Badge -->
-                <div class="flex justify-between items-start mb-4">
-                    <div class="flex-1 min-w-0">
-                        <h3 class="font-bold text-slate-900 truncate">
-                            <span class="text-slate-400 font-mono mr-1">#${sub.id}</span>
+                <div class="flex justify-between items-start mb-3">
+                    <div class="flex-1 min-w-0 pr-3">
+                        <h3 class="font-bold text-slate-800 text-base truncate leading-tight">
+                            <span class="text-slate-400 font-mono text-xs mr-1 opacity-75">#${sub.id}</span>
                             ${escapeHtml(sub.name || 'Unnamed Submission')}
                         </h3>
-                        <p class="text-xs text-slate-400 mt-0.5 truncate font-mono">${escapeHtml(sub.target_fingerprint || '-')}</p>
+                        <!-- Darker contrast for fingerprint, mono font -->
+                        <div class="mt-1.5 flex items-center">
+                             <code class="text-[11px] text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100 truncate max-w-full font-mono">
+                                ${escapeHtml(sub.target_fingerprint || '-')}
+                             </code>
+                        </div>
                     </div>
-                    <span class="${style.badge} px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider flex-shrink-0 ml-3">
+                    <span class="${style.badge} px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex-shrink-0 shadow-sm border border-transparent">
                         ${sub.status || 'draft'}
                     </span>
                 </div>
                 
-                <!-- Compliance Matrix Mini View -->
-                <div class="grid grid-cols-5 gap-2 mb-4">
+                <!-- Compliance Matrix Mini View: Moved to Flex Wrap for better rhythm -->
+                <div class="flex flex-wrap gap-2 mb-4">
                     ${suitesHtml}
                 </div>
                 
                 <!-- Footer: Meta Info -->
-                <div class="flex items-center justify-between text-xs text-slate-400">
-                    <span class="flex items-center gap-1">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div class="flex items-center justify-between text-[11px] text-slate-400 font-medium pt-3 border-t border-slate-50">
+                    <span class="flex items-center gap-1.5 ">
+                        <svg class="w-3.5 h-3.5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"/>
                         </svg>
                         ${sub.run_count || 0} runs
                     </span>
-                    <span>${date}</span>
+                    <span>${dateStr}</span>
                 </div>
             </div>
         </div>
@@ -4779,7 +4863,7 @@ async function loadSubmissionDetail(id) {
         // Status styling
         const statusStyles = {
             draft: { gradient: 'status-gradient-draft', badge: 'bg-slate-100 text-slate-600' },
-            analyzing: { gradient: 'status-gradient-analyzing', badge: 'bg-amber-100 text-amber-700' },
+            analyzing: { gradient: 'status-gradient-analyzing', badge: 'bg-amber-100 text-amber-700 animate-pulse' },
             ready: { gradient: 'status-gradient-ready', badge: 'bg-emerald-100 text-emerald-700' },
             published: { gradient: 'status-gradient-published', badge: 'bg-blue-100 text-blue-700' }
         };
@@ -4792,6 +4876,12 @@ async function loadSubmissionDetail(id) {
                 ${escapeHtml(sub.name || 'Unnamed Submission')}
             `;
         }
+        
+        const editBtn = document.getElementById('btn-edit-submission');
+        if (editBtn) {
+            editBtn.onclick = () => editSubmissionName(sub.name || 'Unnamed Submission');
+        }
+
         if (statusBadge) {
             statusBadge.textContent = sub.status || 'draft';
             statusBadge.className = `${style.badge} px-3 py-1 rounded-full text-xs font-bold uppercase`;
@@ -4800,7 +4890,7 @@ async function loadSubmissionDetail(id) {
             statusBar.className = `absolute top-0 left-0 w-full h-1.5 ${style.gradient}`;
         }
         if (fingerprintEl) fingerprintEl.textContent = sub.target_fingerprint || '-';
-        if (dateEl) dateEl.textContent = sub.created_at ? new Date(sub.created_at).toLocaleDateString() : '-';
+        if (dateEl) dateEl.textContent = formatFriendlyDate(sub.created_at || sub.updated_at);
         
         // Update status control
         if (statusControl) {
@@ -4905,10 +4995,15 @@ function identifyRunSuite(run, targetFingerprint) {
         
         let isMatch = false;
         if (config.match_rule === 'GSI') {
-             isMatch = runName.includes('CTS') && run.device_fingerprint !== targetFingerprint;
+             // Check fingerprint mismatch OR explicit 'gsi' in product/model
+             const isGsiProduct = (run.build_product && run.build_product.toLowerCase().includes('gsi')) || 
+                                  (run.build_model && run.build_model.toLowerCase().includes('gsi'));
+             isMatch = runName.includes('CTS') && (run.device_fingerprint !== targetFingerprint || isGsiProduct);
         } else if (config.name === 'CTS') {
              // Standard CTS excludes GSI
-             const isGsi = run.device_fingerprint !== targetFingerprint;
+             const isGsi = run.device_fingerprint !== targetFingerprint || 
+                           (run.build_product && run.build_product.toLowerCase().includes('gsi')) ||
+                           (run.build_model && run.build_model.toLowerCase().includes('gsi'));
              isMatch = runName.includes('CTS') && !isGsi;
         } else {
              isMatch = runName.includes(suiteName);
@@ -4939,66 +5034,73 @@ function renderComplianceMatrix(container, runs, targetFingerprint) {
     // Calculate stats for each suite
     const suiteCards = REQUIRED_SUITES.map(suite => {
         const data = suiteData[suite];
+        const config = SUITE_CONFIGS[suite];
+        const displayName = config ? (config.display_name || suite) : suite;
+        
+        let contentHtml = '';
+        let cardClass = '';
         
         if (data.runs.length === 0) {
-            // Missing
-            return `
-                <div class="suite-card suite-missing p-4 rounded-2xl">
-                    <div class="flex justify-between items-center mb-3">
-                        <span class="text-sm font-bold text-slate-400">${suite}</span>
-                        <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                        </svg>
+            // Missing State
+            cardClass = 'bg-slate-50/50 border-slate-200/60';
+            contentHtml = `
+                <div class="flex justify-between items-start mb-3">
+                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">${displayName}</span>
+                    <div class="w-1.5 h-1.5 rounded-full bg-slate-200"></div>
+                </div>
+                <div class="flex-1 flex flex-col justify-end">
+                    <div class="text-sm font-medium text-slate-400">Missing</div>
+                    <div class="text-[10px] text-slate-300 mt-1">No data</div>
+                </div>
+            `;
+        } else {
+            // Data Available
+            const latestRun = data.runs[0];
+            const totalTests = (latestRun.passed_tests || 0) + (latestRun.failed_tests || 0);
+            const passRate = totalTests > 0 ? ((latestRun.passed_tests / totalTests) * 100).toFixed(1) : 0;
+            const hasFails = (latestRun.failed_tests || 0) > 0;
+            
+            const textColor = hasFails ? 'text-red-600' : 'text-emerald-600';
+            const bgColor = hasFails ? 'bg-red-50' : 'bg-emerald-50';
+            const borderColor = hasFails ? 'border-red-100' : 'border-emerald-100';
+            const progressColor = hasFails ? 'bg-red-500' : 'bg-emerald-500';
+            
+            cardClass = `${bgColor} ${borderColor}`;
+            
+            contentHtml = `
+                <div class="flex justify-between items-start mb-2 relative z-10">
+                    <span class="text-xs font-bold ${textColor} uppercase tracking-wider opacity-80">${displayName}</span>
+                    ${hasFails 
+                        ? `<div class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>` 
+                        : `<svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>`
+                    }
+                </div>
+                
+                <div class="relative z-10">
+                    <div class="flex items-baseline gap-1 mb-2">
+                        <span class="text-2xl font-display font-bold ${textColor}">${passRate}<span class="text-sm font-semibold opacity-60">%</span></span>
                     </div>
-                    <div class="text-center py-4">
-                        <span class="text-sm font-bold text-slate-400">Missing</span>
+                    
+                    <div class="flex justify-between items-end">
+                        <div class="text-[10px] text-slate-500 font-medium">
+                            ${hasFails ? `${latestRun.failed_tests} Failed` : 'All Passed'}
+                        </div>
+                        <div class="text-[9px] text-slate-400">
+                             ${(latestRun.passed_tests || 0).toLocaleString()} / ${totalTests.toLocaleString()}
+                        </div>
                     </div>
-                    <div class="mt-3 pt-3 border-t border-slate-200/50 text-[10px] text-slate-400 text-center">
-                        Not uploaded yet
+                    
+                    <!-- Progress Bar -->
+                    <div class="w-full bg-black/5 rounded-full h-1 mt-2 overflow-hidden">
+                        <div class="${progressColor} h-full transition-all duration-700 ease-out" style="width: ${passRate}%"></div>
                     </div>
                 </div>
             `;
         }
         
-        // Get latest run for this suite
-        const latestRun = data.runs[0];
-        const totalTests = (latestRun.passed_tests || 0) + (latestRun.failed_tests || 0);
-        const passRate = totalTests > 0 ? ((latestRun.passed_tests / totalTests) * 100).toFixed(1) : 0;
-        const hasFails = (latestRun.failed_tests || 0) > 0;
-        
-        const suiteClass = hasFails ? 'suite-fail' : 'suite-pass';
-        const textColor = hasFails ? 'text-red-600' : 'text-emerald-600';
-        const progressColor = hasFails ? 'bg-red-500' : 'bg-emerald-500';
-        const statusIcon = hasFails 
-            ? `<span class="text-sm font-bold text-red-600">${latestRun.failed_tests}</span>`
-            : `<svg class="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`;
-        
-        const runDate = latestRun.start_time ? new Date(latestRun.start_time).toLocaleDateString() : '-';
-        
         return `
-            <div class="suite-card ${suiteClass} p-4 rounded-2xl">
-                <div class="flex justify-between items-center mb-3">
-                    <span class="text-sm font-bold ${textColor}">${suite}</span>
-                    ${statusIcon}
-                </div>
-                
-                <div class="space-y-2">
-                    <div class="flex justify-between text-xs">
-                        <span class="text-slate-500">Pass Rate</span>
-                        <span class="font-bold ${textColor}">${passRate}%</span>
-                    </div>
-                    <div class="w-full bg-slate-200 rounded-full h-1.5">
-                        <div class="${progressColor} h-1.5 rounded-full transition-all duration-500" style="width: ${passRate}%"></div>
-                    </div>
-                    <div class="flex justify-between text-[10px] text-slate-400">
-                        <span>${(latestRun.passed_tests || 0).toLocaleString()} passed</span>
-                        <span>${(latestRun.failed_tests || 0).toLocaleString()} failed</span>
-                    </div>
-                </div>
-                
-                <div class="mt-3 pt-3 border-t border-slate-200/50 text-[10px] text-slate-400">
-                    Last: ${runDate}
-                </div>
+            <div class="relative group p-4 rounded-2xl border ${cardClass} transition-all duration-300 hover:shadow-lg hover:scale-[1.02] flex flex-col h-32 overflow-hidden">
+                ${contentHtml}
             </div>
         `;
     });
@@ -5035,16 +5137,31 @@ function renderSubmissionRuns(container, emptyEl, runs, targetFingerprint) {
         if (suiteName.includes('VTS')) badgeColor = 'bg-purple-100 text-purple-700';
         if (suiteName.includes('STS')) badgeColor = 'bg-orange-100 text-orange-700';
         
+        const isSelected = selectedRunIds.has(run.id);
+        const checkboxHtml = isRunSelectionMode ? `
+            <div class="mr-4">
+                <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-5 h-5 cursor-pointer" 
+                    ${isSelected ? 'checked' : ''} readonly> 
+            </div>
+        ` : '';
+
+        const clickAction = isRunSelectionMode 
+            ? `onclick="toggleRunSelection(${run.id})"`
+            : `onclick="router.navigate('run-details', { id: ${run.id} })"`; // Normal nav behavior
+            
         return `
-            <div class="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer"
-                 onclick="router.navigate('run-details', { id: ${run.id} })">
-                <div class="flex items-center gap-4">
-                    <span class="px-2.5 py-1 rounded-lg text-xs font-bold ${badgeColor}">
-                        ${displayName}
-                    </span>
-                    <div>
-                        <div class="text-sm font-medium text-slate-700">Run #${run.id}</div>
-                        <div class="text-xs text-slate-400">${date}</div>
+            <div class="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer ${isSelected ? 'bg-indigo-50/50' : ''}"
+                 ${clickAction}>
+                <div class="flex items-center">
+                    ${checkboxHtml}
+                    <div class="flex items-center gap-4">
+                        <span class="px-2.5 py-1 rounded-lg text-xs font-bold ${badgeColor}">
+                            ${displayName}
+                        </span>
+                        <div>
+                            <div class="text-sm font-medium text-slate-700">Run #${run.id}</div>
+                            <div class="text-xs text-slate-400">${date}</div>
+                        </div>
                     </div>
                 </div>
                 <div class="flex items-center gap-6">
@@ -5052,9 +5169,11 @@ function renderSubmissionRuns(container, emptyEl, runs, targetFingerprint) {
                         <div class="text-sm font-bold ${statusColor}">${passRate}%</div>
                         <div class="text-[10px] text-slate-400">${run.failed_tests || 0} failures</div>
                     </div>
+                    ${!isRunSelectionMode ? `
                     <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                     </svg>
+                    ` : ''}
                 </div>
             </div>
         `;
@@ -5064,10 +5183,7 @@ function renderSubmissionRuns(container, emptyEl, runs, targetFingerprint) {
 async function updateSubmissionStatus(newStatus) {
     if (!currentSubmissionId) return;
     
-    // TODO: Implement backend PATCH endpoint
-    showNotification(`Status update to "${newStatus}" - Backend not implemented yet`, 'info');
-    
-    // Update UI optimistically
+    // Optimistic UI Update
     const statusControl = document.getElementById('submission-status-control');
     if (statusControl) {
         statusControl.querySelectorAll('.segmented-item').forEach(btn => {
@@ -5079,7 +5195,7 @@ async function updateSubmissionStatus(newStatus) {
         });
     }
     
-    // Update status bar and badge
+    // Update status bar and badge styles
     const statusStyles = {
         draft: { gradient: 'status-gradient-draft', badge: 'bg-slate-100 text-slate-600' },
         analyzing: { gradient: 'status-gradient-analyzing', badge: 'bg-amber-100 text-amber-700' },
@@ -5095,6 +5211,23 @@ async function updateSubmissionStatus(newStatus) {
     if (statusBadge) {
         statusBadge.textContent = newStatus;
         statusBadge.className = `${style.badge} px-3 py-1 rounded-full text-xs font-bold uppercase`;
+    }
+
+    // Call Backend
+    try {
+        const response = await fetch(`${API_BASE}/submissions/${currentSubmissionId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus })
+        });
+        
+        if (!response.ok) throw new Error('Failed to update status');
+        
+        showNotification(`Status updated to "${newStatus}"`, 'success');
+    } catch (e) {
+        console.error('Status update failed', e);
+        showNotification('Failed to update status', 'error');
+        // Revert UI could happen here, but keeping it simple for now
     }
 }
 
@@ -5236,3 +5369,190 @@ function renderSubmissionCardV2(sub) {
         </div>
     `;
 }    
+
+function confirmDelete(id) {
+    if (confirm('Are you sure you want to delete this submission? This action cannot be undone.')) {
+        deleteSubmission(id);
+    }
+}
+
+async function deleteSubmission(id) {
+    try {
+        const response = await fetch(`${API_BASE}/submissions/${id}`, {
+            method: 'DELETE'
+        });
+        
+        if (!response.ok) {
+            throw new Error('Failed to delete submission');
+        }
+        
+        // Success
+        router.navigate('submissions');
+    } catch (e) {
+        console.error('Delete failed', e);
+        alert('Failed to delete submission: ' + e.message);
+    }
+}
+
+function editSubmissionName(name) {
+    const newName = prompt("Rename submission:", name);
+    if (newName && newName.trim() !== "" && newName !== name) {
+        updateSubmissionName(newName.trim());
+    }
+}
+
+async function updateSubmissionName(newName) {
+    if (!currentSubmissionId) return;
+
+    try {
+        const response = await fetch(`${API_BASE}/submissions/${currentSubmissionId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: newName })
+        });
+        
+        if (!response.ok) throw new Error('Failed to update name');
+        
+        // Update UI
+        const nameEl = document.getElementById('submission-name');
+        if (nameEl) {
+             nameEl.innerHTML = `
+                <span class="text-slate-400 font-mono mr-2">#${currentSubmissionId}</span>
+                ${escapeHtml(newName)}
+            `;
+        }
+        
+        // Update edit button onclick to have new name
+        const editBtn = document.getElementById('btn-edit-submission');
+        if (editBtn) {
+            editBtn.onclick = () => editSubmissionName(newName);
+        }
+
+        showNotification('Submission renamed successfully', 'success');
+    } catch (e) {
+        console.error('Rename failed', e);
+        showNotification('Failed to rename submission', 'error');
+    }
+}
+
+// --- Run Move / Merge Logic ---
+
+function toggleRunSelectionMode() {
+    isRunSelectionMode = !isRunSelectionMode;
+    selectedRunIds.clear();
+    
+    const btnSelect = document.getElementById('btn-select-runs');
+    const btnMove = document.getElementById('btn-move-runs');
+    
+    if (isRunSelectionMode) {
+        btnSelect.textContent = 'Cancel Selection';
+        btnSelect.className = "text-xs bg-slate-200 hover:bg-slate-300 text-slate-800 px-3 py-1.5 rounded-lg font-medium transition-all";
+        btnMove.classList.remove('hidden');
+    } else {
+        btnSelect.textContent = 'Select Runs';
+        btnSelect.className = "text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg font-medium transition-all";
+        btnMove.classList.add('hidden');
+    }
+    
+    // Re-render list
+    loadSubmissionDetail(currentSubmissionId); // This might be overkill, but ensures data refresh
+}
+
+function toggleRunSelection(runId) {
+    if (selectedRunIds.has(runId)) {
+        selectedRunIds.delete(runId);
+    } else {
+        selectedRunIds.add(runId);
+    }
+    
+    // Efficiently re-render logic to avoid full fetch would be better, but re-calling loadSubmissionDetail is safer for now.
+    // Actually, let's just re-render the list part if we have the data?
+    // We don't have the data globally accessible easily without refetch.
+    // So let's just trigger a re-render call. To do this efficiently, we might want to store currentSub in a variable.
+    // For now, loadSubmissionDetail(currentSubmissionId) is valid.
+    loadSubmissionDetail(currentSubmissionId);
+}
+
+async function openMoveRunsModal() {
+    if (selectedRunIds.size === 0) {
+        showNotification('Please select at least one run to move', 'warning');
+        return;
+    }
+    
+    const modal = document.getElementById('move-runs-modal');
+    const countDisplay = document.getElementById('move-count-display');
+    const select = document.getElementById('move-target-select');
+    
+    if (countDisplay) countDisplay.textContent = selectedRunIds.size;
+    if (modal) modal.classList.remove('hidden');
+    
+    // Fetch potential targets
+    try {
+        // We'll use the existing /submissions endpoint. Ideally we should have a lightweight endpoint.
+        const response = await fetch(`${API_BASE}/submissions/?limit=100`); 
+        const submissions = await response.json();
+        
+        if (select) {
+            select.innerHTML = '<option value="" disabled selected>Select a target...</option>' + 
+                submissions
+                    .filter(s => s.id !== currentSubmissionId) // Exclude current
+                    .map(s => {
+                        const date = s.created_at ? new Date(s.created_at).toISOString().slice(0, 10) : '';
+                        return `<option value="${s.id}">#${s.id} - ${escapeHtml(s.name)} (${date})</option>`;
+                    })
+                    .join('');
+        }
+    } catch (e) {
+        console.error('Failed to load targets', e);
+        showNotification('Failed to load target submissions', 'error');
+    }
+}
+
+function closeMoveRunsModal() {
+    const modal = document.getElementById('move-runs-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+function exportSubmission(id) {
+    if (!id) return;
+    // Trigger download by navigation
+    window.location.href = `${API_BASE}/export/submission/${id}/excel`;
+}
+
+async function submitMoveRuns() {
+    const select = document.getElementById('move-target-select');
+    if (!select || !select.value) {
+        showNotification('Please select a target submission', 'warning');
+        return;
+    }
+    
+    const targetId = parseInt(select.value);
+    
+    try {
+        const response = await fetch(`${API_BASE}/submissions/runs/move`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                run_ids: Array.from(selectedRunIds),
+                target_submission_id: targetId
+            })
+        });
+        
+        if (!response.ok) throw new Error('Move failed');
+        
+        const result = await response.json();
+        showNotification(result.message, 'success');
+        
+        closeMoveRunsModal();
+        isRunSelectionMode = false; 
+        selectedRunIds.clear();
+        toggleRunSelectionMode(); // Reset UI
+        
+        // Reload current page
+        loadSubmissionDetail(currentSubmissionId);
+        
+    } catch (e) {
+        console.error('Move failed', e);
+        showNotification('Failed to move runs', 'error');
+    }
+}

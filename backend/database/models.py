@@ -23,7 +23,7 @@ class Submission(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    test_runs = relationship("TestRun", back_populates="submission")
+    test_runs = relationship("TestRun", back_populates="submission", cascade="all, delete-orphan")
 
 class TestRun(Base):
     __tablename__ = "test_runs"
