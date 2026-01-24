@@ -1,15 +1,115 @@
 const API_BASE = '/api';
 
-
-
 let allClustersData = [];
-let allModulesData = [];  // PRD Phase 5: Module View data
-let currentViewMode = 'cluster';  // 'cluster' or 'module'
+let currentProductFilter = null;
+let allModulesData = [];
+let currentViewMode = 'cluster';
 let allFailuresData = [];
 let currentFailuresPage = 1;
 let currentFailuresQuery = '';
 const failuresPerPage = 50;
-let redmineProjectsCache = []; // Cache for project name lookup
+let redmineProjectsCache = [];
+let isMoveRunsMode = false; 
+let currentSubmissionDetails = null; // Store full submission object
+
+async function toggleSubmissionLock(subId) {
+    const btn = document.getElementById('btn-lock-toggle');
+    const label = document.getElementById('lock-label');
+    const helper = document.getElementById('lock-helper-text');
+    
+    if (!btn) return;
+    
+    const isLocked = btn.getAttribute('aria-checked') === 'true';
+    const newState = !isLocked;
+    
+    try {
+        const response = await fetch(`${API_BASE}/submissions/${subId}/lock`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ is_locked: newState })
+        });
+        
+        if (response.ok) {
+            btn.setAttribute('aria-checked', newState);
+            
+            if (label) {
+                label.textContent = newState ? 'Locked' : 'Active';
+                label.className = `text-xs font-semibold uppercase tracking-wider transition-colors duration-300 ${newState ? 'text-emerald-600' : 'text-slate-500'}`;
+            }
+            
+            if (helper) {
+                helper.textContent = newState ? 'Session Frozen' : 'Accepting Reruns';
+                helper.className = `text-[9px] font-medium transition-colors duration-300 ${newState ? 'text-emerald-500' : 'text-slate-400'}`;
+            }
+            
+            // Update global state
+            if (currentSubmissionDetails) currentSubmissionDetails.is_locked = newState;
+            
+            const msg = newState 
+                ? 'Session Locked: Future uploads will create a new submission' 
+                : 'Session Unlocked: Accepting new reruns';
+            showNotification(msg, newState ? 'success' : 'info');
+        } else {
+            showNotification('Failed to toggle lock', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        showNotification('Error toggling lock', 'error');
+    }
+}
+
+function enableMoveRunsMode() {
+    isMoveRunsMode = !isMoveRunsMode;
+    
+    // Re-render run list
+    const runsListEl = document.getElementById('submission-runs-list');
+    const runsEmptyEl = document.getElementById('submission-runs-empty');
+    
+    if (currentSubmissionDetails && runsListEl) {
+        renderSubmissionRuns(runsListEl, runsEmptyEl, currentSubmissionDetails.test_runs || [], currentSubmissionDetails.target_fingerprint);
+    }
+    
+    if (isMoveRunsMode) {
+        showNotification('Select runs to split/move', 'info');
+        // Auto-switch to runs tab if not active
+        switchSubmissionTab('runs');
+    }
+}
+
+async function executeMoveRuns() {
+    const selected = Array.from(document.querySelectorAll('.run-checkbox:checked')).map(cb => parseInt(cb.value));
+    
+    if (selected.length === 0) {
+        showNotification('Please select at least one run', 'error');
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to move ${selected.length} runs to a NEW submission?`)) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/submissions/move-runs`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                run_ids: selected,
+                target_submission_id: null // Create New
+            })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            showNotification('Runs moved successfully!', 'success');
+            setTimeout(() => {
+                router.navigate('submission-detail', { id: data.target_submission_id });
+            }, 1000);
+        } else {
+            showNotification('Failed to move runs', 'error');
+        }
+    } catch (e) {
+        console.error(e);
+        showNotification('Error moving runs', 'error');
+    }
+}
 
 // Java Stack Trace syntax highlighting
 function highlightStackTrace(text) {
@@ -754,10 +854,14 @@ function setupUpload() {
                                 message.textContent = 'Import complete!';
                                 message.classList.add('text-green-600');
                                 
-                                const timeoutId = setTimeout(() => {
-                                    router.navigate('run-details', { id: result.test_run_id });
-                                }, 1000);
-                                router.cleanup = () => clearTimeout(timeoutId);
+                                    // Fix: Redirect to Submission Detail to show Merged Report
+                                    const targetPage = result.submission_id ? 'submission-detail' : 'run-details';
+                                    const targetId = result.submission_id || result.test_run_id;
+                                    
+                                    const timeoutId = setTimeout(() => {
+                                        router.navigate(targetPage, { id: targetId });
+                                    }, 1000);
+                                    router.cleanup = () => clearTimeout(timeoutId);
                             } else {
                                 let errorMsg = 'Import failed';
                                 try {
@@ -821,8 +925,11 @@ function setupUpload() {
                     message.textContent = 'Upload complete! Processing...';
                     message.classList.add('text-green-600');
 
+                    const targetPage = result.submission_id ? 'submission-detail' : 'run-details';
+                    const targetId = result.submission_id || result.test_run_id;
+
                     const timeoutId = setTimeout(() => {
-                        router.navigate('run-details', { id: result.test_run_id });
+                        router.navigate(targetPage, { id: targetId });
                     }, 1000);
                     router.cleanup = () => clearTimeout(timeoutId);
                 } else {
@@ -910,6 +1017,18 @@ async function loadRunDetails(runId) {
             `;
         deviceEl.innerHTML = deviceHtml;
         document.getElementById('detail-date').textContent = formatFriendlyDate(run.start_time);
+
+        // Update View Submission Button
+        const viewSubBtn = document.getElementById('btn-view-submission');
+        const viewSubName = document.getElementById('detail-submission-name');
+        if (viewSubBtn && viewSubName) {
+            if (run.submission_id) {
+                viewSubBtn.classList.remove('hidden');
+                viewSubBtn.onclick = () => router.navigate('submission-detail', { id: run.submission_id });
+            } else {
+                viewSubBtn.classList.add('hidden');
+            }
+        }
 
         // Inject System Info Card
         const infoContainer = document.getElementById('system-info-container');
@@ -4672,6 +4791,60 @@ async function fetchSuiteConfig() {
     }
 }
 
+async function loadProducts() {
+    try {
+        const response = await fetch(`${API_BASE}/submissions/products`);
+        const products = await response.json();
+        const container = document.getElementById('sidebar-products');
+        
+        if (!container) return; // Not on page with sidebar
+
+        if (!products || products.length === 0) {
+            container.innerHTML = `<div class="px-4 py-2 text-xs text-slate-500 italic">No projects found</div>`;
+            return;
+        }
+
+        let html = `
+            <a href="#" onclick="filterByProduct(null)" 
+               class="nav-item group flex items-center gap-3 px-4 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all duration-200 ${currentProductFilter === null ? 'bg-white/10 text-white font-bold' : ''}">
+                <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                All Projects
+            </a>
+        `;
+        
+        products.forEach(p => {
+            const isActive = currentProductFilter === p;
+            let hash = 0;
+            for (let i = 0; i < p.length; i++) hash = p.charCodeAt(i) + ((hash << 5) - hash);
+            const hue = Math.abs(hash % 360);
+            const colorStyle = `background-color: hsl(${hue}, 70%, 50%)`;
+            
+            html += `
+                <a href="#" onclick="filterByProduct('${p}')" 
+                   class="nav-item group flex items-center gap-3 px-4 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all duration-200 ${isActive ? 'bg-white/10 text-white font-bold' : ''}">
+                    <span class="w-2 h-2 rounded-full" style="${colorStyle}"></span>
+                    ${p}
+                </a>
+            `;
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        console.error("Failed to load products", e);
+    }
+}
+
+function filterByProduct(product) {
+    currentProductFilter = product;
+    loadProducts(); // Update Sidebar active state
+    // Reload submissions
+    if (window.location.hash.includes('submission')) {
+         // If detail view, back to list
+         router.navigate('submissions'); 
+    } else {
+         loadSubmissions(1);
+    }
+}
+
 async function loadSubmissions(page = 1) {
     currentSubmissionPage = page;
     await fetchSuiteConfig();
@@ -4706,7 +4879,13 @@ async function loadSubmissions(page = 1) {
     try {
         const limit = 20;
         const skip = (page - 1) * limit;
-        const response = await fetch(`${API_BASE}/submissions/?skip=${skip}&limit=${limit}`);
+        
+        let url = `${API_BASE}/submissions/?skip=${skip}&limit=${limit}`;
+        if (currentProductFilter) {
+            url += `&product_filter=${encodeURIComponent(currentProductFilter)}`;
+        }
+        
+        const response = await fetch(url);
         const res = await response.json();
         
         // Support both envelope and legacy array (though backend is updated)
@@ -4877,6 +5056,7 @@ async function loadSubmissionDetail(id) {
         const response = await fetch(`${API_BASE}/submissions/${id}`);
         if (!response.ok) throw new Error('Submission not found');
         const sub = await response.json();
+        currentSubmissionDetails = sub;
         
         // Status styling
         const statusStyles = {
@@ -4890,10 +5070,11 @@ async function loadSubmissionDetail(id) {
         // Update header
         if (nameEl) {
             nameEl.innerHTML = `
-                <span class="text-slate-400 font-mono mr-2">#${sub.id}</span>
-                ${escapeHtml(sub.name || 'Unnamed Submission')}
+                <span class="text-slate-300 font-display font-light mr-3 text-3xl">#${sub.id}</span>
+                <span class="text-3xl font-display font-bold text-slate-900 tracking-tight">${escapeHtml(sub.name || 'Unnamed Submission')}</span>
             `;
         }
+
         
         const editBtn = document.getElementById('btn-edit-submission');
         if (editBtn) {
@@ -4907,8 +5088,41 @@ async function loadSubmissionDetail(id) {
         if (statusBar) {
             statusBar.className = `absolute top-0 left-0 w-full h-1.5 ${style.gradient}`;
         }
-        if (fingerprintEl) fingerprintEl.textContent = sub.target_fingerprint || '-';
+        if (fingerprintEl) {
+            // Apply refined Apple-style pill processing
+            const fp = sub.target_fingerprint || '-';
+            // User requested full display, so removed truncation
+            
+            fingerprintEl.textContent = fp;
+            fingerprintEl.title = "Click to copy"; // Tooltip
+            
+            // Add click-to-copy implicit behavior
+            fingerprintEl.parentElement.onclick = copyFingerprint;
+            fingerprintEl.parentElement.className = "group flex items-center gap-2 px-3 py-1.5 bg-slate-100/50 hover:bg-slate-100 text-slate-500 rounded-full transition-all cursor-pointer border border-transparent hover:border-slate-200 select-none max-w-full";
+            fingerprintEl.className = "font-mono text-xs truncate"; // Ensure it respects container but tries to show all
+            // Actually, remove truncate if we want full wrap, or keep truncate if we want it to fit?
+            // "please make sure display the full fingerprint info" implies NO truncation.
+            fingerprintEl.className = "font-mono text-xs break-all"; 
+        }
         if (dateEl) dateEl.textContent = formatFriendlyDate(sub.created_at || sub.updated_at);
+        
+        // Update Lock State
+        // Update Lock State
+        const lockBtn = document.getElementById('btn-lock-toggle');
+        const lockLabel = document.getElementById('lock-label');
+        const lockHelper = document.getElementById('lock-helper-text');
+        
+        if (lockBtn && lockLabel) {
+            const isLocked = !!sub.is_locked;
+            lockBtn.setAttribute('aria-checked', isLocked);
+            lockLabel.textContent = isLocked ? 'Locked' : 'Active';
+            lockLabel.className = `text-xs font-semibold uppercase tracking-wider transition-colors duration-300 ${isLocked ? 'text-emerald-600' : 'text-slate-500'}`;
+            
+            if (lockHelper) {
+                lockHelper.textContent = isLocked ? 'Session Frozen' : 'Accepting Reruns';
+                lockHelper.className = `text-[9px] font-medium transition-colors duration-300 ${isLocked ? 'text-emerald-500' : 'text-slate-400'}`;
+            }
+        }
         
         // Update status control
         if (statusControl) {
@@ -4933,6 +5147,12 @@ async function loadSubmissionDetail(id) {
         
         // Load Consolidated Report
         loadConsolidatedReport(id);
+        
+        // Load AI Analysis
+        loadSubmissionAnalysis(id);
+        
+        // Ensure UI state matches default tab
+        switchSubmissionTab('consolidated');
         
     } catch (e) {
         console.error("Failed to load submission detail", e);
@@ -4973,9 +5193,12 @@ function renderSubmissionWarnings(warnings) {
         const animationStyle = `style="animation: slideDown 0.3s ease-out ${index * 0.1}s forwards; opacity: 0; transform: translateY(-10px);"`;
         
         return `
-            <div class="flex items-center gap-3 px-4 py-3 rounded-xl border ${bgClass}" ${animationStyle}>
-                ${icon}
-                <span class="text-sm font-medium ${textColor}">${escapeHtml(w.message)}</span>
+            <div class="flex items-start gap-3 px-4 py-3 rounded-2xl border-l-4 ${bgClass.replace('border', 'shadow-sm bg-opacity-60 backdrop-blur-md')}" ${animationStyle}>
+                <div class="mt-0.5">${icon}</div>
+                <div class="flex-1">
+                     <h4 class="text-sm font-bold ${textColor} mb-0.5">${isError ? 'Action Required' : 'Notice'}</h4>
+                     <p class="text-xs font-medium ${textColor} opacity-90 leading-relaxed">${escapeHtml(w.message)}</p>
+                </div>
             </div>
         `;
     }).join('');
@@ -5036,6 +5259,225 @@ function identifyRunSuite(run, targetFingerprint) {
     return run.test_suite_name; // Fallback
 }
 
+// --- Submission AI Analysis Logic ---
+
+function switchSubmissionTab(tabName) {
+    // Buttons
+    ['consolidated', 'runs', 'analysis'].forEach(t => {
+        const btn = document.getElementById(`sub-tab-btn-${t}`);
+        if (btn) {
+            if (t === tabName) btn.classList.add('active');
+            else btn.classList.remove('active');
+        }
+    });
+    
+    // Content
+    ['sub-tab-consolidated', 'sub-tab-runs', 'sub-tab-analysis'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            if (id === `sub-tab-${tabName}`) el.classList.remove('hidden');
+            else el.classList.add('hidden');
+        }
+    });
+}
+
+async function loadSubmissionAnalysis(subId) {
+    // Check if we have data locally first (passed from loadSubmissionDetail?)
+    // Or fetch explicitly
+    try {
+        const response = await fetch(`${API_BASE}/reports/submissions/${subId}/analysis`);
+        if (response.ok) {
+            const analysis = await response.json();
+            if (analysis) {
+                renderSubmissionAnalysis(analysis);
+            } else {
+                renderSubmissionAnalysis(null); // Show empty state
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load analysis", e);
+    }
+}
+
+async function triggerSubmissionAnalysis(subId) {
+    const btn = document.querySelector('button[onclick^="triggerSubmissionAnalysis"]');
+    const originalText = btn ? btn.innerHTML : 'Analyze';
+    
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `
+            <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            Analyzing...
+        `;
+    }
+    
+    try {
+        showNotification('AI Analysis started... this may take a moment', 'info');
+        const response = await fetch(`${API_BASE}/reports/submissions/${subId}/analyze`, {
+            method: 'POST'
+        });
+        
+        if (!response.ok) throw new Error('Analysis failed');
+        
+        const analysis = await response.json();
+        renderSubmissionAnalysis(analysis);
+        showNotification('Analysis Complete!', 'success');
+        
+    } catch (e) {
+        console.error(e);
+        showNotification('Analysis failed. Please try again.', 'error');
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+}
+
+function renderSubmissionAnalysis(data) {
+    const emptyState = document.getElementById('submission-analysis-empty');
+    const contentState = document.getElementById('submission-analysis-content');
+    
+    if (!data) {
+        if (emptyState) emptyState.classList.remove('hidden');
+        if (contentState) contentState.classList.add('hidden');
+        return;
+    }
+    
+    if (emptyState) emptyState.classList.add('hidden');
+    if (contentState) contentState.classList.remove('hidden');
+    
+    // 1. Severity Score
+    const score = data.severity_score || 0;
+    const scoreEl = document.getElementById('sub-kpi-severity');
+    const scoreBar = document.getElementById('sub-kpi-severity-bar');
+    const scoreLabel = document.getElementById('sub-kpi-severity-label');
+    
+    if (scoreEl) scoreEl.textContent = score;
+    if (scoreBar) {
+        scoreBar.style.width = `${score}%`;
+        // Color coding
+        scoreBar.className = `h-full rounded-full transition-all duration-1000 ${
+            score < 20 ? 'bg-emerald-500' : 
+            score < 50 ? 'bg-yellow-500' : 
+            score < 80 ? 'bg-orange-500' : 'bg-red-600'
+        }`;
+    }
+    if (scoreLabel) {
+        let labelText = 'Unknown';
+        if (score < 20) labelText = 'Excellent Stability';
+        else if (score < 50) labelText = 'Monitor closely';
+        else if (score < 80) labelText = 'Significant Issues';
+        else labelText = 'Critical State';
+        scoreLabel.textContent = labelText;
+    }
+    
+    // 2. Executive Summary
+    const summaryEl = document.getElementById('sub-ai-summary');
+    if (summaryEl) summaryEl.textContent = data.executive_summary || 'No summary available.';
+    
+    // 3. Top Risks
+    const risksEl = document.getElementById('sub-ai-risks');
+    if (risksEl) {
+        const risks = data.top_risks || [];
+        if (risks.length === 0) {
+            risksEl.innerHTML = '<li class="text-sm text-slate-400 italic">No significant risks identified.</li>';
+        } else {
+            risksEl.innerHTML = risks.map(risk => `
+                <li class="flex items-start gap-2 text-sm text-slate-700">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0"></span>
+                    <span>${risk}</span>
+                </li>
+            `).join('');
+        }
+    }
+    
+    // 4. Recommendations
+    const recsEl = document.getElementById('sub-ai-recommendations');
+    if (recsEl) {
+        const recs = data.recommendations || [];
+        if (recs.length === 0) {
+            recsEl.innerHTML = '<li class="text-sm text-slate-400 italic">No specific recommendations.</li>';
+        } else {
+            recsEl.innerHTML = recs.map(rec => `
+                <li class="flex items-start gap-2 text-sm text-slate-700">
+                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0"></span>
+                    <span>${rec}</span>
+                </li>
+            `).join('');
+        }
+    }
+    
+    // 5. Detailed Clusters (The New Requested Feature)
+    // We need to inject this into the DOM. Since we didn't have a container in HTML, 
+    // we'll append it dynamically to the analysis content div if it doesn't match existing structure,
+    // or we assume there is a place for it.
+    // Check if we have a container, if not, create one.
+    
+    let clustersContainer = document.getElementById('sub-ai-clusters-container');
+    if (!clustersContainer) {
+        // Find the parent grid and append after it
+        const parentGrid = document.getElementById('sub-ai-recommendations').closest('.grid');
+        if (parentGrid) {
+            clustersContainer = document.createElement('div');
+            clustersContainer.id = 'sub-ai-clusters-container';
+            clustersContainer.className = 'mt-8';
+            parentGrid.parentNode.insertBefore(clustersContainer, parentGrid.nextSibling);
+        }
+    }
+    
+    if (clustersContainer) {
+        const clusters = data.analyzed_clusters || [];
+        if (clusters.length > 0) {
+            clustersContainer.innerHTML = `
+                <div class="flex items-center gap-2 mb-4">
+                    <span class="p-1.5 rounded-lg bg-indigo-50 text-indigo-500">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
+                    </span>
+                    <h3 class="font-bold text-slate-900">Failure Patterns (Clusters)</h3>
+                </div>
+                <div class="grid grid-cols-1 gap-4">
+                    ${clusters.map((c, idx) => `
+                        <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 hover:shadow-md transition-all">
+                            <div class="flex justify-between items-start mb-3">
+                                <div>
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500 uppercase tracking-wider">Pattern #${idx+1}</span>
+                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-600 border border-red-100">${c.count} Occurrences</span>
+                                    </div>
+                                    <h4 class="font-bold text-slate-800 text-sm">${c.pattern_name || 'Unknown Pattern'}</h4>
+                                </div>
+                                ${c.redmine_component ? `
+                                    <a href="#" class="text-[10px] font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded hover:bg-blue-100 flex items-center gap-1">
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
+                                        ${c.redmine_component}
+                                    </a>
+                                ` : ''}
+                            </div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 pt-3 border-t border-slate-50">
+                                <div>
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Root Cause Hypothesis</div>
+                                    <p class="text-xs text-slate-700 leading-relaxed">${c.root_cause || 'Pending analysis...'}</p>
+                                </div>
+                                <div>
+                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Suggested Solution</div>
+                                    <p class="text-xs text-emerald-700 bg-emerald-50/50 p-2 rounded-lg leading-relaxed">${c.solution || 'Investigation required.'}</p>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        } else {
+            clustersContainer.innerHTML = '';
+        }
+    }
+}
+
 function renderComplianceMatrix(container, runs, targetFingerprint) {
     if (!container) return;
     
@@ -5077,73 +5519,132 @@ function renderComplianceMatrix(container, runs, targetFingerprint) {
         } else {
             // Data Available
             const latestRun = data.runs[0];
-            const totalTests = (latestRun.passed_tests || 0) + (latestRun.failed_tests || 0);
-            
-            let passRate = '0.0';
-            if (totalTests > 0) {
-                const rate = (latestRun.passed_tests / totalTests) * 100;
-                // Default to 1 decimal for matrix card
-                let formatted = rate.toFixed(1);
-                // Handle edge case: failures exist but rounds to 100.0
-                if (latestRun.failed_tests > 0 && formatted === "100.0") {
-                    formatted = "99.9"; // Cap at 99.9 to indicate imperfection, or use high precision
-                    // Better UX: Show more precision
-                    formatted = rate.toFixed(3);
-                }
-                passRate = formatted;
-            }
             const hasFails = (latestRun.failed_tests || 0) > 0;
+            const failures = latestRun.failed_tests || 0;
+            const passed = latestRun.passed_tests || 0;
             
-            const textColor = hasFails ? 'text-red-600' : 'text-emerald-600';
-            const bgColor = hasFails ? 'bg-red-50' : 'bg-emerald-50';
-            const borderColor = hasFails ? 'border-red-100' : 'border-emerald-100';
-            const progressColor = hasFails ? 'bg-red-500' : 'bg-emerald-500';
+            // Logic for Recovered Status (Attempt to infer if available in run object, otherwise basic)
+            // Note: 'run' object here is raw test_run, doesn't always have 'recovered' count unless we enhanced the API.
+            // But we can check if it's a pass/fail.
             
-            cardClass = `${bgColor} ${borderColor}`;
+            let bgClass, textClass, contentHtml, borderClass;
             
-            contentHtml = `
-                <div class="flex justify-between items-start mb-2 relative z-10">
-                    <span class="text-xs font-bold ${textColor} uppercase tracking-wider opacity-80">${displayName}</span>
-                    ${hasFails 
-                        ? `<div class="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></div>` 
-                        : `<svg class="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"/></svg>`
-                    }
-                </div>
+            if (!hasFails) {
+                // PASS CASE
+                // Check if any prior runs failed? (Hard to know without full history here, assume Clean Pass for now for single run view)
+                // However, if we want to show "Recovered", we'd need that data. 
+                // For now, let's stick to simple "Pass" style but matching the new aesthetics.
                 
-                <div class="relative z-10">
-                    <div class="flex items-baseline gap-1 mb-2">
-                        <span class="text-2xl font-display font-bold ${textColor}">${passRate}<span class="text-sm font-semibold opacity-60">%</span></span>
+                bgClass = 'bg-emerald-50/80';
+                textClass = 'text-emerald-700';
+                
+                contentHtml = `
+                    <div class="flex justify-between items-start mb-1 relative z-10">
+                        <span class="text-[10px] font-bold ${textClass} uppercase tracking-widest opacity-70">${displayName}</span>
+                        <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
                     </div>
                     
-                    <div class="flex justify-between items-end">
-                        <div class="text-[10px] text-slate-500 font-medium">
-                            ${hasFails ? `${latestRun.failed_tests} Failed` : 'All Passed'}
+                    <div class="relative z-10 flex-1 flex flex-col justify-end">
+                        <div class="flex items-baseline gap-0.5 mb-2">
+                             <span class="text-[32px] font-display font-bold tracking-tight text-slate-800 tabular-nums">0</span>
+                             <span class="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Fail</span>
                         </div>
-                        <div class="text-[9px] text-slate-400">
-                             ${(latestRun.passed_tests || 0).toLocaleString()} / ${totalTests.toLocaleString()}
+                        <div class="text-[10px] font-medium text-emerald-600 bg-emerald-100/50 px-2 py-1 rounded-full w-fit">
+                            All Passed
                         </div>
+                    </div>
+                `;
+            } else {
+                // FAIL CASE
+                bgClass = 'bg-red-50/80';
+                textClass = 'text-red-700';
+                
+                contentHtml = `
+                     <div class="flex justify-between items-start mb-1 relative z-10">
+                        <span class="text-[10px] font-bold ${textClass} uppercase tracking-widest opacity-70">${displayName}</span>
+                        <div class="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)] animate-pulse"></div>
                     </div>
                     
-                    <!-- Progress Bar -->
-                    <div class="w-full bg-black/5 rounded-full h-1 mt-2 overflow-hidden">
-                        <div class="${progressColor} h-full transition-all duration-700 ease-out" style="width: ${passRate}%"></div>
+                    <div class="relative z-10 flex-1 flex flex-col justify-end">
+                        <div class="flex items-baseline gap-0.5 mb-2">
+                             <span class="text-[32px] font-display font-bold tracking-tight text-red-700 tabular-nums">${failures}</span>
+                             <span class="text-xs font-bold text-red-400 uppercase tracking-wider ml-1">Failures</span>
+                        </div>
+                        <div class="w-full bg-slate-200/50 rounded-full h-1.5 overflow-hidden">
+                             <div class="bg-red-500 h-full rounded-full shadow-sm" style="width: ${Math.min((failures / (failures+passed))*100 * 5, 100)}%"></div> 
+                        </div>
                     </div>
+                `;
+            }
+
+            cardClass = `${bgClass}`; 
+            
+            return `
+                <div class="relative group p-5 rounded-[20px] ${cardClass} transition-all duration-500 hover:shadow-apple-hover hover:-translate-y-0.5 flex flex-col h-40 overflow-hidden backdrop-blur-xl">
+                    ${contentHtml}
                 </div>
             `;
         }
-        
-        return `
-            <div class="relative group p-4 rounded-2xl border ${cardClass} transition-all duration-300 hover:shadow-lg hover:scale-[1.02] flex flex-col h-32 overflow-hidden">
-                ${contentHtml}
-            </div>
-        `;
     });
     
     container.innerHTML = suiteCards.join('');
 }
 
+// selectedRunIds is declared globally
+
+function toggleRunSelection(runId) {
+    if (selectedRunIds.has(runId)) {
+        selectedRunIds.delete(runId);
+    } else {
+        selectedRunIds.add(runId);
+    }
+    // Re-render to update UI state
+    // Ideally we just update the specific row or checkbox, but re-render is safer for now
+    const dummyContainer = document.createElement('div'); // dummy
+    // We need to re-call renderSubmissionRuns with the actual container
+    // This is tricky because we don't have the refs easily. 
+    // Better strategy: Just toggle the visual state directly
+    const checkbox = document.querySelector(`.run-checkbox[value="${runId}"]`);
+    if (checkbox) checkbox.checked = selectedRunIds.has(runId);
+    
+    // Update container style
+    const row = checkbox.closest('.run-row');
+    if (row) {
+        if (selectedRunIds.has(runId)) row.classList.add('bg-indigo-50/50');
+        else row.classList.remove('bg-indigo-50/50');
+    }
+    
+    updateFloatingActionState();
+}
+
+function updateFloatingActionState() {
+    let fab = document.getElementById('fab-move-runs');
+    if (!fab) {
+        // Create it
+        fab = document.createElement('div');
+        fab.id = 'fab-move-runs';
+        fab.className = 'fixed bottom-8 right-8 z-50 transition-all duration-300 transform translate-y-20 opacity-0';
+        fab.innerHTML = `
+            <button onclick="executeMoveRuns()" class="btn-primary bg-indigo-600 text-white px-6 py-3 rounded-full shadow-apple-elevated font-bold flex items-center gap-3 hover:bg-indigo-700">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
+                Move Selected Runs
+            </button>
+        `;
+        document.body.appendChild(fab);
+    }
+    
+    if (selectedRunIds.size > 0 && isMoveRunsMode) {
+        fab.classList.remove('translate-y-20', 'opacity-0');
+    } else {
+        fab.classList.add('translate-y-20', 'opacity-0');
+    }
+}
+
 function renderSubmissionRuns(container, emptyEl, runs, targetFingerprint) {
     if (!container) return;
+    
+    // Clear selection when re-rendering not triggered by selection logic (rough heuristic)
+    // Actually we should preserve it if just switching views, but for simplicity let's keep it.
     
     if (runs.length === 0) {
         container.innerHTML = '';
@@ -5153,65 +5654,98 @@ function renderSubmissionRuns(container, emptyEl, runs, targetFingerprint) {
     
     if (emptyEl) emptyEl.classList.add('hidden');
     
-    container.innerHTML = runs.map(run => {
-        const totalTests = (run.passed_tests || 0) + (run.failed_tests || 0);
-        const passRate = totalTests > 0 ? ((run.passed_tests / totalTests) * 100).toFixed(1) : 0;
-        const date = run.start_time ? new Date(run.start_time).toLocaleDateString() : '-';
-        const statusColor = run.failed_tests > 0 ? 'text-red-600' : 'text-emerald-600';
-        
+    // Group runs by suite
+    const runsBySuite = {};
+    runs.forEach(run => {
         const suiteName = identifyRunSuite(run, targetFingerprint);
-        const config = SUITE_CONFIGS[suiteName];
-        const displayName = config ? (config.display_name || suiteName) : (run.test_suite_name || 'Unknown');
-        
-        // Badge color logic
-        let badgeColor = 'bg-slate-100 text-slate-700';
-        if (suiteName.includes('CTS')) badgeColor = 'bg-blue-100 text-blue-700';
-        if (suiteName.includes('CTSonGSI')) badgeColor = 'bg-purple-100 text-purple-700'; 
-        if (suiteName.includes('GTS')) badgeColor = 'bg-emerald-100 text-emerald-700';
-        if (suiteName.includes('VTS')) badgeColor = 'bg-purple-100 text-purple-700';
-        if (suiteName.includes('STS')) badgeColor = 'bg-orange-100 text-orange-700';
-        
-        const isSelected = selectedRunIds.has(run.id);
-        const checkboxHtml = isRunSelectionMode ? `
-            <div class="mr-4">
-                <input type="checkbox" class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-5 h-5 cursor-pointer" 
-                    ${isSelected ? 'checked' : ''} readonly> 
-            </div>
-        ` : '';
+        if (!runsBySuite[suiteName]) runsBySuite[suiteName] = [];
+        runsBySuite[suiteName].push(run);
+    });
 
-        const clickAction = isRunSelectionMode 
-            ? `onclick="toggleRunSelection(${run.id})"`
-            : `onclick="router.navigate('run-details', { id: ${run.id} })"`; // Normal nav behavior
+    // Custom order for suites if desired, or just alphabetical/defined order
+    const sortedSuites = Object.keys(runsBySuite).sort();
+
+    container.innerHTML = sortedSuites.map(suiteName => {
+        const suiteRuns = runsBySuite[suiteName];
+        
+        // Suite Header
+        const config = SUITE_CONFIGS[suiteName];
+        const displayName = config ? (config.display_name || suiteName) : suiteName;
+        
+        const runsHtml = suiteRuns.map(run => {
+            const totalTests = (run.passed_tests || 0) + (run.failed_tests || 0);
+            const passRate = totalTests > 0 ? ((run.passed_tests / totalTests) * 100).toFixed(1) : '0.0';
+            const date = run.start_time ? new Date(run.start_time).toLocaleDateString() : '-';
+            const statusColor = run.failed_tests > 0 ? 'text-red-600' : 'text-emerald-600';
             
-        return `
-            <div class="px-6 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer ${isSelected ? 'bg-indigo-50/50' : ''}"
-                 ${clickAction}>
-                <div class="flex items-center">
-                    ${checkboxHtml}
-                    <div class="flex items-center gap-4">
-                        <span class="px-2.5 py-1 rounded-lg text-xs font-bold ${badgeColor}">
-                            ${displayName}
-                        </span>
-                        <div>
-                            <div class="text-sm font-medium text-slate-700">Run #${run.id}</div>
-                            <div class="text-xs text-slate-400">${date}</div>
+            let badgeColor = 'bg-slate-100 text-slate-700';
+            if (suiteName.includes('CTS')) badgeColor = 'bg-blue-100 text-blue-700';
+            if (suiteName.includes('CTSonGSI')) badgeColor = 'bg-purple-100 text-purple-700'; 
+            if (suiteName.includes('GTS')) badgeColor = 'bg-emerald-100 text-emerald-700';
+            if (suiteName.includes('VTS')) badgeColor = 'bg-purple-100 text-purple-700';
+            if (suiteName.includes('STS')) badgeColor = 'bg-orange-100 text-orange-700';
+            
+            const isSelected = selectedRunIds.has(run.id);
+
+            // Checkbox HTML
+            const checkboxHtml = isMoveRunsMode ? `
+                <div class="mr-4 flex-shrink-0" onclick="event.stopPropagation()">
+                    <input type="checkbox" class="run-checkbox rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-5 h-5 cursor-pointer" 
+                        value="${run.id}" ${isSelected ? 'checked' : ''} onchange="toggleRunSelection(${run.id})"> 
+                </div>
+            ` : '';
+
+            // Row Click Action
+            const rowClick = isMoveRunsMode 
+                ? `onclick="toggleRunSelection(${run.id})"`
+                : `onclick="router.navigate('run-details', { id: ${run.id} })"`;
+                
+            return `
+                <div class="run-row px-6 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors cursor-pointer border-b border-slate-50 last:border-0 ${isSelected ? 'bg-indigo-50/50' : ''}"
+                     ${rowClick}>
+                    <div class="flex items-center">
+                        ${checkboxHtml}
+                        <div class="flex items-center gap-4">
+                            <!-- Run ID Badge -->
+                            <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold text-slate-500">
+                                #${run.id}
+                            </div>
+                            <div>
+                                <div class="text-sm font-medium text-slate-700">${run.test_suite_name || 'Unknown Log'}</div>
+                                <div class="text-xs text-slate-400">${date}</div>
+                            </div>
                         </div>
                     </div>
-                </div>
-                <div class="flex items-center gap-6">
-                    <div class="text-right">
-                        <div class="text-sm font-bold ${statusColor}">${passRate}%</div>
-                        <div class="text-[10px] text-slate-400">${run.failed_tests || 0} failures</div>
+                    <div class="flex items-center gap-6">
+                        <div class="text-right">
+                            <div class="text-sm font-bold ${statusColor}">${passRate}%</div>
+                            <div class="text-[10px] text-slate-400">${run.failed_tests || 0} failures</div>
+                        </div>
+                        ${!isMoveRunsMode ? `
+                        <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                        ` : ''}
                     </div>
-                    ${!isRunSelectionMode ? `
-                    <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                    </svg>
-                    ` : ''}
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="mb-4 last:mb-0">
+                <div class="px-6 py-2 bg-slate-50 border-y border-slate-100 flex justify-between items-center">
+                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">${displayName}</span>
+                    <span class="text-[10px] text-slate-400 bg-white px-2 py-0.5 rounded-full border border-slate-200 shadow-sm">${suiteRuns.length} Runs</span>
+                </div>
+                <div class="bg-white">
+                    ${runsHtml}
                 </div>
             </div>
         `;
     }).join('');
+    
+    // Ensure FAB state is correct
+    updateFloatingActionState();
 }
 
 async function updateSubmissionStatus(newStatus) {
@@ -5523,20 +6057,7 @@ function toggleRunSelectionMode() {
     loadSubmissionDetail(currentSubmissionId); // This might be overkill, but ensures data refresh
 }
 
-function toggleRunSelection(runId) {
-    if (selectedRunIds.has(runId)) {
-        selectedRunIds.delete(runId);
-    } else {
-        selectedRunIds.add(runId);
-    }
-    
-    // Efficiently re-render logic to avoid full fetch would be better, but re-calling loadSubmissionDetail is safer for now.
-    // Actually, let's just re-render the list part if we have the data?
-    // We don't have the data globally accessible easily without refetch.
-    // So let's just trigger a re-render call. To do this efficiently, we might want to store currentSub in a variable.
-    // For now, loadSubmissionDetail(currentSubmissionId) is valid.
-    loadSubmissionDetail(currentSubmissionId);
-}
+// Duplicate toggleRunSelection removed. Using the optimized definition above.
 
 async function openMoveRunsModal() {
     if (selectedRunIds.size === 0) {
@@ -5626,23 +6147,14 @@ async function submitMoveRuns() {
 let currentConsolidatedData = null;
 let currentConsolidatedFilter = 'persistent'; // default
 
-function switchSubmissionTab(tab) {
-    // Hide all
-    ['consolidated', 'runs'].forEach(t => {
-        const pan = document.getElementById(`sub-tab-${t}`);
-        const btn = document.getElementById(`sub-tab-btn-${t}`);
-        if(pan) pan.classList.add('hidden');
-        if(btn) btn.classList.remove('active');
-    });
-    
-    // Show active
-    document.getElementById(`sub-tab-${tab}`).classList.remove('hidden');
-    document.getElementById(`sub-tab-btn-${tab}`).classList.add('active');
-}
+// Duplicate switchSubmissionTab removed. Using the central definition above.
+
+
+let currentConsolidatedView = 'list'; // 'list' or 'triage'
 
 async function loadConsolidatedReport(submissionId) {
     const tableBody = document.getElementById('consolidated-tbody');
-    const emptyState = document.getElementById('consolidated-empty');
+    const container = document.getElementById('consolidated-table-container'); // Need to find parent
     if (!tableBody) return;
     
     // Set Header
@@ -5656,12 +6168,25 @@ async function loadConsolidatedReport(submissionId) {
         if (!response.ok) throw new Error('Failed to load report');
         
         currentConsolidatedData = await response.json();
+        
+        // Populate global clusters data for re-use of renderClusterView
+        if (currentConsolidatedData.clusters) {
+            allClustersData = currentConsolidatedData.clusters;
+        } else {
+            allClustersData = [];
+        }
+        
         renderConsolidatedTable();
         
     } catch (e) {
         console.error(e);
         tableBody.innerHTML = '<tr><td colspan="100" class="text-center py-8 text-red-500">Failed to load consolidated report</td></tr>';
     }
+}
+
+function toggleConsolidatedView(mode) {
+    currentConsolidatedView = mode;
+    renderConsolidatedTable();
 }
 
 function filterConsolidated(mode) {
@@ -5689,6 +6214,50 @@ function renderConsolidatedTable() {
     const tableBody = document.getElementById('consolidated-tbody');
     const emptyState = document.getElementById('consolidated-empty');
     
+    // Inject Toggle UI if not exists
+    const filterContainer = document.getElementById('consolidated-filters'); // Assuming ID based on observation, checking surrounding code might be needed
+    // Actually, I'll inject it via JS to be safe if I can't find the container easily in code
+    // Let's assume the filters exist in HTML. Using a safer way to update the filter buttons row.
+    const filterRow = document.querySelector('#sub-detail-view .flex.gap-2.mb-4'); 
+    
+    if (filterRow && !document.getElementById('view-toggle-triage')) {
+        // Create Triage Toggle
+        const toggleHtml = `
+            <div class="h-6 w-px bg-slate-200 mx-2"></div>
+            <div class="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/60">
+                <button onclick="toggleConsolidatedView('list')" id="view-toggle-list" class="px-3 py-1 text-xs font-bold rounded-md transition-all duration-200 bg-white shadow-sm text-slate-700">List</button>
+                <button onclick="toggleConsolidatedView('triage')" id="view-toggle-triage" class="px-3 py-1 text-xs font-medium rounded-md transition-all duration-200 text-slate-500 hover:text-slate-700">Triage (AI)</button>
+            </div>
+        `;
+        // Only append if data.clusters exists
+        if (data && data.clusters && data.clusters.length > 0) {
+           // Insert after the existing filters
+           // Use a specific selector or append
+           // Since I don't have the exact HTML, I will verify if I can just append to the filter container
+           // Assuming the filter container is where filter buttons are.
+           const lastBtn = document.getElementById('filter-btn-recovered');
+           if(lastBtn && lastBtn.parentNode) {
+               const wrapper = document.createElement('div');
+               wrapper.className = "flex items-center";
+               wrapper.innerHTML = toggleHtml;
+               lastBtn.parentNode.appendChild(wrapper);
+           }
+        }
+    }
+    
+    // Update Toggle State
+    const btnList = document.getElementById('view-toggle-list');
+    const btnTriage = document.getElementById('view-toggle-triage');
+    if (btnList && btnTriage) {
+        if (currentConsolidatedView === 'triage') {
+            btnTriage.className = "px-3 py-1 text-xs font-bold rounded-md transition-all duration-200 bg-white shadow-sm text-blue-700";
+            btnList.className = "px-3 py-1 text-xs font-medium rounded-md transition-all duration-200 text-slate-500 hover:text-slate-700";
+        } else {
+            btnList.className = "px-3 py-1 text-xs font-bold rounded-md transition-all duration-200 bg-white shadow-sm text-slate-700";
+            btnTriage.className = "px-3 py-1 text-xs font-medium rounded-md transition-all duration-200 text-slate-500 hover:text-slate-700";
+        }
+    }
+
     if (!data || !data.suites || data.suites.length === 0) {
         tableBody.innerHTML = '';
         if(emptyState) {
@@ -5699,6 +6268,16 @@ function renderConsolidatedTable() {
     }
     if(emptyState) emptyState.classList.add('hidden');
     
+    // RENDER TRIAGE VIEW
+    if (currentConsolidatedView === 'triage') {
+        tableBody.innerHTML = '';
+        // Reuse renderClusterView logic
+        // We pass 'false' for filterNoRedmine
+        renderClusterView(tableBody, false);
+        return;
+    }
+
+    // RENDER LIST VIEW (Original)
     let html = '';
     let hasVisibleRows = false;
     
@@ -5734,8 +6313,12 @@ function renderConsolidatedTable() {
             const isRecovered = item.is_recovered;
             
             // Build Run Columns Visualization (Mini sparkline or dots)
+            // Build Run Columns Visualization (Mini sparkline or dots)
             const runsViz = item.status_history.map((status, idx) => {
-                const color = status === 'pass' ? 'bg-emerald-400' : 'bg-red-400';
+                let color = 'bg-red-400';
+                if (status === 'pass') color = 'bg-emerald-400';
+                else if (status === 'not_executed') color = 'bg-slate-300';
+                
                 return `<span class="w-2.5 h-2.5 rounded-full ${color} inline-block" title="Run ${idx+1}: ${status.toUpperCase()}"></span>`;
             }).join('<span class="w-4 h-px bg-slate-200 mx-1"></span>'); // connector
             
@@ -5780,3 +6363,8 @@ function renderConsolidatedTable() {
         tableBody.innerHTML = html;
     }
 }
+
+// Initialize Product Filter
+document.addEventListener('DOMContentLoaded', () => {
+    loadProducts();
+});

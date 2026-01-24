@@ -348,6 +348,16 @@ async function parseXMLFile(file) {
 
     parser.end();
 
+    // Convert module Set to Array for backend
+    const modulesList = Array.from(stats.module_abi_pairs).map(pair => {
+        const parts = pair.split(':');
+        // Handle case where abi might be empty or missing
+        // pair format is "name:abi"
+        const name = parts[0];
+        const abi = parts.slice(1).join(':') || null; 
+        return { module_name: name, module_abi: abi };
+    });
+
     // Build final result
     const result = {
         metadata: metadata,
@@ -362,7 +372,8 @@ async function parseXMLFile(file) {
             xml_modules_done: stats.xml_modules_done,
             xml_modules_total: stats.xml_modules_total
         },
-        failures: failures
+        failures: failures,
+        modules: modulesList // Add executed modules list
     };
 
     return result;

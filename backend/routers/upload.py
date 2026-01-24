@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import insert, desc
-from backend.database.database import get_db
+from backend.database.database import get_db, SessionLocal
 from backend.database import models
 from backend.parser.xml_parser import XMLParser
 import shutil
@@ -14,7 +14,8 @@ router = APIRouter()
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-def process_upload_background(file_path: str, test_run_id: int, db: Session):
+def process_upload_background(file_path: str, test_run_id: int):
+    db = SessionLocal()
     try:
         # Update status to processing
         test_run = db.query(models.TestRun).filter(models.TestRun.id == test_run_id).first()
@@ -68,7 +69,15 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
             fingerprint = test_run.device_fingerprint
             if fingerprint and fingerprint != "Pending...":
                 # 1. Try Exact Fingerprint Match
-                submission = db.query(models.Submission).filter(models.Submission.target_fingerprint == fingerprint).first()
+                # Find latest submission for this fingerprint
+                submission = db.query(models.Submission).filter(
+                    models.Submission.target_fingerprint == fingerprint
+                ).order_by(desc(models.Submission.updated_at)).first()
+                
+                # Check Lock Status
+                if submission and submission.is_locked:
+                    print(f"Submission {submission.id} is LOCKED. Creating new submission for fingerprint {fingerprint}")
+                    submission = None #  Force new creation
                 
                 # 2. Relaxed Grouping for GSI (Same Model + SDK)
                 if not submission:
@@ -88,7 +97,15 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
                 
                 if not submission:
                     # Create new submission
-                    prod = test_run.build_product or "Unknown Device"
+                    prod = test_run.build_product
+                    if not prod or prod == "Unknown":
+                        # Try parsing from fingerprint (Brand/Product/Device...)
+                        parts = fingerprint.split('/')
+                        if len(parts) > 1:
+                            prod = parts[1]
+                        else:
+                            prod = "Unknown Device"
+
                     # Default name format: [Product] - [Date]
                     # We can refine this later or allow renaming
                     sub_name = f"Submission {prod} - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
@@ -97,7 +114,8 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
                         name=sub_name,
                         target_fingerprint=fingerprint,
                         status="analyzing",
-                        gms_version=test_run.android_version # Heuristic
+                        gms_version=test_run.android_version, # Heuristic
+                        product=prod # Populate Product
                     )
                     db.add(submission)
                     db.flush() # Generate ID
@@ -130,6 +148,33 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
             module_abi = test_case_data.get("module_abi", "")
             
             # Use module:abi as unique key to properly count ABI variants
+        batch_modules = []
+        executed_modules_set = set() # To prevent duplicates (though parser yields once per module start/end, iterparse behavior)
+        
+        for item in parser.parse(file_path):
+            # Check for new event types
+            if "type" in item and item["type"] == "module_info":
+                mod_name = item.get("module_name")
+                mod_abi = item.get("module_abi")
+                mod_key = f"{mod_name}:{mod_abi}"
+                
+                if mod_key and mod_key not in executed_modules_set:
+                    executed_modules_set.add(mod_key)
+                    batch_modules.append({
+                        "test_run_id": test_run_id,
+                        "module_name": mod_name,
+                        "module_abi": mod_abi
+                    })
+                continue
+            
+            # Default is test case result
+            test_case_data = item
+            module_name = test_case_data.get("module_name")
+            module_abi = test_case_data.get("module_abi")
+            status = test_case_data.get("status")
+            
+            total += 1
+            
             module_key = f"{module_name}:{module_abi}" if module_name else None
             
             # Update stats
@@ -156,10 +201,46 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
                 db.commit()
                 batch = []
                 
-        # Insert remaining
+        # Insert remaining test cases
         if batch:
             db.execute(models.TestCase.__table__.insert(), batch)
             db.commit()
+            
+        # Fallback: If no explicit module_info (Module headers) were found, infer from test cases
+        if not batch_modules and all_modules:
+            try:
+                with open("upload_debug.log", "a") as f:
+                    f.write(f"Warning: No explicit module_info found. Inferring {len(all_modules)} modules from test cases for Run {test_run_id}.\n")
+            except: pass
+            
+            for mod_key in all_modules:
+                parts = mod_key.split(":")
+                if len(parts) == 2:
+                    name, abi = parts
+                    batch_modules.append({
+                        "test_run_id": test_run_id,
+                        "module_name": name,
+                        "module_abi": abi
+                    })
+
+        # Insert all executed modules
+        if batch_modules:
+            # Batch Insert modules
+            # SQLite handles limits reasonably well, but for huge sets maybe batch?
+            # Modules are ~200-1000, so single batch is usually fine.
+            try:
+                with open("upload_debug.log", "a") as f:
+                    f.write(f"Inserting {len(batch_modules)} modules for Run {test_run_id}\n")
+                    import json
+                    f.write(json.dumps(batch_modules[0]) + "\n")
+
+                db.execute(models.TestRunModule.__table__.insert(), batch_modules)
+                db.commit()
+                with open("upload_debug.log", "a") as f:
+                     f.write("Insert Committed.\n")
+            except Exception as e:
+                with open("upload_debug.log", "a") as f:
+                    f.write(f"Failed to store modules: {e}\n")
         
         # Calculate module statistics from in-memory sets
         total_modules = len(all_modules)
@@ -177,12 +258,18 @@ def process_upload_background(file_path: str, test_run_id: int, db: Session):
         test_run.status = "completed"
         db.commit()
         
+
     except Exception as e:
         print(f"Background processing failed: {e}")
-        test_run = db.query(models.TestRun).filter(models.TestRun.id == test_run_id).first()
-        if test_run:
-            test_run.status = "failed"
-            db.commit()
+        try:
+            test_run = db.query(models.TestRun).filter(models.TestRun.id == test_run_id).first()
+            if test_run:
+                test_run.status = "failed"
+                db.commit()
+        except:
+            pass
+    finally:
+        db.close()
 
 @router.post("/")
 async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
@@ -210,10 +297,11 @@ async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File
     db.refresh(test_run)
     
     # 3. Trigger Background Task
-    background_tasks.add_task(process_upload_background, file_path, test_run.id, db)
+    background_tasks.add_task(process_upload_background, file_path, test_run.id)
 
     return {
         "message": "File uploaded. Processing started in background.",
         "test_run_id": test_run.id,
+        "submission_id": test_run.submission_id,
         "status": "pending"
     }

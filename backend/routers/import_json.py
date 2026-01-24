@@ -57,11 +57,24 @@ class FailurePayload(BaseModel):
     error_message: Optional[str] = None
     stack_trace: Optional[str] = None
 
+class FailurePayload(BaseModel):
+    module_name: Optional[str] = None
+    module_abi: Optional[str] = None
+    class_name: Optional[str] = None
+    method_name: Optional[str] = None
+    status: str = "fail"
+    error_message: Optional[str] = None
+    stack_trace: Optional[str] = None
+
+class ModuleInfo(BaseModel):
+    module_name: str
+    module_abi: Optional[str] = None
 
 class ImportPayload(BaseModel):
     metadata: MetadataPayload
     stats: StatsPayload
     failures: List[FailurePayload]
+    modules: List[ModuleInfo] = [] # Optional for backward compatibility
 
 
 @router.post("/")
@@ -152,6 +165,24 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
             db.commit()
         # --------------------------------------
 
+        # Insert Executed Modules (CRITICAL for Partial Retry Logic)
+        if data.modules:
+            try:
+                module_records = [
+                    {
+                        "test_run_id": test_run.id,
+                        "module_name": m.module_name,
+                        "module_abi": m.module_abi
+                    }
+                    for m in data.modules
+                ]
+                db.execute(models.TestRunModule.__table__.insert(), module_records)
+                db.commit()
+            except Exception as e:
+                print(f"Warning: Failed to insert modules: {e}")
+                # Don't fail the whole import, but log it
+
+
         # Bulk insert failures
         if data.failures:
             failure_records = [
@@ -173,7 +204,9 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
         return {
             "message": "Import successful",
             "test_run_id": test_run.id,
+            "submission_id": test_run.submission_id,
             "failures_imported": len(data.failures),
+            "modules_tracked": len(data.modules),
             "status": "completed"
         }
 

@@ -52,6 +52,42 @@ class MergeService:
             # Get all failures for these runs
             run_ids = [r.id for r in suite_runs]
             
+            # Pre-fetch executed modules for each run (for Module-Level Verification)
+            # Map: run_id -> set(module_names)
+            run_modules_map = {}
+            for r in suite_runs:
+                # Eager load/check executed modules
+                # Note: executed_modules relationship must be available (lazy load ok since db session is active)
+                # Force explicit query to bypass relationship caching/lazy loading issues
+                mods = db.query(models.TestRunModule).filter(models.TestRunModule.test_run_id == r.id).all()
+                
+                try:
+                    print(f"MergeService DEBUG: Run {r.id} query...")
+                    with open("merge_debug_v2.log", "a") as f:
+                         f.write(f"Run {r.id}: Found {len(mods)} modules via direct query.\n")
+                         f.write(f"DB Engine: {str(db.get_bind().url)}\n")
+                         
+                         # RAW SQL CHECK
+                         from sqlalchemy import text
+                         result = db.execute(text("SELECT count(*) FROM test_run_modules WHERE test_run_id = :rid"), {"rid": r.id}).scalar()
+                         f.write(f"RAW SQL COUNT for Run {r.id}: {result}\n")
+                         
+                         # Check Run Metadata
+                         run_meta = db.execute(text("SELECT total_modules FROM test_runs WHERE id = :rid"), {"rid": r.id}).scalar()
+                         f.write(f"Run {r.id} total_modules column: {run_meta}\n")
+                except Exception as e:
+                     print(f"MergeService DEBUG ERROR: {e}")
+                     with open("merge_debug_v2.log", "a") as f:
+                         f.write(f"Debug Log Error: {e}\n")
+
+                if mods:
+                    run_modules_map[r.id] = set(m.module_name for m in mods)
+                else:
+                    # STRICT MODE: If no modules found, it means we don't know what ran.
+                    # We should NOT assume they passed. Treat as empty set.
+                    run_modules_map[r.id] = set() 
+                    print(f"DEBUG: Run {r.id} has NO executed modules. Treated as Not Executed.")
+
             case_history = {}
             
             for i, run in enumerate(suite_runs):
@@ -65,10 +101,21 @@ class MergeService:
                     key = (f.module_name, f.class_name, f.method_name)
                     
                     if key not in case_history:
-                        # Initialize history as list of objects or statuses
-                        # For now, simplistic status list: ["pass", "pass", ...]
+                        # Initialize history based on Module Execution Status
+                        init_history = []
+                        for r_check in suite_runs:
+                             # Check if this module was executed in r_check
+                             ctx_modules = run_modules_map.get(r_check.id, set())
+
+                             if f.module_name in ctx_modules:
+                                 # Module executed, default to pass (will be overwritten if failure found)
+                                 init_history.append("pass")
+                             else:
+                                 # Module NOT executed in this run
+                                 init_history.append("not_executed")
+                        
                         case_history[key] = {
-                            "status_history": ["pass"] * len(suite_runs),
+                            "status_history": init_history,
                             "failures": [None] * len(suite_runs), # Store Failure Object for details (msg, stack)
                             "info": f # Keep one reference for metadata
                         }
@@ -87,16 +134,19 @@ class MergeService:
                 history = data["status_history"]
                 
                 is_initial_fail = history[0] == 'fail'
-                final_status = history[-1]
-                is_recovered = final_status == 'pass'
+                # Modified Logic (User Request + Safety): 
+                # If a test passed in ANY run, consider it "Recovered".
+                # BUT "pass" now strictly implies "Module was executed and passed".
+                # "not_executed" is NOT "pass".
+                is_recovered = 'pass' in history
                 
                 if is_initial_fail:
                     suite_initial += 1
                 
                 if is_recovered:
-                     suite_recovered += 1
+                    suite_recovered += 1
                 else:
-                     suite_remaining += 1
+                    suite_remaining += 1
                 
                 # Use the last available failure for details (if persistent)
                 # or the first failure (if recovered)
