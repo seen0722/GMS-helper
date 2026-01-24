@@ -35,6 +35,106 @@ def run_analysis_task(run_id: int):
                 db.commit()
             return
 
+        # --- OPTIMIZATION: Skip Recovered Failures ---
+        # If this is an older run and the failures were fixed in a newer run, skip analyzing them.
+        failures_to_analyze = []
+        recovered_failures = []
+        
+        # 1. Get subsequent runs for this submission & suite
+        submission_id = run.submission_id
+        if submission_id:
+            # Get current suite type/name identity
+            current_suite = run.test_suite_name
+            # Find newer runs for the SAME suite in SAME submission
+            newer_runs = db.query(models.TestRun).filter(
+                models.TestRun.submission_id == submission_id,
+                models.TestRun.test_suite_name == current_suite,
+                models.TestRun.start_time > run.start_time
+            ).order_by(models.TestRun.start_time.desc()).all()
+            
+            if newer_runs:
+                print(f"Found {len(newer_runs)} newer runs for suite {current_suite}. Checking for recovery...")
+                # Get all failures in newer runs to check persistence
+                # We collect a set of (module, class, method) that FAILED in ANY newer run.
+                # If a test case is NOT in this set, it implies it PASSED (Recovered) in the latest relevant run 
+                # (assuming comprehensive retry or at least retry of failures).
+                
+                # To be precise: If it failed in Run A, and we have Run B (newer).
+                # If it's NOT in Run B's failures, it recovered.
+                # If we have Run B and Run C. 
+                # If it failed in A, passed in B, failed in C -> It is currently FAILING (Regression/Persistent).
+                # So we should look at the LATEST run.
+                
+                latest_run = newer_runs[0] # Ordered by desc
+                latest_failures = db.query(models.TestCase).filter(
+                    models.TestCase.test_run_id == latest_run.id,
+                    models.TestCase.status == "fail"
+                ).all()
+                
+                latest_fail_keys = set(
+                    (f.module_name, f.class_name, f.method_name) 
+                    for f in latest_failures
+                )
+                
+                for f in failures:
+                    key = (f.module_name, f.class_name, f.method_name)
+                    if key in latest_fail_keys:
+                        # Still failing in latest run
+                        failures_to_analyze.append(f)
+                    else:
+                        # Recovered!
+                        recovered_failures.append(f)
+                        
+                print(f"Optimization: {len(recovered_failures)} failures recovered, {len(failures_to_analyze)} persistent.")
+            else:
+                failures_to_analyze = list(failures)
+        else:
+            failures_to_analyze = list(failures)
+            
+        # Handle Recovered Failures (Mark them so they don't look unanalyzed)
+        if recovered_failures:
+            # Create/Find a specialized cluster for "Recovered"
+            # We use a special signature
+            rec_sig = "RECOVERED_IN_LATER_RUNS"
+            rec_cluster = db.query(models.FailureCluster).filter(models.FailureCluster.signature == rec_sig).first()
+            if not rec_cluster:
+                rec_cluster = models.FailureCluster(
+                    signature=rec_sig,
+                    description="Failures that passed in subsequent retries",
+                    common_root_cause="Transient issue or Fixed in retry",
+                    common_solution="No action needed - Verified manually or by retry",
+                    severity="Low",
+                    category="Recovered",
+                    ai_summary="These test cases failed intially but passed in a subsequent test run within the same submission. They are considered recovered.",
+                    confidence_score=100
+                )
+                db.add(rec_cluster)
+                db.commit()
+                db.refresh(rec_cluster)
+            
+            # Link failures
+            for f in recovered_failures:
+                # Check if analysis exists
+                exists = db.query(models.FailureAnalysis).filter(models.FailureAnalysis.test_case_id == f.id).first()
+                if not exists:
+                    analysis = models.FailureAnalysis(
+                        test_case_id=f.id,
+                        cluster_id=rec_cluster.id,
+                        root_cause="Recovered",
+                        suggested_solution="Fixed in retry"
+                    )
+                    db.add(analysis)
+            db.commit()
+            
+        # Continue with only persistent failures
+        failures = failures_to_analyze
+        if not failures:
+            print("All failures recovered! Marking analysis complete.")
+            if run:
+                run.analysis_status = "completed"
+                db.commit()
+            return
+
         # 2. Prepare failure data for improved clustering
         # The new clusterer uses enriched features including module/class/method
         failure_dicts = [

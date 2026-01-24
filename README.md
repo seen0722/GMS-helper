@@ -148,6 +148,11 @@ GMS-helper/
 └── README.md             # This file
 ```
 
+## 🧠 Project Context & Skills
+This project utilizes specific business logic for GMS certification analysis. Agents and Developers should reference the following skills:
+
+- **[CTS Certification Logic](docs/skills/CTS_LOGIC.md)**: Defines how submissions are grouped, how `CTSonGSI` is identified (implicit fingerprint mismatch), and how Consolidated Reports (Merge/Retry) are calculated. **Please load this skill when performing analysis or development tasks.**
+
 ## 📚 Documentation
 
 - [Deployment Guide](docs/DEPLOYMENT.md) - Vultr + Cloudflare setup

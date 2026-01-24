@@ -861,6 +861,24 @@ async function loadRunDetails(runId) {
         // Store for Redmine export
         currentRunDetails = run;
 
+        // Back Navigation Logic
+        const backBtn = document.getElementById('btn-run-back');
+        if (backBtn) {
+            if (run.submission_id) {
+                backBtn.onclick = () => router.navigate('submission-detail', { id: run.submission_id });
+                backBtn.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                    <span>Back to Submission #${run.submission_id}</span>
+                `;
+            } else {
+                 backBtn.onclick = () => router.navigate('dashboard');
+                 backBtn.innerHTML = `
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                    <span>Back to Dashboard</span>
+                `;
+            }
+        }
+
         // Async Guard: Stop if page changed
         if (router.currentPage !== 'run-details' || router.currentParams.id != runId) return;
 
@@ -891,7 +909,7 @@ async function loadRunDetails(runId) {
             </div>
             `;
         deviceEl.innerHTML = deviceHtml;
-        document.getElementById('detail-date').textContent = new Date(run.start_time).toLocaleString();
+        document.getElementById('detail-date').textContent = formatFriendlyDate(run.start_time);
 
         // Inject System Info Card
         const infoContainer = document.getElementById('system-info-container');
@@ -4913,6 +4931,9 @@ async function loadSubmissionDetail(id) {
         // Render Test Runs List
         renderSubmissionRuns(runsListEl, runsEmptyEl, sub.test_runs || [], sub.target_fingerprint);
         
+        // Load Consolidated Report
+        loadConsolidatedReport(id);
+        
     } catch (e) {
         console.error("Failed to load submission detail", e);
         if (nameEl) nameEl.textContent = 'Error loading submission';
@@ -5057,7 +5078,20 @@ function renderComplianceMatrix(container, runs, targetFingerprint) {
             // Data Available
             const latestRun = data.runs[0];
             const totalTests = (latestRun.passed_tests || 0) + (latestRun.failed_tests || 0);
-            const passRate = totalTests > 0 ? ((latestRun.passed_tests / totalTests) * 100).toFixed(1) : 0;
+            
+            let passRate = '0.0';
+            if (totalTests > 0) {
+                const rate = (latestRun.passed_tests / totalTests) * 100;
+                // Default to 1 decimal for matrix card
+                let formatted = rate.toFixed(1);
+                // Handle edge case: failures exist but rounds to 100.0
+                if (latestRun.failed_tests > 0 && formatted === "100.0") {
+                    formatted = "99.9"; // Cap at 99.9 to indicate imperfection, or use high precision
+                    // Better UX: Show more precision
+                    formatted = rate.toFixed(3);
+                }
+                passRate = formatted;
+            }
             const hasFails = (latestRun.failed_tests || 0) > 0;
             
             const textColor = hasFails ? 'text-red-600' : 'text-emerald-600';
@@ -5284,29 +5318,60 @@ function renderSubmissionCardV2(sub) {
     
     // Mini suite indicators
     const suitesHtml = REQUIRED_SUITES.map(suite => {
-        const suiteData = sub.suite_summary?.[suite] || { status: 'missing' };
+        // Handle name mismatch (CTSonGSI vs CTSonGSI in config vs backend response)
+        let suiteData = sub.suite_summary?.[suite];
+        if (!suiteData) {
+             // Try case-insensitive lookup
+             const key = Object.keys(sub.suite_summary || {}).find(k => k.toLowerCase() === suite.toLowerCase());
+             suiteData = key ? sub.suite_summary[key] : { status: 'missing' };
+        }
         
         // Dynamic config lookup for clean names
         const config = SUITE_CONFIGS[suite];
-        // Shorten "CTS on GSI" to "CTS GSI" or keep clean?
-        // Let's replace " on " with newline or just space?
-        // Actually keep full name but use flexible container
         const displayName = config ? (config.display_name || suite).replace(' on ', ' ') : suite;
         
         let bgClass, textClass, contentHtml, borderClass;
         
+        // Logic for Recovered Status
+        const initial = suiteData.initial_failed || 0;
+        const recovered = suiteData.recovered || 0;
+        const remaining = suiteData.failed || 0;
+        const isRecovered = initial > 0 && remaining === 0;
+        const hasPartialRecovery = remaining > 0 && recovered > 0;
+        
         if (suiteData.status === 'pass') {
-            bgClass = 'bg-emerald-50/80';
-            textClass = 'text-emerald-700';
-            borderClass = 'border-emerald-100';
-            contentHtml = `<span class="text-lg font-bold">100<span class="text-[10px]">%</span></span>`;
+            if (isRecovered) {
+                // All recovered!
+                bgClass = 'bg-emerald-50/80';
+                textClass = 'text-emerald-700';
+                borderClass = 'border-emerald-100';
+                contentHtml = `
+                    <div class="flex flex-col items-center">
+                        <span class="text-lg font-bold">0 <span class="text-xs">FAIL</span></span>
+                        <span class="text-[9px] font-bold bg-emerald-100 px-1.5 py-0.5 rounded-full text-emerald-800 mt-0.5">
+                            ${recovered} Recovered
+                        </span>
+                    </div>`;
+            } else {
+                // Vanilla Pass
+                bgClass = 'bg-emerald-50/80';
+                textClass = 'text-emerald-700';
+                borderClass = 'border-emerald-100';
+                contentHtml = `<span class="text-lg font-bold">100<span class="text-[10px]">%</span></span>`;
+            }
         } else if (suiteData.status === 'fail') {
             bgClass = 'bg-red-50/80';
             textClass = 'text-red-700';
             borderClass = 'border-red-100';
+            
+            let subText = 'FAIL';
+            if (hasPartialRecovery) {
+                subText = `${recovered} Recov.`;
+            }
+            
             contentHtml = `
-                <span class="text-lg font-bold">${suiteData.failed}</span>
-                <span class="text-[9px] font-medium opacity-70">FAIL</span>`;
+                <span class="text-lg font-bold">${remaining}</span>
+                <span class="text-[9px] font-medium opacity-70">${subText}</span>`;
         } else {
             bgClass = 'bg-slate-50';
             textClass = 'text-slate-400';
@@ -5316,8 +5381,8 @@ function renderSubmissionCardV2(sub) {
         
         return `
             <div class="flex flex-col items-center justify-center p-2 rounded-2xl ${bgClass} border ${borderClass} min-w-[72px] h-[72px] transition-transform hover:scale-105">
-                <div class="text-[9px] font-bold uppercase tracking-widest ${textClass} opacity-80 mb-0.5 max-w-full truncate px-1">${suite}</div>
-                <div class="flex flex-col items-center leading-none ${textClass}">
+                <div class="text-[9px] font-bold uppercase tracking-widest ${textClass} opacity-80 mb-0.5 max-w-full truncate px-1 text-center">${displayName}</div>
+                <div class="flex flex-col items-center leading-none ${textClass} w-full">
                     ${contentHtml}
                 </div>
             </div>
@@ -5554,5 +5619,164 @@ async function submitMoveRuns() {
     } catch (e) {
         console.error('Move failed', e);
         showNotification('Failed to move runs', 'error');
+    }
+}
+
+// --- Consolidated Report Logic ---
+let currentConsolidatedData = null;
+let currentConsolidatedFilter = 'persistent'; // default
+
+function switchSubmissionTab(tab) {
+    // Hide all
+    ['consolidated', 'runs'].forEach(t => {
+        const pan = document.getElementById(`sub-tab-${t}`);
+        const btn = document.getElementById(`sub-tab-btn-${t}`);
+        if(pan) pan.classList.add('hidden');
+        if(btn) btn.classList.remove('active');
+    });
+    
+    // Show active
+    document.getElementById(`sub-tab-${tab}`).classList.remove('hidden');
+    document.getElementById(`sub-tab-btn-${tab}`).classList.add('active');
+}
+
+async function loadConsolidatedReport(submissionId) {
+    const tableBody = document.getElementById('consolidated-tbody');
+    const emptyState = document.getElementById('consolidated-empty');
+    if (!tableBody) return;
+    
+    // Set Header
+    const headerEl = document.getElementById('header-matrix-runs');
+    if(headerEl) headerEl.textContent = "Run History";
+    
+    tableBody.innerHTML = '<tr><td colspan="100" class="text-center py-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div></td></tr>';
+    
+    try {
+        const response = await fetch(`${API_BASE}/submissions/${submissionId}/merge_report`);
+        if (!response.ok) throw new Error('Failed to load report');
+        
+        currentConsolidatedData = await response.json();
+        renderConsolidatedTable();
+        
+    } catch (e) {
+        console.error(e);
+        tableBody.innerHTML = '<tr><td colspan="100" class="text-center py-8 text-red-500">Failed to load consolidated report</td></tr>';
+    }
+}
+
+function filterConsolidated(mode) {
+    currentConsolidatedFilter = mode;
+    // Update filter UI
+    ['all', 'persistent', 'recovered'].forEach(m => {
+        const btn = document.getElementById(`filter-btn-${m}`);
+        if(btn) {
+            if (m === mode) {
+                 btn.classList.add('bg-white', 'shadow-sm', 'font-bold');
+                 btn.classList.remove('font-medium');
+                 if (m === 'persistent') btn.classList.add('text-red-600');
+                 if (m === 'recovered') btn.classList.add('text-emerald-600');
+            } else {
+                 btn.classList.remove('bg-white', 'shadow-sm', 'font-bold', 'text-red-600', 'text-emerald-600');
+                 btn.classList.add('font-medium', 'text-slate-600');
+            }
+        }
+    });
+    renderConsolidatedTable();
+}
+
+function renderConsolidatedTable() {
+    const data = currentConsolidatedData;
+    const tableBody = document.getElementById('consolidated-tbody');
+    const emptyState = document.getElementById('consolidated-empty');
+    
+    if (!data || !data.suites || data.suites.length === 0) {
+        tableBody.innerHTML = '';
+        if(emptyState) {
+            emptyState.classList.remove('hidden');
+             emptyState.querySelector('p').textContent = "No failures recorded in this submission.";
+        }
+        return;
+    }
+    if(emptyState) emptyState.classList.add('hidden');
+    
+    let html = '';
+    let hasVisibleRows = false;
+    
+    data.suites.forEach(suite => {
+        // Filter items
+        const filteredItems = suite.items.filter(item => {
+            if (currentConsolidatedFilter === 'all') return true;
+            if (currentConsolidatedFilter === 'persistent') return !item.is_recovered;
+            if (currentConsolidatedFilter === 'recovered') return item.is_recovered;
+            return true;
+        });
+        
+        if (filteredItems.length === 0) return;
+        hasVisibleRows = true;
+        
+        // Suite Header
+        html += `
+            <tr class="bg-slate-50 border-b border-slate-100">
+                <td colspan="100" class="px-6 py-3">
+                    <div class="flex items-center gap-3">
+                        <span class="font-bold text-slate-700 font-display">${suite.suite_name}</span>
+                        <div class="flex gap-2 text-xs">
+                             <span class="px-2 py-0.5 bg-red-100 text-red-700 rounded font-bold">${suite.summary.remaining} Fail</span>
+                             <span class="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded font-bold">${suite.summary.recovered} Recovered</span>
+                        </div>
+                    </div>
+                </td>
+            </tr>
+        `;
+        
+        // Items
+        filteredItems.forEach(item => {
+            const isRecovered = item.is_recovered;
+            
+            // Build Run Columns Visualization (Mini sparkline or dots)
+            const runsViz = item.status_history.map((status, idx) => {
+                const color = status === 'pass' ? 'bg-emerald-400' : 'bg-red-400';
+                return `<span class="w-2.5 h-2.5 rounded-full ${color} inline-block" title="Run ${idx+1}: ${status.toUpperCase()}"></span>`;
+            }).join('<span class="w-4 h-px bg-slate-200 mx-1"></span>'); // connector
+            
+            html += `
+                <tr class="hover:bg-slate-50 transition-colors border-b border-slate-50/50">
+                    <td class="px-6 py-3">
+                        <div class="font-mono text-xs text-slate-600 break-all">
+                            <span class="text-slate-500 hover:text-blue-600 transition-colors cursor-text select-all">${item.module_name}</span><br>
+                            <span class="font-bold text-slate-800 hover:text-blue-600 transition-colors cursor-text select-all">${item.test_method}</span>
+                             <div class="text-[10px] text-slate-400 mt-0.5 truncate max-w-lg cursor-help" title="${item.test_class}">${item.test_class}</div>
+                        </div>
+                    </td>
+                    <td class="px-6 py-3 text-center">
+                        <div class="flex items-center justify-center">
+                            ${runsViz}
+                        </div>
+                    </td>
+                    <td class="px-6 py-3 text-center">
+                         ${isRecovered 
+                            ? `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-100/50">
+                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                                 Recovered
+                               </span>`
+                            : `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-50 text-red-700 text-xs font-bold border border-red-100/50">
+                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                                 Failed
+                               </span>`
+                         }
+                    </td>
+                </tr>
+            `;
+        });
+    });
+    
+    if (!hasVisibleRows) {
+         tableBody.innerHTML = '';
+         if(emptyState) {
+             emptyState.classList.remove('hidden');
+             emptyState.querySelector('p').textContent = `No ${currentConsolidatedFilter} failures found.`;
+         }
+    } else {
+        tableBody.innerHTML = html;
     }
 }
