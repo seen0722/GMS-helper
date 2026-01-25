@@ -85,6 +85,38 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
     avoiding the need to upload large XML files.
     """
     try:
+        # --- Duplicate Check ---
+        # Criteria: Same Device Fingerprint AND Same Start Time (Display or Timestamp)
+        fingerprint = data.metadata.device_fingerprint
+        start_display = data.metadata.start_display
+        
+        if fingerprint and fingerprint != "Unknown":
+            query = db.query(models.TestRun).filter(
+                models.TestRun.device_fingerprint == fingerprint
+            )
+            
+            # Prefer start_display as it's a direct string from XML (e.g. "2024-01-25 10:00:00")
+            if start_display:
+                query = query.filter(models.TestRun.start_display == start_display)
+                existing = query.first()
+                if existing:
+                    raise HTTPException(status_code=409, detail=f"Duplicate upload: Test run started at {start_display} already exists (Run #{existing.id}).")
+            
+        # -----------------------
+
+        # Parse real start time if available
+        real_start_time = datetime.utcnow()
+        if data.metadata.start_time:
+             try:
+                 # Attempt parsed from integer timestamp (seconds or ms) or string
+                 # XML usually provides seconds (epoch)
+                 ts = float(data.metadata.start_time)
+                 # Heuristic: if > 30000000000, probably ms
+                 if ts > 30000000000: ts /= 1000
+                 real_start_time = datetime.fromtimestamp(ts)
+             except:
+                 pass # Fallback to utcnow
+
         # Create TestRun record
         test_run = models.TestRun(
             test_suite_name=data.metadata.test_suite_name or "Unknown",
@@ -101,7 +133,7 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
             suite_plan=data.metadata.suite_plan,
             suite_build_number=data.metadata.suite_build_number,
             host_name=data.metadata.host_name,
-            start_time=datetime.utcnow(),  # Use current time as fallback
+            start_time=real_start_time,
             start_display=data.metadata.start_display,
             end_display=data.metadata.end_display,
             total_tests=data.stats.total_tests,

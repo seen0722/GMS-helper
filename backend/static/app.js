@@ -867,6 +867,14 @@ function setupUpload() {
                                 try {
                                     const errorData = await response.json();
                                     errorMsg = errorData.detail || errorData.message || `Import failed with status ${response.status}`;
+                                    
+                                    // Handle Duplicate (409) specifically
+                                    if (response.status === 409) {
+                                         // Show meaningful alert instead of generic red error bar if possible, 
+                                         // but red bar is also fine if text is clear.
+                                         // Let's prepend "Duplicate:" for clarity
+                                         errorMsg = `Duplicate Upload: ${errorData.detail || 'This test run already exists.'}`;
+                                    }
                                 } catch (e) {
                                     errorMsg = `Import failed with status ${response.status}`;
                                 }
