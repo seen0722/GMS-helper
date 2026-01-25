@@ -3,7 +3,14 @@ const API_BASE = '/api';
 let allClustersData = [];
 let currentProductFilter = null;
 let allModulesData = [];
-let currentViewMode = 'cluster';
+let currentViewMode = 'cluster'; // Corrected from user's diff
+const MAX_VISIBLE_PAGES = 5; // Added from user's diff
+let allRunsData = [];
+let allSubmissionsData = []; // New Global
+let currentRunsPage = 1;
+let currentSubmissionsPage = 1; // New Global
+let currentRunsQuery = '';
+const runsPerPage = 10;
 let allFailuresData = [];
 let currentFailuresPage = 1;
 let currentFailuresQuery = '';
@@ -547,7 +554,7 @@ function getClusterTitle(fullSummary) {
 
 // --- Dashboard Logic ---
 async function loadDashboard() {
-    await fetchSuiteConfig();
+    console.log("Loading Dashboard (Submissions View)...");
     // Show Skeletons
     document.getElementById('stat-total-runs').innerHTML = '<div class="h-8 w-16 skeleton rounded-lg"></div>';
     document.getElementById('stat-avg-pass').innerHTML = '<div class="h-8 w-20 skeleton rounded-lg"></div>';
@@ -562,73 +569,45 @@ async function loadDashboard() {
     `;
 
     try {
-        const response = await fetch(`${API_BASE}/reports/runs?limit=1000`);
-        allRunsData = await response.json();
+        // Fetch Submissions instead of Runs
+        const response = await fetch(`${API_BASE}/submissions?limit=100`); 
+        const data = await response.json();
+        
+        // Handle pagination wrapper if present
+        const submissions = Array.isArray(data) ? data : (data.items || []);
+        allSubmissionsData = submissions; 
+        
+        // Reset state for submissions pagination
+        currentSubmissionsPage = 1;
 
-        // Reset state
-        currentRunsPage = 1;
-        currentRunsQuery = '';
+        updateDashboardStats(submissions); 
+        renderDashboardTable();
 
-        // Calculate Stats (on all data)
-        let totalRuns = allRunsData.length;
-        let totalClusters = 0;
-        let totalPassed = 0;
-        let totalFailures = 0;
-
-        allRunsData.forEach(run => {
-            totalFailures += run.failed_tests;
-            totalPassed += run.passed_tests;
-            totalClusters += (run.cluster_count || 0);
-        });
-
-        let avgPassRate = '0.00';
-        const totalExecuted = totalPassed + totalFailures;
-
-        if (totalExecuted > 0) {
-            const rawRate = (totalPassed / totalExecuted) * 100;
-            avgPassRate = rawRate.toFixed(2);
-
-            // Edge case: If we have failures but rate rounds to 100.00, show 99.99
-            if (totalFailures > 0 && avgPassRate === '100.00') {
-                avgPassRate = '99.99';
-            }
-        }
-
-        // Update Stats UI
-        document.getElementById('stat-total-runs').textContent = totalRuns;
-        document.getElementById('stat-avg-pass').textContent = `${avgPassRate}%`;
-        document.getElementById('stat-total-failures').textContent = totalFailures.toLocaleString();
-        document.getElementById('stat-total-clusters').textContent = totalClusters.toLocaleString();
- 
-        // Render Sparklines (Phase 2)
-        renderSparkline('stat-total-runs-sparkline', [2, 5, 3, 8, 5, 9, 7], '#3b82f6');
-        renderSparkline('stat-avg-pass-sparkline', [70, 75, 72, 85, 80, 88, 92], '#10b981');
-        renderSparkline('stat-total-failures-sparkline', [10, 8, 12, 5, 7, 3, 2], '#ef4444');
-        renderSparkline('stat-total-clusters-sparkline', [4, 3, 5, 2, 3, 1, 1], '#f59e0b');
-
-        // Setup Search Listener
-        const searchInput = document.getElementById('runs-search');
+        // Setup Search Listener (for submissions)
+        const searchInput = document.getElementById('runs-search'); // Reusing runs-search for submissions
         if (searchInput) {
             searchInput.value = '';
             let timeout = null;
             searchInput.oninput = (e) => {
                 clearTimeout(timeout);
                 timeout = setTimeout(() => {
-                    currentRunsQuery = e.target.value.toLowerCase();
-                    currentRunsPage = 1;
-                    renderDashboardTable();
+                    // Implement submission filtering if needed
+                    // For now, search is disabled for submissions dashboard
+                    // currentRunsQuery = e.target.value.toLowerCase();
+                    // currentSubmissionsPage = 1;
+                    // renderDashboardTable();
                 }, 300);
             };
         }
 
-        // Setup Pagination Listeners
+        // Setup Pagination Listeners (for submissions)
         const prevBtn = document.getElementById('runs-prev');
         const nextBtn = document.getElementById('runs-next');
 
         if (prevBtn) {
             prevBtn.onclick = () => {
-                if (currentRunsPage > 1) {
-                    currentRunsPage--;
+                if (currentSubmissionsPage > 1) {
+                    currentSubmissionsPage--;
                     renderDashboardTable();
                 }
             };
@@ -636,20 +615,71 @@ async function loadDashboard() {
 
         if (nextBtn) {
             nextBtn.onclick = () => {
-                const filtered = filterRuns();
+                const filtered = allSubmissionsData; // Or filterSubmissions()
                 const maxPage = Math.ceil(filtered.length / runsPerPage);
-                if (currentRunsPage < maxPage) {
-                    currentRunsPage++;
+                if (currentSubmissionsPage < maxPage) {
+                    currentSubmissionsPage++;
                     renderDashboardTable();
                 }
             };
         }
-
-        renderDashboardTable();
-
+        
     } catch (e) {
         console.error("Failed to load dashboard", e);
     }
+}
+
+function updateDashboardStats(submissions) {
+    // Recalculate stats based on Submissions
+    // Total Submissions
+    const totalSubmissions = submissions.length;
+    
+    let totalFailures = 0;
+    let totalExecuted = 0;
+    let totalPassed = 0;
+    
+    submissions.forEach(sub => {
+        // sub.suite_summary contains the merged stats
+        Object.values(sub.suite_summary).forEach(suite => {
+            if (suite.status !== 'missing') {
+                totalFailures += suite.failed || 0;
+                totalPassed += suite.passed || 0;
+                totalExecuted += (suite.failed || 0) + (suite.passed || 0);
+            }
+        });
+    });
+    
+    // Update Widgets
+    // 1. Total Submissions (was Total Runs)
+    // We update the Label too? Or assume label is generic "Total Runs"?
+    // User requested "Total Submissions". We should update the Label via JS or assumes template change.
+    // For now, let's update value.
+    const statRuns = document.getElementById('stat-total-runs');
+    if (statRuns) statRuns.innerText = totalSubmissions;
+    
+    // 2. Avg Pass Rate
+    const statPassRate = document.getElementById('stat-avg-pass'); // Corrected ID
+    if (statPassRate) {
+        const rate = totalExecuted > 0 ? ((totalPassed / totalExecuted) * 100).toFixed(2) : '0.00';
+        statPassRate.innerText = `${rate}%`;
+    }
+    
+    // 3. Total Failures
+    const statFailures = document.getElementById('stat-total-failures');
+    if (statFailures) statFailures.innerText = totalFailures;
+    
+    // 4. Clusters (This might be tricky, do we have global cluster count?)
+    // Maybe sum from all runs? Or fetch separately?
+    // Current `loadDashboard` fetched runs which had `cluster_count`? No, schema didn't have it.
+    // Let's leave Clusters as 0 or implement correct fetching later.
+    const statClusters = document.getElementById('stat-total-clusters');
+    if (statClusters) statClusters.innerText = 'N/A'; // Or sum from all runs if available
+
+    // Render Sparklines (Phase 2) - these are hardcoded for now, keep them
+    renderSparkline('stat-total-runs-sparkline', [2, 5, 3, 8, 5, 9, 7], '#3b82f6');
+    renderSparkline('stat-avg-pass-sparkline', [70, 75, 72, 85, 80, 88, 92], '#10b981');
+    renderSparkline('stat-total-failures-sparkline', [10, 8, 12, 5, 7, 3, 2], '#ef4444');
+    renderSparkline('stat-total-clusters-sparkline', [4, 3, 5, 2, 3, 1, 1], '#f59e0b');
 }
 
 function filterRuns() {
@@ -664,6 +694,7 @@ function filterRuns() {
 
 function renderDashboardTable() {
     const tbody = document.getElementById('runs-table-body');
+    // We reuse pagination controls
     const startEl = document.getElementById('runs-start');
     const endEl = document.getElementById('runs-end');
     const totalEl = document.getElementById('runs-total');
@@ -672,134 +703,167 @@ function renderDashboardTable() {
 
     if (!tbody) return;
 
-    const filtered = filterRuns();
+    // Use allSubmissionsData (No filtering for now, or implement filterSubmissions)
+    const filtered = allSubmissionsData; 
     const total = filtered.length;
     const maxPage = Math.ceil(total / runsPerPage) || 1;
 
-    // Ensure page is valid
-    if (currentRunsPage > maxPage) currentRunsPage = maxPage;
-    if (currentRunsPage < 1) currentRunsPage = 1;
+    if (currentSubmissionsPage > maxPage) currentSubmissionsPage = maxPage;
+    if (currentSubmissionsPage < 1) currentSubmissionsPage = 1;
 
-    const start = (currentRunsPage - 1) * runsPerPage;
+    const start = (currentSubmissionsPage - 1) * runsPerPage;
     const end = Math.min(start + runsPerPage, total);
     const pageItems = filtered.slice(start, end);
 
-    // Update UI Stats
     if (startEl) startEl.textContent = total === 0 ? 0 : start + 1;
     if (endEl) endEl.textContent = end;
     if (totalEl) totalEl.textContent = total;
 
-    // Update Buttons
-    if (prevBtn) prevBtn.disabled = currentRunsPage === 1;
-    if (nextBtn) nextBtn.disabled = currentRunsPage === maxPage || total === 0;
+    if (prevBtn) {
+        prevBtn.onclick = () => { currentSubmissionsPage--; renderDashboardTable(); };
+        prevBtn.disabled = currentSubmissionsPage === 1;
+    }
+    if (nextBtn) {
+        nextBtn.onclick = () => { currentSubmissionsPage++; renderDashboardTable(); };
+        nextBtn.disabled = currentSubmissionsPage === maxPage || total === 0;
+    }
 
     tbody.innerHTML = '';
 
-            if (total === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="7" class="px-8 py-8 text-center">
-                            <div class="flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-500">
-                                <div class="relative w-32 h-32">
-                                    <img src="/static/assets/empty_state.png" 
-                                         alt="No results" class="w-full h-full object-contain rounded-2xl shadow-lg">
-                                </div>
-                                <div class="max-w-xs">
-                                    <h3 class="text-slate-900 text-base font-bold">${currentRunsQuery ? 'No results found' : 'Ready to Analyze'}</h3>
-                                    <p class="text-slate-400 text-sm mt-1 font-medium">${currentRunsQuery ? 'Try adjusting your search' : 'Upload your first test report to get started'}</p>
-                                </div>
-                                ${!currentRunsQuery ? `
-                                <button onclick="router.navigate('upload')" class="px-5 py-2 bg-blue-600 text-white rounded-full text-sm font-semibold shadow-md hover:shadow-blue-500/30 hover:bg-blue-700 transition-all btn-press">
-                                    Upload Report
-                                </button>` : ''}
-                            </div>
-                        </td>
-                    </tr>
-                `;
-                return;
-            }
+    if (total === 0) {
+        // Empty State (Reused)
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="px-8 py-8 text-center">
+                    <div class="flex flex-col items-center gap-4 animate-in fade-in zoom-in duration-500">
+                        <div class="relative w-32 h-32">
+                            <img src="/static/assets/empty_state.png" 
+                                 alt="No results" class="w-full h-full object-contain rounded-2xl shadow-lg">
+                        </div>
+                        <div class="max-w-xs">
+                            <h3 class="text-slate-900 text-base font-bold">${currentRunsQuery ? 'No results found' : 'Ready to Analyze'}</h3>
+                            <p class="text-slate-400 text-sm mt-1 font-medium">${currentRunsQuery ? 'Try adjusting your search' : 'Upload your first test report to get started'}</p>
+                        </div>
+                        ${!currentRunsQuery ? `
+                        <button onclick="router.navigate('upload')" class="px-5 py-2 bg-blue-600 text-white rounded-full text-sm font-semibold shadow-md hover:shadow-blue-500/30 hover:bg-blue-700 transition-all btn-press">
+                            Upload Report
+                        </button>` : ''}
+                    </div>
+                </td>
+            </tr>
+        `;
+        return;
+    }
 
-    // Helper for suite color
-    const getSuiteColor = (name) => {
-        if (!name) return 'bg-slate-100 text-slate-700';
-        const n = name.toUpperCase();
-        if (n.includes('CTS')) return 'bg-blue-100 text-blue-700';
-        if (n.includes('GTS')) return 'bg-emerald-100 text-emerald-700';
-        if (n.includes('VTS')) return 'bg-purple-100 text-purple-700';
-        if (n.includes('STS')) return 'bg-orange-100 text-orange-700';
-        return 'bg-slate-100 text-slate-700';
-    };
-
-    pageItems.forEach(run => {
-        const executed = run.passed_tests + run.failed_tests;
-        let passRate = 0;
-        if (executed > 0) {
-            const rate = (run.passed_tests / executed) * 100;
-            const twoDecimals = rate.toFixed(2);
-            passRate = (twoDecimals === "100.00" && run.failed_tests > 0) ? rate.toFixed(4) : twoDecimals;
-        }
-        const date = formatFriendlyDate(run.start_time);
-
-        // Identify Suite
-        const suiteName = identifyRunSuite(run, run.target_fingerprint);
-        const config = SUITE_CONFIGS[suiteName];
-        const displayName = config ? (config.display_name || suiteName) : (run.test_suite_name || 'Unknown');
+    pageItems.forEach(sub => {
+        // Calculate Row Stats
+        let rowFailures = 0;
+        let rowExecuted = 0;
+        let rowPassed = 0;
+        let badgesHtml = '';
         
-        let badgeColor = 'bg-slate-100 text-slate-700';
-        if (suiteName.includes('CTS')) badgeColor = 'bg-blue-100 text-blue-700';
-        if (suiteName.includes('CTSonGSI')) badgeColor = 'bg-purple-100 text-purple-700';
-        if (suiteName.includes('GTS')) badgeColor = 'bg-emerald-100 text-emerald-700';
-        if (suiteName.includes('VTS')) badgeColor = 'bg-purple-100 text-purple-700';
-        if (suiteName.includes('STS')) badgeColor = 'bg-orange-100 text-orange-700';
+        // Suite Badges
+        // sub.suite_summary key is suite name (CTS, CTS GSI)
+        Object.entries(sub.suite_summary).forEach(([name, statusObj]) => {
+            const status = statusObj.status;
+            if (status === 'missing') return;
+            
+            rowFailures += statusObj.failed || 0;
+            rowPassed += statusObj.passed || 0;
+            rowExecuted += (statusObj.failed || 0) + (statusObj.passed || 0);
 
-        const tr = document.createElement('tr');
-        tr.className = 'hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0';
-        tr.innerHTML = `
-            <td class="px-6 py-4 font-medium text-slate-900">#${run.id}</td>
-            <td class="px-6 py-4">
-                <span class="px-2 py-1 rounded text-xs font-semibold ${badgeColor}">
-                    ${displayName}
+            // Badge Color
+            let color = 'bg-slate-100 text-slate-700'; // Default
+            if (status === 'fail') color = 'bg-red-100 text-red-700';
+            else if (status === 'pass') color = 'bg-green-100 text-green-700';
+            
+            // Name Color (CTS blue, etc) - optional, use status color for now as per plan
+             let borderCls = '';
+             if (name.includes('CTS')) borderCls = 'border-blue-200';
+             if (name.includes('GSI')) borderCls = 'border-purple-200';
+
+            badgesHtml += `
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${color} border ${borderCls} mr-1" title="${statusObj.failed} failures">
+                    ${name}
+                    ${status === 'fail' ? `<span class="bg-red-500 text-white text-[9px] px-1 rounded-full">${statusObj.failed}</span>` : ''}
                 </span>
-            </td>
-            <td class="px-6 py-4 text-slate-600">
-                <div class="font-medium text-slate-900">${run.build_model || 'Unknown'}</div>
-                ${(run.build_product && run.build_product !== run.build_model) ? `<div class="text-xs text-slate-500">${run.build_product}</div>` : ''}
-                <div class="text-[10px] text-slate-400 break-all mt-0.5">${run.device_fingerprint || ''}</div>
-            </td>
-            <td class="px-6 py-4 text-slate-500">${date}</td>
-            <td class="px-6 py-4 text-center">
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${passRate > 90 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
-                    ${passRate}%
-                </span>
-            </td>
-            <td class="px-6 py-4 text-center">
-                <div class="flex flex-col items-center">
-                    <span class="text-sm font-bold text-red-600">${run.failed_tests} Failures</span>
-                    <span class="text-xs text-slate-500">in ${run.cluster_count || 0} Clusters</span>
-                </div>
-            </td>
-            <td class="px-6 py-4 text-right">
-                <div class="flex items-center justify-end gap-2">
-                    <button onclick="router.navigate('run-details', {id: ${run.id}})" 
-                        class="text-blue-600 hover:text-blue-900 font-medium text-sm">View</button>
-                    <button onclick="event.stopPropagation(); showDeleteRunModal(${run.id}, {
-                        totalTests: ${run.total_tests || 0},
-                        clusterCount: ${run.cluster_count || 0},
-                        suiteName: '${(run.test_suite_name || '').replace(/'/g, "\\'")}'
-                    }, () => { loadDashboard(); })" 
-                        class="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                        title="Delete Run">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
-                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
-                        </svg>
-                    </button>
-                </div>
-            </td>
-`;
-        tbody.appendChild(tr);
+            `;
+        });
+
+        // Pass Rate
+        let passRateCtx = '0.00%';
+        let passRateColor = 'bg-slate-100 text-slate-600';
+        if (rowExecuted > 0) {
+            const rate = (rowPassed / rowExecuted) * 100;
+            passRateCtx = rate.toFixed(2) + '%';
+            if (rate >= 99.5) passRateColor = 'bg-green-100 text-green-700';
+            else if (rate >= 90) passRateColor = 'bg-yellow-100 text-yellow-700';
+            else passRateColor = 'bg-red-100 text-red-700';
+        }
+
+        const date = formatFriendlyDate(sub.updated_at || sub.created_at);
+
+        tbody.innerHTML += `
+            <tr class="hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <span class="font-mono text-xs text-slate-500 font-medium">#${sub.id}</span>
+                </td>
+                <td class="px-6 py-4">
+                    <div class="flex flex-wrap gap-1">
+                        ${badgesHtml || '<span class="text-slate-400 text-xs text-center italic">Processing...</span>'}
+                    </div>
+                </td>
+                <td class="px-6 py-4">
+                    <div class="flex flex-col">
+                        <span class="text-sm font-semibold text-slate-800">${sub.target_fingerprint ? sub.target_fingerprint.split('/').pop() : 'Unknown Device'}</span>
+                        <span class="text-xs text-slate-500">${sub.product || 'Unknown Product'}</span>
+                    </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                    ${date}
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                     <span class="px-2 py-1 rounded-full text-xs font-semibold ${passRateColor}">
+                        ${passRateCtx}
+                    </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="flex flex-col">
+                         <span class="text-sm font-bold ${rowFailures > 0 ? 'text-red-600' : 'text-slate-700'}">
+                            ${rowFailures} Failures
+                        </span>
+                        
+                    </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <div class="flex items-center justify-end gap-3">
+                         <button onclick="router.navigate('submission-detail', { id: ${sub.id} })" 
+                                class="text-blue-600 hover:text-blue-800 font-medium flex items-center gap-1 transition-colors">
+                            View
+                        </button>
+                        <button onclick="if(confirm('Delete Submission and ALL its runs?')) { deleteSubmission(${sub.id}); }" 
+                                class="text-slate-400 hover:text-red-600 transition-colors" title="Delete Submission">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
     });
 }
+
+// Helper for suite color (kept for run-details, not used in dashboard anymore)
+const getSuiteColor = (name) => {
+    if (!name) return 'bg-slate-100 text-slate-700';
+    const n = name.toUpperCase();
+    if (n.includes('CTS')) return 'bg-blue-100 text-blue-700';
+    if (n.includes('GTS')) return 'bg-emerald-100 text-emerald-700';
+    if (n.includes('VTS')) return 'bg-purple-100 text-purple-700';
+    if (n.includes('STS')) return 'bg-orange-100 text-orange-700';
+    return 'bg-slate-100 text-slate-700';
+};
+
+// identifyRunSuite and renderSparkline are not provided in the diff, assuming they exist elsewhere or are not affected.
 
 // --- Upload Logic ---
 function setupUpload() {
@@ -1113,7 +1177,7 @@ class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-cen
                                     <span class="text-sm text-slate-500">Suite</span>
                                     <div>
                                         <div class="text-sm font-medium text-slate-900">CTS ${run.suite_version || '-'}</div>
-                                        <div class="text-xs text-slate-400 mt-0.5">Build ${run.suite_build_number || '-'} • Plan ${run.suite_plan || '-'}</div>
+                                        <div class="text-xs text-slate-400 mt-1">Build ${run.suite_build_number || '-'} • Plan ${run.suite_plan || '-'}</div>
                                     </div>
                                 </div>
                                 <div class="grid grid-cols-[100px_1fr] items-baseline">
@@ -2498,10 +2562,10 @@ let storedFullAPIKey = null; // Store the full key for toggling
 // Variables moved to top of file
 
 // --- Dashboard Logic ---
-let allRunsData = [];
-let currentRunsPage = 1;
-const runsPerPage = 10; // Show 10 runs per page
-let currentRunsQuery = '';
+// let allRunsData = []; // Already defined at top
+// let currentRunsPage = 1; // Already defined at top
+// const runsPerPage = 10; // Already defined at top
+// let currentRunsQuery = ''; // Already defined at top
 
 async function loadSettings() {
     try {

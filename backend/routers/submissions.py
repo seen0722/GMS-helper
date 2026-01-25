@@ -162,7 +162,7 @@ def get_submissions(skip: int = 0, limit: int = 20, product_filter: Optional[str
                 all_unique_failures = set()
                 
                 for f in failures:
-                    key = (f.module_name, f.class_name, f.method_name)
+                    key = (f.module_name, f.class_name, f.method_name, f.module_abi or '')
                     all_unique_failures.add(key)
                     
                     if f.test_run_id not in run_failures_map: run_failures_map[f.test_run_id] = set()
@@ -323,7 +323,7 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
             
             all_unique_failures = set()
             for f in failures:
-                key = (f.module_name, f.class_name, f.method_name)
+                key = (f.module_name, f.class_name, f.method_name, f.module_abi or '')
                 all_unique_failures.add(key)
                 if f.test_run_id not in run_failures_map: run_failures_map[f.test_run_id] = set()
                 run_failures_map[f.test_run_id].add(key)

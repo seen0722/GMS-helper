@@ -82,12 +82,12 @@ def run_analysis_task(run_id: int):
                 ).all()
                 
                 latest_fail_keys = set(
-                    (f.module_name, f.class_name, f.method_name) 
+                    (f.module_name, f.class_name, f.method_name, f.module_abi or '') 
                     for f in latest_failures
                 )
                 
                 for f in failures:
-                    key = (f.module_name, f.class_name, f.method_name)
+                    key = (f.module_name, f.class_name, f.method_name, f.module_abi or '')
                     if key in latest_fail_keys:
                         # Still failing in latest run
                         failures_to_analyze.append(f)
