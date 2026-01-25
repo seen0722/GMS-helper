@@ -16,12 +16,83 @@ class SubmissionUpdate(BaseModel):
 
 class MoveRunsRequest(BaseModel):
     run_ids: List[int]
-    target_submission_id: int
+    target_submission_id: Optional[int] = None # None = Create New
+
+class LockSubmissionRequest(BaseModel):
+    is_locked: bool
+
+@router.post("/{submission_id}/lock")
+def toggle_lock(submission_id: int, req: LockSubmissionRequest, db: Session = Depends(get_db)):
+    """Lock or Unlock a submission."""
+    sub = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+    
+    sub.is_locked = req.is_locked
+    if req.is_locked:
+        sub.status = "published" # Auto-publish on lock? Or keep separate? Let's say Locked implies Ready/Protected.
+    else:
+        # If unlocking, maybe revert to analyzing?
+        pass 
+        
+    db.commit()
+    return {"message": f"Submission {'locked' if req.is_locked else 'unlocked'}", "is_locked": sub.is_locked}
+
+@router.post("/move-runs")
+def move_runs(req: MoveRunsRequest, db: Session = Depends(get_db)):
+    """Move runs to another submission or a new one."""
+    runs = db.query(models.TestRun).filter(models.TestRun.id.in_(req.run_ids)).all()
+    if not runs:
+        raise HTTPException(status_code=404, detail="No runs found")
+        
+    source_sub_id = runs[0].submission_id
+    
+    target_sub = None
+    if req.target_submission_id:
+        target_sub = db.query(models.Submission).filter(models.Submission.id == req.target_submission_id).first()
+        if not target_sub:
+            raise HTTPException(status_code=404, detail="Target submission not found")
+    else:
+        # Create New Submission based on the first run's metadata
+        first_run = runs[0]
+        new_name = f"Submission {first_run.build_product or 'New'} - Split {datetime.utcnow().strftime('%H:%M')}"
+        target_sub = models.Submission(
+            name=new_name,
+            target_fingerprint=first_run.device_fingerprint,
+            product=first_run.build_product,
+            status="analyzing",
+            gms_version=first_run.android_version
+        )
+        db.add(target_sub)
+        db.flush()
+        
+    # Move runs
+    for r in runs:
+        r.submission_id = target_sub.id
+        
+    db.commit()
+    
+    return {"message": f"Moved {len(runs)} runs to Submission {target_sub.id}", "target_submission_id": target_sub.id}
+
+@router.get("/products")
+def get_products(db: Session = Depends(get_db)):
+    """Get list of unique products for filtering."""
+    # distinct products
+    products = db.query(models.Submission.product).distinct().all()
+    # Flatten list of tuples and remove None/Unknown if desired, or keep them
+    # Filter out None
+    product_list = sorted([p[0] for p in products if p[0]])
+    return product_list
 
 @router.get("/")
-def get_submissions(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
+def get_submissions(skip: int = 0, limit: int = 20, product_filter: Optional[str] = None, db: Session = Depends(get_db)):
     """List all submissions with suite status summary."""
-    submissions = db.query(models.Submission).order_by(desc(models.Submission.updated_at)).offset(skip).limit(limit).all()
+    query = db.query(models.Submission).order_by(desc(models.Submission.updated_at))
+    
+    if product_filter and product_filter != "All Products":
+        query = query.filter(models.Submission.product == product_filter)
+        
+    submissions = query.offset(skip).limit(limit).all()
     
     # Fetch configured suites
     suites_config = db.query(models.TestSuiteConfig).filter(models.TestSuiteConfig.is_required == 1).order_by(asc(models.TestSuiteConfig.sort_order)).all()
@@ -39,11 +110,19 @@ def get_submissions(skip: int = 0, limit: int = 20, db: Session = Depends(get_db
             name = (run.test_suite_name or '').upper()
             
             if config.match_rule == 'GSI':
-                return 'CTS' in name and run.device_fingerprint != sub.target_fingerprint
+                # Explicit GSI check using product/model logic same as frontend, or trust match_suite logic here
+                # Backend check:
+                is_gsi = (run.build_product and 'gsi' in run.build_product.lower()) or \
+                         (run.build_model and 'gsi' in run.build_model.lower())
+                
+                # It matches if name is CTS AND fingerprint differs from target OR explicit GSI product
+                return 'CTS' in name and (run.device_fingerprint != sub.target_fingerprint or is_gsi)
             
             if config.name == 'CTS': # Standard CTS (exclude GSI)
                 # If rule is Standard but name is CTS, exclude GSI
-                is_gsi = run.device_fingerprint != sub.target_fingerprint
+                is_gsi = (run.device_fingerprint != sub.target_fingerprint) or \
+                         (run.build_product and 'gsi' in run.build_product.lower()) or \
+                         (run.build_model and 'gsi' in run.build_model.lower())
                 return 'CTS' in name and not is_gsi
             
             return config.name in name
@@ -57,73 +136,83 @@ def get_submissions(skip: int = 0, limit: int = 20, db: Session = Depends(get_db
             else:
                 # Calculate effective stats across all matching runs
                 # Sort by time
+                # Calculate effective stats across all matching runs using OPTIMISTIC MERGE
+                # Sort by time
                 matching_runs.sort(key=lambda x: x.start_time)
                 
-                # Get all failures for these runs
+                # Logic: A test case is passed if it passed in ANY run involving that module.
+                # 1. Collect all executed modules in each run -> Set[module_name]
+                # 2. Collect all failures in each run -> Set[(mod, cls, mth)]
+                
+                run_modules_map = {} # run_id -> Set[module_name]
+                run_failures_map = {} # run_id -> Set[(mod, cls, mth)]
+                
                 run_ids = [r.id for r in matching_runs]
+                
+                # Fetch Modules
+                modules_executed = db.query(models.TestRunModule).filter(models.TestRunModule.test_run_id.in_(run_ids)).all()
+                for m in modules_executed:
+                    if m.test_run_id not in run_modules_map: run_modules_map[m.test_run_id] = set()
+                    run_modules_map[m.test_run_id].add(m.module_name)
+                    
+                # Fetch Failures
                 failures = db.query(models.TestCase).filter(models.TestCase.test_run_id.in_(run_ids)).all()
                 
-                # Group by case key
-                case_history = {} # (mod, cls, mth) -> [fail_run_idx, ...]
-                
-                # Pre-calculate run ID to index map
-                run_id_map = {r.id: i for i, r in enumerate(matching_runs)}
+                # Also track all unique failures ever seen to iterate over them
+                all_unique_failures = set()
                 
                 for f in failures:
                     key = (f.module_name, f.class_name, f.method_name)
-                    if key not in case_history:
-                        case_history[key] = []
-                    # Record that it failed in this run index
-                    if f.test_run_id in run_id_map:
-                         case_history[key].append(run_id_map[f.test_run_id])
-                
-                initial_failures = 0
-                recovered_failures = 0
-                remaining_failures = 0
-                
-                # Get latest run (for fallback passed/failed counts if no history logic needed, but we do need it)
-                latest = matching_runs[-1]
-                
-                if not failures and len(matching_runs) == 1:
-                     # Single run, no failures in DB -> All passed? 
-                     # Wait, TestCase table only stores failures.
-                     # So if no entries, it's 0 failures.
-                     pass
-                
-                for key, fail_indices in case_history.items():
-                    # Sort indices
-                    fail_indices.sort()
+                    all_unique_failures.add(key)
                     
-                    # Initial failure = failed in first run (index 0)
-                    if 0 in fail_indices:
-                        initial_failures += 1
-                        
-                    # Remaining failure = failed in last run (index len-1)
-                    if (len(matching_runs) - 1) in fail_indices:
-                        remaining_failures += 1
+                    if f.test_run_id not in run_failures_map: run_failures_map[f.test_run_id] = set()
+                    run_failures_map[f.test_run_id].add(key)
+                
+                remaining_failures_count = 0
+                recovered_failures_count = 0
+                
+                for key in all_unique_failures:
+                    mod_name = key[0]
+                    # Check if this test case passed in ANY run
+                    # Passed = Module was Executed AND Key not in Failures
+                    is_recovered = False
+                    
+                    for run in matching_runs:
+                        rid = run.id
+                        # Check if module executed
+                        executed_mods = run_modules_map.get(rid, set())
+                        if mod_name in executed_mods:
+                            # Module ran. Did it fail?
+                            run_fails = run_failures_map.get(rid, set())
+                            if key not in run_fails:
+                                # Module Ran AND Not in Failures => PASS
+                                is_recovered = True
+                                break
+                    
+                    if is_recovered:
+                        recovered_failures_count += 1
                     else:
-                        # If it failed at some point but NOT in the last run, it's recovered
-                        # (assuming implicit pass in last run)
-                        recovered_failures += 1
+                        remaining_failures_count += 1
                 
-                # If single run, initial == remaining
-                if len(matching_runs) == 1:
-                    initial_failures = remaining_failures
-                    recovered_failures = 0
+                # Total Tests = Max of total_tests (approximation) or use latest
+                # For more accuracy, we could sum unique tests, but simpler is Max(total_tests)
+                latest = matching_runs[-1]
+                total_tests = max([r.total_tests or 0 for r in matching_runs]) if matching_runs else 0
                 
-                # Total Passed = Total Tests (from latest) - Remaining Failures
-                # Use latest run's total tests as approximation
-                total_tests = latest.total_tests or 0
-                passed_tests = max(0, total_tests - remaining_failures)
+                # Calculate passed based on effective failures
+                # If we assume 'total_tests' represents the full suite size, then:
+                passed_tests = max(0, total_tests - remaining_failures_count)
 
                 suite_summary[suite_cfg.name] = {
-                    "status": "fail" if remaining_failures > 0 else "pass",
-                    "failed": remaining_failures,
+                    "status": "fail" if remaining_failures_count > 0 else "pass",
+                    "failed": remaining_failures_count,
                     "passed": passed_tests,
-                    "initial_failed": initial_failures,
-                    "recovered": recovered_failures,
-                    "run_count": len(matching_runs)
+                    "initial_failed": len(all_unique_failures), # Total unique failures ever seen
+                    "recovered": recovered_failures_count,
+                    "run_count": len(matching_runs),
+                    "is_merged": len(matching_runs) > 1
                 }
+
         
         results.append({
             "id": sub.id,
@@ -172,28 +261,109 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
              "passed_tests": run.passed_tests,
              "failed_tests": run.failed_tests,
              "device_fingerprint": run.device_fingerprint,
+             "device_product": run.build_product,
+             "device_model": run.build_model,
              "device_abi": run.build_abis, # Use build_abis as device_abi
-             "security_patch": run.security_patch
+             "security_patch": run.security_patch,
+             "test_cases": [
+                 {
+                     "module_name": tc.module_name,
+                     "class_name": tc.class_name,
+                     "method_name": tc.method_name,
+                     "status": tc.status,
+                     "stack_trace": tc.stack_trace,
+                     "error_message": tc.error_message
+                 } for tc in run.test_cases
+             ]
          })
-    
-    # --- Phase 3: Intelligence Warnings ---
-    warnings = []
     
     # helper to check if run matches suite type (handling CTS vs CTSonGSI)
     def match_suite(run, config):
         name = (run.test_suite_name or '').upper()
         
         if config.match_rule == 'GSI':
-            # It matches if name is CTS AND fingerprint differs from target
-            # Note: We assume sub.target_fingerprint is the Vendor Build
-            return 'CTS' in name and run.device_fingerprint != sub.target_fingerprint
+            # It matches if name is CTS AND fingerprint differs from target OR explicit GSI product
+            is_gsi_product = (run.build_product and 'gsi' in run.build_product.lower()) or \
+                             (run.build_model and 'gsi' in run.build_model.lower())
+            return 'CTS' in name and (run.device_fingerprint != sub.target_fingerprint or is_gsi_product)
             
         if config.name == 'CTS':
             # Matches CTS only if fingerprint MATCHES target (or we strictly exclude GSI)
-            is_gsi = run.device_fingerprint != sub.target_fingerprint
+            is_gsi = (run.device_fingerprint != sub.target_fingerprint) or \
+                     (run.build_product and 'gsi' in run.build_product.lower()) or \
+                     (run.build_model and 'gsi' in run.build_model.lower())
             return 'CTS' in name and not is_gsi
             
         return config.name in name
+
+    # --- Calculate Suite Summary (Optimistic Merge) ---
+    suite_summary = {}
+
+    for suite_cfg in suites_config:
+        matching_runs = [r for r in runs if match_suite(r, suite_cfg)]
+        
+        if not matching_runs:
+            suite_summary[suite_cfg.name] = {"status": "missing", "failed": 0, "passed": 0}
+        else:
+            # Optimistic Merge Logic
+            matching_runs.sort(key=lambda x: x.start_time)
+            run_ids = [r.id for r in matching_runs]
+            
+            run_modules_map = {}
+            run_failures_map = {}
+            
+            # Fetch Modules
+            modules_executed = db.query(models.TestRunModule).filter(models.TestRunModule.test_run_id.in_(run_ids)).all()
+            for m in modules_executed:
+                if m.test_run_id not in run_modules_map: run_modules_map[m.test_run_id] = set()
+                run_modules_map[m.test_run_id].add(m.module_name)
+                
+            # Fetch Failures
+            failures = db.query(models.TestCase).filter(models.TestCase.test_run_id.in_(run_ids)).all()
+            
+            all_unique_failures = set()
+            for f in failures:
+                key = (f.module_name, f.class_name, f.method_name)
+                all_unique_failures.add(key)
+                if f.test_run_id not in run_failures_map: run_failures_map[f.test_run_id] = set()
+                run_failures_map[f.test_run_id].add(key)
+            
+            remaining_failures_count = 0
+            recovered_failures_count = 0
+            
+            for key in all_unique_failures:
+                mod_name = key[0]
+                is_recovered = False
+                for run in matching_runs:
+                    rid = run.id
+                    # Pass = Module Executed AND Key not in Failures
+                    if mod_name in run_modules_map.get(rid, set()):
+                        if key not in run_failures_map.get(rid, set()):
+                            is_recovered = True
+                            break
+                
+                if is_recovered:
+                    recovered_failures_count += 1
+                else:
+                    remaining_failures_count += 1
+            
+            total_tests = max([r.total_tests or 0 for r in matching_runs]) if matching_runs else 0
+            passed_tests = max(0, total_tests - remaining_failures_count)
+            
+            suite_summary[suite_cfg.name] = {
+                "status": "fail" if remaining_failures_count > 0 else "pass",
+                "failed": remaining_failures_count,
+                "passed": passed_tests,
+                "initial_failed": len(all_unique_failures),
+                "recovered": recovered_failures_count,
+                "run_count": len(matching_runs),
+                "is_merged": len(matching_runs) > 1
+            }
+
+    # --- Phase 3: Intelligence Warnings ---
+    warnings = []
+    
+    # helper to check if run matches suite type (handling CTS vs CTSonGSI)
 
     # 1. Missing Suite Detection
     for suite_cfg in suites_config:
@@ -251,7 +421,8 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
         "created_at": sub.created_at,
         "updated_at": sub.updated_at,
         "test_runs": run_list,
-        "warnings": warnings
+        "warnings": warnings,
+        "suite_summary": suite_summary
     }
 
 @router.delete("/{submission_id}")
@@ -370,11 +541,138 @@ def get_submission_merge_report(submission_id: int, db: Session = Depends(get_db
             "items": items_response
         })
     
+    # Clustering Logic for Triage View
+    clusters_response = []
+    
+    # 1. Collect all persistent failures across all suites
+    persistent_items = []
+    for suite in suites_response:
+        for item in suite["items"]:
+            if not item["is_recovered"]:
+                f_detail = item.get("failure_details")
+                err_msg = ""
+                stack = ""
+                
+                if f_detail:
+                    if isinstance(f_detail, dict):
+                        err_msg = f_detail.get("error_message", "")
+                        stack = f_detail.get("stack_trace", "")
+                    else:
+                        err_msg = getattr(f_detail, "error_message", "")
+                        stack = getattr(f_detail, "stack_trace", "")
+                
+                # Adapter for Clusterer
+                persistent_items.append({
+                    "id": f"{item['module_name']}::{item['test_class']}#{item['test_method']}", # Pseudo ID
+                    "module_name": item["module_name"],
+                    "class_name": item["test_class"],
+                    "method_name": item["test_method"],
+                    "error_message": err_msg or "",
+                    "stack_trace": stack or "",
+                    "original_item": item # Keep reference
+                })
+    
+    if persistent_items:
+        try:
+            from backend.analysis.clustering import ImprovedFailureClusterer
+            print(f"DEBUG: Found {len(persistent_items)} persistent items for clustering")
+            clusterer = ImprovedFailureClusterer(min_cluster_size=2) # Low threshold for demo
+            
+            # Format for clusterer
+            cluster_input = [{
+                'module_name': p['module_name'],
+                'class_name': p['class_name'],
+                'method_name': p['method_name'],
+                'stack_trace': p['stack_trace'],
+                'error_message': p['error_message']
+            } for p in persistent_items]
+            
+            labels, _ = clusterer.cluster_failures(cluster_input)
+            print(f"DEBUG: Clustering labels: {labels}")
+            
+            # Group by label
+            grouped = {}
+            for idx, label in enumerate(labels):
+                if label not in grouped:
+                    grouped[label] = []
+                grouped[label].append(persistent_items[idx])
+            
+            # ... (rest of the logic)
+
+                
+            # Try to match with AI Analysis Result if available
+            ai_clusters = []
+            submission_obj = report_data.get("submission")
+            if submission_obj and submission_obj.analysis_result:
+                try:
+                    import json
+                    analysis = json.loads(submission_obj.analysis_result)
+                    ai_clusters = analysis.get("analyzed_clusters", [])
+                except:
+                    pass
+            
+            # Format Output
+            for label, items in grouped.items():
+                rep = items[0]
+                
+                # Heuristic Title
+                title = f"Cluster {label}: {rep['module_name']} - {rep['error_message'][:50]}"
+                
+                # Try to find matching AI analysis
+                # Simple logic: If AI cluster count matches or module matches
+                matched_ai = None
+                for ac in ai_clusters:
+                    # weak matching
+                   if ac.get('count') == len(items) and ac.get('redmine_component', '').lower() in rep['module_name'].lower():
+                       matched_ai = ac
+                       break
+                
+                category = "Uncategorized"
+                severity = "Medium"
+                root_cause = "Analysis Pending"
+                
+                if matched_ai:
+                    title = f"{matched_ai.get('pattern_name', title)}"
+                    category = matched_ai.get('category', 'Uncategorized')
+                    severity = "High" # AI usually reports high risks
+                    root_cause = matched_ai.get('root_cause', root_cause)
+                else:
+                    # Fallback Category Map
+                    from backend.analysis.categories import get_category_for_module
+                    category = get_category_for_module(rep['module_name'])
+                
+                clusters_response.append({
+                    "id": int(label) if label >= 0 else 9999 + abs(int(label)), # Handle -1 noise
+                    "title": title,
+                    "failures_count": len(items),
+                    "severity": severity,
+                    "category": category,
+                    "root_cause": root_cause,
+                    "module_names": list(set(i['module_name'] for i in items)),
+                    "items": [i['original_item'] for i in items]
+                })
+                
+        except Exception as e:
+            print(f"Clustering failed in merge report: {e}")
+            # Fallback: One big cluster? Or empty.
+            clusters_response.append({
+                "id": -1,
+                "title": f"Clustering Error: {str(e)}",
+                "failures_count": 0,
+                "severity": "Low",
+                "category": "Error",
+                "root_cause": str(e),
+                "module_names": [],
+                "items": []
+            })
+            pass
+
     return {
         "submission_id": report_data["submission_id"],
         "total_initial_failures": report_data["total_initial_failures"],
         "total_recovered": report_data["total_recovered"],
         "remaining_failures": report_data["remaining_failures"],
-        "suites": suites_response
+        "suites": suites_response,
+        "clusters": clusters_response
     }
 

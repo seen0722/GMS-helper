@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Enum, Float, Index
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Enum, Float, Index, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -20,6 +20,9 @@ class Submission(Base):
     gms_version = Column(String, nullable=True) # e.g., "14_r3"
     lab_name = Column(String, nullable=True)
     target_fingerprint = Column(String, index=True, nullable=True) # Auto-grouping Key
+    product = Column(String, index=True, nullable=True) # Product/Project Name (e.g., T70)
+    is_locked = Column(Boolean, default=False) # Session Locking (Prevent Auto-Merge)
+    analysis_result = Column(Text, nullable=True) # AI Analysis JSON
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -62,8 +65,20 @@ class TestRun(Base):
     
     submission_id = Column(Integer, ForeignKey("submissions.id"), nullable=True)
     submission = relationship("Submission", back_populates="test_runs")
-
+    
     test_cases = relationship("TestCase", back_populates="test_run", cascade="all, delete-orphan")
+    executed_modules = relationship("TestRunModule", back_populates="test_run", cascade="all, delete-orphan")
+
+class TestRunModule(Base):
+    """Stores the list of modules that were actually executed in a Test Run."""
+    __tablename__ = "test_run_modules"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    test_run_id = Column(Integer, ForeignKey("test_runs.id"), index=True)
+    module_name = Column(String, index=True)
+    module_abi = Column(String)
+    
+    test_run = relationship("TestRun", back_populates="executed_modules")
 
 class TestCase(Base):
     # NOTE: This table ONLY stores failed test cases to save space and improve performance.

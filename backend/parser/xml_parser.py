@@ -98,19 +98,19 @@ class XMLParser(BaseParser):
         current_class = None
 
         for event, elem in context:
-            if elem.tag == 'Module':
+            if elem.tag.endswith('Module'):
+                # Handle Module (End event)
                 current_module = elem.get('name')
-                # It's an end event, so we are done with this module. 
-                # Actually for iterparse 'end', we get the element when it's fully parsed.
-                # But we need the context *during* the children parsing.
-                # So we might need to track hierarchy differently or just use the fact that
-                # we are processing leaf nodes (Test) and they should have parent info?
-                # No, lxml iterparse 'end' means the element is complete.
-                # So when we are at 'Test', its parent 'TestCase' is NOT yet complete (end event hasn't fired).
-                # But we can access elem.getparent()!
+                
+                yield {
+                    "type": "module_info",
+                    "module_name": elem.get('name'),
+                    "module_abi": elem.get('abi')
+                }
                 pass
             
-            elif elem.tag == 'Test':
+            elif elem.tag.endswith('Test'):
+                # This is a test case result
                 # This is a test case result
                 test_name = elem.get('name')
                 result_status = elem.get('result')
@@ -120,40 +120,43 @@ class XMLParser(BaseParser):
                 class_name = test_case_elem.get('name') if test_case_elem is not None else "Unknown"
                 
                 module_elem = test_case_elem.getparent() if test_case_elem is not None else None
-                module_name = module_elem.get('name') if module_elem is not None else "Unknown"
-                module_abi = module_elem.get('abi') if module_elem is not None else "Unknown"
+                module_name = module_elem.get('name') or module_elem.get('appPackageName') if module_elem is not None else "Unknown"
+                module_abi = module_elem.get('abi') or module_elem.get('digests') if module_elem is not None else "Unknown"
                 
                 # Extract failure info if any
-                failure_elem = elem.find('Failure')
+                failure_msg = None
                 stack_trace = None
-                error_message = None
                 
-                if failure_elem is not None:
-                    error_message = failure_elem.get('message')
-                    
-                    # Try to get stack trace from multiple possible locations
-                    # 1. Check for <StackTrace> child element
-                    stack_elem = failure_elem.find('StackTrace')
-                    if stack_elem is not None and stack_elem.text:
-                        stack_trace = stack_elem.text.strip()
-                    
-                    # 2. Fallback to 'stack' attribute
-                    if not stack_trace:
-                        stack_trace = failure_elem.get('stack')
-                    
-                    # 3. Fallback to text content of Failure element itself
-                    if not stack_trace:
-                        stack_trace = failure_elem.text
+                # Find Failure child
+                # Since we are at 'end' of Test, children are processed. 
+                # Find Failure/TestResult elements in the current Test element
+                if not result_status:
+                    # Find Failure/TestResult elements in the current Test element
+                    pass # logic moved to loop below
 
-                yield {
-                    "module_name": module_name,
-                    "module_abi": module_abi,
-                    "class_name": class_name,
-                    "method_name": test_name,
-                    "status": result_status,
-                    "stack_trace": stack_trace,
-                    "error_message": error_message
-                }
+                # Find Failure/TestResult elements in the current Test element
+                for child in elem:
+                    if child.tag.endswith('Failure'):
+                        failure_msg = child.get('message')
+                        # Stacktrace is text of child or child's child
+                        stack_trace = child.text
+                        for sub in child:
+                            if sub.tag.endswith('StackTrace'):
+                                stack_trace = sub.text
+                    elif child.tag.endswith('TestResult'):
+                         if not result_status: result_status = child.get('result') # Fallback result
+
+                # Only yield if we found a module context (or at least a test name)
+                if test_name: 
+                     yield {
+                        "module_name": module_name,
+                        "module_abi": module_abi,
+                        "class_name": class_name,
+                        "method_name": test_name,
+                        "status": result_status,
+                        "stack_trace": stack_trace,
+                        "error_message": failure_msg
+                    }
                 
                 # Important: clear the element to save memory
                 elem.clear()
@@ -161,8 +164,5 @@ class XMLParser(BaseParser):
                 while elem.getprevious() is not None:
                     del elem.getparent()[0]
             
-            elif elem.tag == 'Module':
-                # Clear module after we are done with it
-                elem.clear()
                 
         del context

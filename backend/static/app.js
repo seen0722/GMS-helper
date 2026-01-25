@@ -881,32 +881,20 @@ function setupUpload() {
                                 throw new Error(errorMsg);
                             }
                         } catch (uploadError) {
-                            progressBar.style.width = '100%';
-                            progressBar.classList.remove('bg-blue-600');
-                            progressBar.classList.add('bg-red-600');
-                            message.textContent = `Error: ${uploadError.message}`;
-                            message.classList.add('text-red-600');
                             console.error('Upload failed', uploadError);
+                            renderUploadError(uploadError.message);
                         }
                         
                         worker.terminate();
                     } else if (data.type === 'error') {
-                        progressBar.style.width = '100%';
-                        progressBar.classList.remove('bg-blue-600');
-                        progressBar.classList.add('bg-red-600');
-                        message.textContent = `Error: ${data.error}`;
-                        message.classList.add('text-red-600');
+                        renderUploadError(data.error);
                         worker.terminate();
                     }
                 };
                 
                 worker.onerror = (error) => {
                     console.error('Worker error:', error);
-                    progressBar.style.width = '100%';
-                    progressBar.classList.remove('bg-blue-600');
-                    progressBar.classList.add('bg-red-600');
-                    message.textContent = `Parsing error: ${error.message || 'Unknown error'}`;
-                    message.classList.add('text-red-600');
+                    renderUploadError(`Parsing error: ${error.message || 'Unknown error'}`);
                     worker.terminate();
                 };
                 
@@ -914,12 +902,8 @@ function setupUpload() {
                 worker.postMessage(file);
                 
             } catch (e) {
-                progressBar.style.width = '100%';
-                progressBar.classList.remove('bg-blue-600');
-                progressBar.classList.add('bg-red-600');
-                message.textContent = `Error: ${e.message}`;
-                message.classList.add('text-red-600');
                 console.error('Local parsing failed', e);
+                renderUploadError(`Error: ${e.message}`);
             }
         } else {
             // Fallback to server-side upload for non-XML files
@@ -4798,6 +4782,11 @@ async function fetchSuiteConfig() {
         if (!res.ok) throw new Error("Failed to load suite config");
         const configs = await res.json();
         
+        if (configs && configs.length === 0) {
+            console.warn("Server returned empty suite config, using fallback defaults.");
+            throw new Error("Empty config");
+        }
+        
         REQUIRED_SUITES = configs.map(c => c.name);
         SUITE_CONFIGS = {};
         configs.forEach(c => SUITE_CONFIGS[c.name] = c);
@@ -4806,6 +4795,10 @@ async function fetchSuiteConfig() {
         console.error("Failed to fetch suite config, using fallback", e);
         // Fallback
         REQUIRED_SUITES = ['CTS', 'CTSonGSI', 'VTS', 'GTS', 'STS'];
+        SUITE_CONFIGS = {};
+        REQUIRED_SUITES.forEach(name => {
+            SUITE_CONFIGS[name] = { name: name, display_name: name, match_rule: 'Standard' };
+        });
     }
 }
 
@@ -5076,6 +5069,9 @@ async function loadSubmissionDetail(id) {
         const sub = await response.json();
         currentSubmissionDetails = sub;
         
+        // Render Compliance Matrix
+        renderComplianceMatrix(sub);
+        
         // Status styling
         const statusStyles = {
             draft: { gradient: 'status-gradient-draft', badge: 'bg-slate-100 text-slate-600' },
@@ -5158,7 +5154,7 @@ async function loadSubmissionDetail(id) {
         renderSubmissionWarnings(sub.warnings || []);
         
         // Render Compliance Matrix
-        renderComplianceMatrix(matrixEl, sub.test_runs || [], sub.target_fingerprint);
+
         
         // Render Test Runs List
         renderSubmissionRuns(runsListEl, runsEmptyEl, sub.test_runs || [], sub.target_fingerprint);
@@ -5255,17 +5251,22 @@ function identifyRunSuite(run, targetFingerprint) {
         const config = SUITE_CONFIGS[suiteName];
         if (!config) continue;
         
+        // Backend now returns device_product / device_model
+        // Use those or fallback to build_product if available (though backend sends device_product)
+        const product = (run.device_product || run.build_product || '').toLowerCase();
+        const model = (run.device_model || run.build_model || '').toLowerCase();
+        const hasGsiTag = product.includes('gsi') || model.includes('gsi');
+        
         let isMatch = false;
+        
         if (config.match_rule === 'GSI') {
-             // Check fingerprint mismatch OR explicit 'gsi' in product/model
-             const isGsiProduct = (run.build_product && run.build_product.toLowerCase().includes('gsi')) || 
-                                  (run.build_model && run.build_model.toLowerCase().includes('gsi'));
-             isMatch = runName.includes('CTS') && (run.device_fingerprint !== targetFingerprint || isGsiProduct);
+             // It matches if name is CTS AND (fingerprint differs from target OR explicit 'gsi' in product/model)
+             isMatch = runName.includes('CTS') && (run.device_fingerprint !== targetFingerprint || hasGsiTag);
+        
         } else if (config.name === 'CTS') {
-             // Standard CTS excludes GSI
-             const isGsi = run.device_fingerprint !== targetFingerprint || 
-                           (run.build_product && run.build_product.toLowerCase().includes('gsi')) ||
-                           (run.build_model && run.build_model.toLowerCase().includes('gsi'));
+             // Standard CTS: Matches CTS AND (fingerprint matches target AND NOT GSI tag)
+             // Or strictly: !GSI
+             const isGsi = (run.device_fingerprint !== targetFingerprint) || hasGsiTag;
              isMatch = runName.includes('CTS') && !isGsi;
         } else {
              isMatch = runName.includes(suiteName);
@@ -5496,117 +5497,6 @@ function renderSubmissionAnalysis(data) {
     }
 }
 
-function renderComplianceMatrix(container, runs, targetFingerprint) {
-    if (!container) return;
-    
-    // Group runs by suite type
-    const suiteData = {};
-    REQUIRED_SUITES.forEach(suite => {
-        suiteData[suite] = { runs: [], status: 'missing' };
-    });
-    
-    runs.forEach(run => {
-        const matchedSuite = identifyRunSuite(run, targetFingerprint);
-        if (suiteData[matchedSuite]) {
-            suiteData[matchedSuite].runs.push(run);
-        }
-    });
-    
-    // Calculate stats for each suite
-    const suiteCards = REQUIRED_SUITES.map(suite => {
-        const data = suiteData[suite];
-        const config = SUITE_CONFIGS[suite];
-        const displayName = config ? (config.display_name || suite) : suite;
-        
-        let contentHtml = '';
-        let cardClass = '';
-        
-        if (data.runs.length === 0) {
-            // Missing State
-            cardClass = 'bg-slate-50/50 border-slate-200/60';
-            contentHtml = `
-                <div class="flex justify-between items-start mb-3">
-                    <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">${displayName}</span>
-                    <div class="w-1.5 h-1.5 rounded-full bg-slate-200"></div>
-                </div>
-                <div class="flex-1 flex flex-col justify-end">
-                    <div class="text-sm font-medium text-slate-400">Missing</div>
-                    <div class="text-[10px] text-slate-300 mt-1">No data</div>
-                </div>
-            `;
-        } else {
-            // Data Available
-            const latestRun = data.runs[0];
-            const hasFails = (latestRun.failed_tests || 0) > 0;
-            const failures = latestRun.failed_tests || 0;
-            const passed = latestRun.passed_tests || 0;
-            
-            // Logic for Recovered Status (Attempt to infer if available in run object, otherwise basic)
-            // Note: 'run' object here is raw test_run, doesn't always have 'recovered' count unless we enhanced the API.
-            // But we can check if it's a pass/fail.
-            
-            let bgClass, textClass, contentHtml, borderClass;
-            
-            if (!hasFails) {
-                // PASS CASE
-                // Check if any prior runs failed? (Hard to know without full history here, assume Clean Pass for now for single run view)
-                // However, if we want to show "Recovered", we'd need that data. 
-                // For now, let's stick to simple "Pass" style but matching the new aesthetics.
-                
-                bgClass = 'bg-emerald-50/80';
-                textClass = 'text-emerald-700';
-                
-                contentHtml = `
-                    <div class="flex justify-between items-start mb-1 relative z-10">
-                        <span class="text-[10px] font-bold ${textClass} uppercase tracking-widest opacity-70">${displayName}</span>
-                        <svg class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
-                    </div>
-                    
-                    <div class="relative z-10 flex-1 flex flex-col justify-end">
-                        <div class="flex items-baseline gap-0.5 mb-2">
-                             <span class="text-[32px] font-display font-bold tracking-tight text-slate-800 tabular-nums">0</span>
-                             <span class="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1">Fail</span>
-                        </div>
-                        <div class="text-[10px] font-medium text-emerald-600 bg-emerald-100/50 px-2 py-1 rounded-full w-fit">
-                            All Passed
-                        </div>
-                    </div>
-                `;
-            } else {
-                // FAIL CASE
-                bgClass = 'bg-red-50/80';
-                textClass = 'text-red-700';
-                
-                contentHtml = `
-                     <div class="flex justify-between items-start mb-1 relative z-10">
-                        <span class="text-[10px] font-bold ${textClass} uppercase tracking-widest opacity-70">${displayName}</span>
-                        <div class="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)] animate-pulse"></div>
-                    </div>
-                    
-                    <div class="relative z-10 flex-1 flex flex-col justify-end">
-                        <div class="flex items-baseline gap-0.5 mb-2">
-                             <span class="text-[32px] font-display font-bold tracking-tight text-red-700 tabular-nums">${failures}</span>
-                             <span class="text-xs font-bold text-red-400 uppercase tracking-wider ml-1">Failures</span>
-                        </div>
-                        <div class="w-full bg-slate-200/50 rounded-full h-1.5 overflow-hidden">
-                             <div class="bg-red-500 h-full rounded-full shadow-sm" style="width: ${Math.min((failures / (failures+passed))*100 * 5, 100)}%"></div> 
-                        </div>
-                    </div>
-                `;
-            }
-
-            cardClass = `${bgClass}`; 
-            
-            return `
-                <div class="relative group p-5 rounded-[20px] ${cardClass} transition-all duration-500 hover:shadow-apple-hover hover:-translate-y-0.5 flex flex-col h-40 overflow-hidden backdrop-blur-xl">
-                    ${contentHtml}
-                </div>
-            `;
-        }
-    });
-    
-    container.innerHTML = suiteCards.join('');
-}
 
 // selectedRunIds is declared globally
 
@@ -6476,3 +6366,199 @@ function renderConsolidatedTable() {
 document.addEventListener('DOMContentLoaded', () => {
     loadProducts();
 });
+
+// --- Upload Helper Functions (Apple UI) ---
+
+// Helper to extract Run ID from error string (e.g. "... (Run #123).")
+function extractRunId(text) {
+    const match = text.match(/\(Run #(\d+)\)/);
+    return match ? match[1] : null;
+}
+
+function renderUploadError(messageText) {
+    const statusDiv = document.getElementById('upload-status');
+    const isDuplicate = messageText.includes('Duplicate Upload');
+    const runId = isDuplicate ? extractRunId(messageText) : null;
+    
+    // Apple-style Error/Warning Card
+    // Using Amber for Duplicate (Warning), Red for others (Error)
+    const theme = isDuplicate ? 'amber' : 'red';
+    const bgClass = isDuplicate ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100';
+    const textClass = isDuplicate ? 'text-amber-800' : 'text-red-800';
+    const iconColor = isDuplicate ? 'text-amber-500' : 'text-red-500';
+    const title = isDuplicate ? 'Report Already Exists' : 'Upload Failed';
+    
+    // Clean up message for display
+    let displayMsg = messageText.replace(/^Error: /, '').replace(/^Duplicate Upload: /, '');
+    if (isDuplicate) {
+         // Simplify the detailed backend message for the subtitle
+         displayMsg = "You have already uploaded this result file. No new data was created.";
+    }
+
+    statusDiv.innerHTML = `
+        <div class="rounded-2xl ${bgClass} border p-5 text-left animate-in fade-in zoom-in-95 duration-300">
+            <div class="flex items-start gap-4">
+                <div class="flex-shrink-0 mt-0.5">
+                    <svg class="w-6 h-6 ${iconColor}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        ${isDuplicate 
+                            ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>' 
+                            : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>'
+                        }
+                    </svg>
+                </div>
+                <div class="flex-1">
+                    <h4 class="text-base font-bold ${textClass}">${title}</h4>
+                    <p class="text-sm ${textClass} mt-1 opacity-90 leading-relaxed">
+                        ${displayMsg}
+                    </p>
+                    
+                    ${runId ? `
+                    <div class="mt-4 flex gap-3">
+                        <button onclick="router.navigate('run-details', {id: ${runId}})" 
+                            class="px-4 py-2 bg-white border border-amber-200 shadow-sm rounded-lg text-sm font-semibold text-amber-700 hover:bg-amber-50 transition-all flex items-center gap-2">
+                            <span>View Run #${runId}</span>
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                        </button>
+                         <button onclick="setupUpload()" class="px-4 py-2 text-sm font-medium text-amber-600 hover:text-amber-800 transition-colors">
+                            Try Another File
+                        </button>
+                    </div>
+                    ` : `
+                    <button onclick="setupUpload()" class="mt-3 text-sm font-bold underline decoration-2 underline-offset-2 hover:decoration-4 transition-all">
+                        Try Again
+                    </button>
+                    `}
+                </div>
+            </div>
+        </div>
+    `;
+    statusDiv.classList.remove('hidden');
+}
+
+// --- Compliance Matrix Rendering ---
+
+function renderComplianceMatrix(sub) {
+    const matrixEl = document.getElementById('compliance-matrix');
+    if (!matrixEl) return;
+    
+    let html = '';
+    
+    const displaySuites = REQUIRED_SUITES.length > 0 ? REQUIRED_SUITES : Object.keys(SUITE_CONFIGS);
+    
+    displaySuites.forEach(suiteName => {
+        const config = SUITE_CONFIGS[suiteName];
+        if (!config) return;
+        
+        let status = 'Missing';
+        let statusColor = 'bg-slate-50 border-slate-200/60';
+        let progressColor = 'bg-slate-200';
+        let contentHtml = '';
+        let passRatePercent = 0;
+        let onClickAction = '';  
+        let cursorClass = 'cursor-default';
+        let runCountBadge = '';
+        
+        // Use backend pre-calculated summary if available
+        const summary = sub.suite_summary ? sub.suite_summary[suiteName] : null;
+        
+        if (summary && summary.status !== 'missing') {
+             const isFail = summary.failed > 0;
+             const total = summary.passed + summary.failed;
+             passRatePercent = total > 0 ? (summary.passed / total) * 100 : 0;
+             
+             if (isFail) {
+                 status = 'Fail';
+                 statusColor = 'bg-red-50 border-red-200 hover:border-red-300 hover:shadow-red-100/50';
+                 progressColor = 'bg-red-500';
+             } else {
+                 status = 'Pass';
+                 statusColor = 'bg-emerald-50 border-emerald-200 hover:border-emerald-300 hover:shadow-emerald-100/50';
+                 progressColor = 'bg-emerald-500';
+             }
+             
+             // Top Right Badge: Runs Count & Merged Status
+             const runLabel = summary.run_count === 1 ? 'Run' : 'Runs';
+             
+             runCountBadge = `
+                <div class="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/60 border border-black/5 text-[10px] font-semibold text-slate-600 shadow-sm backdrop-blur-sm" title="Combined result of ${summary.run_count} runs">
+                    <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    ${summary.run_count} ${runLabel}
+                </div>
+             `;
+             
+             // Content Stats
+             contentHtml = `
+                <div class="mt-4 space-y-3">
+                     <!-- Micro Progress Bar -->
+                     <div class="w-full h-1.5 bg-black/5 rounded-full overflow-hidden">
+                        <div class="h-full ${progressColor} transition-all duration-500" style="width: ${passRatePercent}%"></div>
+                     </div>
+                     
+                     <div class="flex justify-between items-end">
+                         <div class="flex flex-col">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Failures</span>
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-lg font-bold ${isFail ? 'text-red-700' : 'text-slate-700'}">${summary.failed.toLocaleString()}</span>
+                                ${summary.recovered > 0 ? `<div class="px-1.5 py-0.5 rounded text-[9px] font-bold text-emerald-700 bg-emerald-100/80" title="${summary.recovered} issues fixed in later runs">-${summary.recovered}</div>` : ''}
+                            </div>
+                         </div>
+                         
+                         <div class="flex flex-col items-end text-right">
+                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Tests</span>
+                            <span class="text-sm font-semibold text-slate-600">${total.toLocaleString()}</span>
+                         </div>
+                     </div>
+                </div>
+                
+                <!-- Hover Chevron -->
+                <div class="absolute bottom-4 right-4 text-slate-400 opacity-0 group-hover:opacity-100 transform group-hover:translate-x-1 transition-all">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                </div>
+             `;
+             
+             // Make card clickable
+             onClickAction = `onclick="router.navigate('run-details', {latest_run: true, suite: '${suiteName}'})"`; // Todo: handle merged view better? For now just navigate.
+             // Actually, navigate to Detail filtered by suite is better, but for now we don't have that view.
+             // Let's just make it do nothing or generic for now, as spec didn't define interaction destination. 
+             // "router.navigate('run-details', ...)" opens a specfic run. We should probably open the list of runs for this suite?
+             // Let's stick to existing behavior: Navigate to latest run details? 
+             // Or better: Navigate to the first run of this suite to see list?
+             // For safety, let's keep it generic, just print to console or simple alert if not defined properly. 
+             // Actually, the previous code navigated to `latestRun.id`.
+             // Ideally we should navigate to a "Merged View" page.
+             // Since we don't have a specific page, let's omit the action but keep the visual affordance for the future, or open the run list tab.
+             cursorClass = 'cursor-pointer';
+             
+        } else {
+            // Missing
+             contentHtml = `
+                <div class="flex flex-col items-center justify-center h-20 text-center mt-2">
+                    <button onclick="router.navigate('upload'); event.stopPropagation();" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 px-4 py-2 rounded-lg border border-indigo-100 transition-all">
+                        + Upload Result
+                    </button>
+                </div>
+            `;
+            cursorClass = 'cursor-default';
+        }
+        
+        html += `
+        <div class="relative group rounded-2xl p-5 border shadow-sm hover:shadow-lg transition-all duration-300 ${statusColor} ${cursorClass}" ${onClickAction}>
+            <div class="flex justify-between items-start">
+                <div class="flex flex-col">
+                     <span class="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-1">${config.display_name || suiteName}</span>
+                     ${summary && summary.status !== 'missing' ? 
+                        `<span class="text-3xl font-display font-black text-slate-800 tracking-tight">${summary.status === 'pass' ? 'PASS' : 'FAIL'}</span>` : 
+                        `<span class="text-3xl font-display font-black text-slate-300">-</span>`
+                     }
+                </div>
+                <!-- Top Right Badge -->
+                ${summary && summary.status !== 'missing' ? runCountBadge : ''}
+            </div>
+            ${contentHtml}
+        </div>
+        `;
+    });
+    
+    matrixEl.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-8';
+    matrixEl.innerHTML = html;
+}
