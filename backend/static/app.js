@@ -881,12 +881,22 @@ function setupUpload() {
                                 throw new Error(errorMsg);
                             }
                         } catch (uploadError) {
-                            throw uploadError;
+                            progressBar.style.width = '100%';
+                            progressBar.classList.remove('bg-blue-600');
+                            progressBar.classList.add('bg-red-600');
+                            message.textContent = `Error: ${uploadError.message}`;
+                            message.classList.add('text-red-600');
+                            console.error('Upload failed', uploadError);
                         }
                         
                         worker.terminate();
                     } else if (data.type === 'error') {
-                        throw new Error(data.error);
+                        progressBar.style.width = '100%';
+                        progressBar.classList.remove('bg-blue-600');
+                        progressBar.classList.add('bg-red-600');
+                        message.textContent = `Error: ${data.error}`;
+                        message.classList.add('text-red-600');
+                        worker.terminate();
                     }
                 };
                 
