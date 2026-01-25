@@ -1785,13 +1785,13 @@ async function loadClusters(runId) {
             if (btnAnalyze) {
                 btnAnalyze.innerHTML = `
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                     </svg>
-                    Analysis Complete
+                    Re-analyze
                 `;
-                btnAnalyze.disabled = true;
-                btnAnalyze.classList.remove('bg-purple-600', 'hover:bg-purple-700');
-                btnAnalyze.classList.add('bg-green-600', 'text-white');
+                btnAnalyze.disabled = false;
+                btnAnalyze.classList.remove('bg-purple-600', 'hover:bg-purple-700', 'bg-green-600', 'text-white', 'cursor-not-allowed');
+                btnAnalyze.classList.add('bg-white', 'text-slate-700', 'border', 'border-slate-300', 'hover:bg-slate-50', 'shadow-sm', 'btn-press');
                 // Ensure it's visible
                 btnAnalyze.classList.remove('hidden');
             }

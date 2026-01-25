@@ -46,14 +46,24 @@ def run_analysis_task(run_id: int):
             # Get current suite type/name identity
             current_suite = run.test_suite_name
             # Find newer runs for the SAME suite in SAME submission
-            newer_runs = db.query(models.TestRun).filter(
+            candidate_runs = db.query(models.TestRun).filter(
                 models.TestRun.submission_id == submission_id,
                 models.TestRun.test_suite_name == current_suite,
                 models.TestRun.start_time > run.start_time
             ).order_by(models.TestRun.start_time.desc()).all()
+
+            # Strict GSI Separation
+            # GSI runs have 'gsi' in product or model. Standard runs do not (or match target fingerprint).
+            def is_gsi(r):
+                prod = (r.build_product or "").lower()
+                mod = (r.build_model or "").lower()
+                return "gsi" in prod or "gsi" in mod
+
+            current_is_gsi = is_gsi(run)
+            newer_runs = [r for r in candidate_runs if is_gsi(r) == current_is_gsi]
             
             if newer_runs:
-                print(f"Found {len(newer_runs)} newer runs for suite {current_suite}. Checking for recovery...")
+                print(f"Found {len(newer_runs)} newer matching runs (GSI={current_is_gsi}). Checking for recovery...")
                 # Get all failures in newer runs to check persistence
                 # We collect a set of (module, class, method) that FAILED in ANY newer run.
                 # If a test case is NOT in this set, it implies it PASSED (Recovered) in the latest relevant run 

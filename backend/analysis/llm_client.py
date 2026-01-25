@@ -4,10 +4,57 @@ import os
 
 import json
 from openai import OpenAI
+from backend.analysis.categories import FailureCategory, Severity
+
+# Build category list for prompt
+CATEGORY_LIST = "\n".join([f"- {c.value}" for c in FailureCategory])
+
+SYSTEM_PROMPT = f"""You are an Expert Android System Engineer specializing in GMS (Google Mobile Services) Certification.
+Your task is to analyze a single test failure and classify it precisely.
+
+Output a strict JSON object with these keys:
+- 'root_cause': Technical hypothesis (e.g., "Buffer overflow in audio HAL", "Race condition in UI").
+- 'solution': Actionable fix (e.g., "Increase buffer size", "Add synchronization").
+- 'ai_summary': A concise one-sentence title for this failure.
+- 'severity': One of ["Critical", "High", "Medium", "Low"].
+- 'category': Exact classification from this list:
+{CATEGORY_LIST}
+- 'confidence_score': 1-5 (5=Highest).
+- 'suggested_assignment': The most appropriate team (e.g., "Audio Team", "System UI", "Kernel").
+"""
+
+SUBMISSION_SYSTEM_PROMPT = f"""You are a Senior Android System Engineer at a chipset vendor (like Qualcomm/MediaTek). You are reviewing a consolidated GMS test report for a Tech Lead.
+Your goal is to "Triage" the critical failures to help the Tech Lead decide: "Is this a BSP bug, an AOSP bug, or an Infra issue?"
+
+Analyze the provided list of PERSISTENT failures (transient failures have already been filtered out).
+Use the following standardized Categories for classification:
+{CATEGORY_LIST}
+
+Return a strict JSON response with the following keys:
+- 'executive_summary': A 2-sentence technical summary. Focus on ROOT CAUSE hypothesis (e.g., "High number of MediaCodec failures suggests potential ION memory leak or DSP driver regression.").
+- 'top_risks': A list of strings (max 3) highlighting the top blockers. Be specific (e.g., "CtsMediaTestCases - potential Decoder hang").
+- 'recommendations': A list of actionable steps (max 3). Assign to teams: Audio, Display, Kernel, Infra. (e.g., "[Kernel] Check dmesg for OOM killer", "[Infra] Verify wifi stability").
+- 'severity_score': Integer 0-100. (0=Clean, 100=Unreleasable).
+    - >80: Critical BSP crash/hang.
+    - 50-80: Functional regression in major modules.
+    - <20: Minor flakes or known waivers.
+- 'analyzed_clusters': A list of objects for each major failure pattern found. Each object must have:
+    - 'pattern_name': Short name (e.g., "MediaCodec Timeout").
+    - 'count': Integer (number of occurrences).
+    - 'root_cause': Technical hypothesis (e.g., "DSP failed to release buffer").
+    - 'solution': Suggested fix (e.g., "Check ION heap size").
+    - 'redmine_component': Suggested Redmine Project/Component (e.g., "BSP - Multimedia").
+    - 'category': The category from the standard list above.
+"""
 
 class LLMClient(ABC):
     @abstractmethod
     def analyze_failure(self, failure_text: str) -> dict:
+        pass
+
+    @abstractmethod
+    def analyze_submission(self, failures_text: str) -> dict:
+        """Analyze a collection of failures for a full submission report."""
         pass
 
 class MockLLMClient(LLMClient):
@@ -21,30 +68,14 @@ class MockLLMClient(LLMClient):
             "confidence_score": 3,
             "suggested_assignment": "System Team"
         }
-
-SYSTEM_PROMPT = """You are an expert Android GMS certification test engineer. Analyze test failures and provide actionable insights.
-
-When analyzing failures:
-- Focus on the error message, test class, and method name if stack trace is limited
-- Provide specific, actionable root causes based on the test context
-- Suggest concrete solutions that developers can implement
-- If the failure is about timing, media codecs, or framework issues, provide relevant Android-specific guidance
-
-Return a JSON response with the following keys:
-- 'title': A single, descriptive sentence summarizing the failure (e.g., "Assertion failure due to improper default permission grants"). Max 20 words. Do NOT use markdown.
-- 'summary': A detailed technical summary of the failure.
-- 'root_cause': A concise technical explanation of why the test failed. If multiple causes, use numbered list with each item on a new line (e.g., "1. First cause\\n2. Second cause").
-- 'solution': Specific, actionable steps to fix the issue. IMPORTANT: Use numbered list with each step on a NEW LINE separated by \\n (e.g., "1. First step\\n2. Second step\\n3. Third step"). Do NOT put all steps on one line.
-- 'severity': One of "High", "Medium", "Low". High = Crash/Fatal/Blocker.
-- 'category': The main category of the error. Choose from: "Test Case Issue", "Framework Issue", "Media/Codec Issue", "Permission Issue", "Configuration Issue", "Hardware Issue", "Performance Issue", "System Stability".
-- 'confidence_score': An integer from 1 to 5 based strictly on evidence strength:
-  5 = Code Level Pinpoint: Stack trace explicitly points to driver, kernel, or specific app logic/race condition. Ironclad evidence.
-  4 = Framework/Service Error: Failure in a specific system service (e.g. WiFiService, AudioService) with clear state error.
-  3 = Generic Assertion/Test Failure: Standard test assertion failure (e.g. "expected true but was false") even with stack trace. This is the BASELINE for most test failures.
-  2 = Vague Guess: Only generic error messages (e.g., "Test failed") without useful logs/traces.
-  1 = Wild Guess: No logs, no stack trace, only timeout or empty failure.
-- 'suggested_assignment': The likely team or component owner (e.g., "Audio Team", "Camera Team", "Framework Team")."""
-
+    
+    def analyze_submission(self, failures_text: str) -> dict:
+        return {
+            "executive_summary": "Mock Analysis: Several stability issues detected in this build, primarily affecting media playback and keymaster.",
+            "top_risks": ["Media Codec Timeout", "Keymaster TEE Failure"],
+            "recommendations": ["Investigate DSP load during media playback", "Check TrustZone logs for keymaster errors"],
+            "severity_score": 65
+        }
 
 class OpenAILLMClient(LLMClient):
     def __init__(self, api_key: str):
@@ -63,7 +94,7 @@ class OpenAILLMClient(LLMClient):
             content = response.choices[0].message.content
             result = json.loads(content)
             
-            # Combine title and summary for backward compatibility and frontend display
+            # Combine title and summary for backward compatibility
             if 'title' in result and 'summary' in result:
                 result['ai_summary'] = f"{result['title']}\n{result['summary']}"
             elif 'title' in result:
@@ -74,29 +105,48 @@ class OpenAILLMClient(LLMClient):
             return result
         except Exception as e:
             print(f"OpenAI API call failed: {e}")
-            return {
-                "root_cause": "AI Analysis Failed",
-                "solution": f"Error: {str(e)}",
-                "ai_summary": "Analysis failed due to API error.",
-                "severity": "Low",
-                "category": "Unknown",
-                "confidence_score": 1,
-                "suggested_assignment": "Unknown"
-            }
+            return self._get_error_response(e)
+
+    def analyze_submission(self, failures_text: str) -> dict:
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": SUBMISSION_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Analyze these failures from a GMS submission:\n\n{failures_text[:10000]}"}
+                ],
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            return json.loads(content)
+        except Exception as e:
+             print(f"OpenAI Submission Analysis failed: {e}")
+             return self._get_submission_error_response(e)
+
+    def _get_error_response(self, e):
+         return {
+            "root_cause": "AI Analysis Failed",
+            "solution": f"Error: {str(e)}",
+            "ai_summary": "Analysis failed due to API error.",
+            "severity": "Low",
+            "category": "Unknown",
+            "confidence_score": 1,
+            "suggested_assignment": "Unknown"
+        }
+        
+    def _get_submission_error_response(self, e):
+         return {
+            "executive_summary": f"AI Analysis Failed: {str(e)}",
+            "top_risks": ["Analysis Error"],
+            "recommendations": ["Check API Configuration"],
+            "severity_score": 0
+        }
 
 
 class InternalLLMClient(LLMClient):
     """LLM client for internal Ollama/vLLM servers with OpenAI-compatible API."""
     
     def __init__(self, base_url: str, model: str = "llama3.1:8b", api_key: str = "not-needed"):
-        """
-        Initialize internal LLM client.
-        
-        Args:
-            base_url: The base URL of the LLM server (e.g., http://localhost:11434/v1)
-            model: The model name to use (e.g., llama3.1:8b, qwen2.5:7b)
-            api_key: API key (usually not required for internal servers)
-        """
         self.client = OpenAI(base_url=base_url, api_key=api_key)
         self.model = model
         self.base_url = base_url
@@ -114,7 +164,6 @@ class InternalLLMClient(LLMClient):
             content = response.choices[0].message.content
             result = json.loads(content)
             
-            # Combine title and summary for backward compatibility and frontend display
             if 'title' in result and 'summary' in result:
                 result['ai_summary'] = f"{result['title']}\n{result['summary']}"
             elif 'title' in result:
@@ -125,32 +174,51 @@ class InternalLLMClient(LLMClient):
             return result
         except Exception as e:
             print(f"Internal LLM API call failed ({self.base_url}): {e}")
-            return {
-                "root_cause": "AI Analysis Failed",
-                "solution": f"Error connecting to internal LLM: {str(e)}",
-                "ai_summary": "Analysis failed due to internal LLM error.",
-                "severity": "Low",
-                "category": "Unknown",
-                "confidence_score": 1,
-                "suggested_assignment": "Unknown"
-            }
+            return self._get_error_response(e)
+
+    def analyze_submission(self, failures_text: str) -> dict:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": SUBMISSION_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Analyze these failures from a GMS submission:\n\n{failures_text[:5000]}"}
+                ],
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            return json.loads(content)
+        except Exception as e:
+             print(f"Internal LLM Submission Analysis failed: {e}")
+             return self._get_submission_error_response(e)
+
+    def _get_error_response(self, e):
+         return {
+            "root_cause": "AI Analysis Failed",
+            "solution": f"Error connecting to internal LLM: {str(e)}",
+            "ai_summary": "Analysis failed due to internal LLM error.",
+            "severity": "Low",
+            "category": "Unknown",
+            "confidence_score": 1,
+            "suggested_assignment": "Unknown"
+        }
+
+    def _get_submission_error_response(self, e):
+         return {
+            "executive_summary": f"AI Analysis Failed: {str(e)}",
+            "top_risks": ["Internal API Error"],
+            "recommendations": ["Check Internal LLM Service"],
+            "severity_score": 0
+        }
+
+
 class CambrianLLMClient(LLMClient):
     """LLM client for Cambrian internal gateway with SSL verification disabled."""
     
     def __init__(self, base_url: str, api_key: str, model: str = "LLAMA 3.3 70B"):
-        """
-        Initialize Cambrian LLM client.
-        
-        Args:
-            base_url: The Cambrian API URL (e.g., https://api.cambrian.pegatroncorp.com)
-            api_key: Cambrian API token
-            model: The model name to use (e.g., LLAMA 3.3 70B)
-        """
         import httpx
-        # Disable SSL verification for internal network
         http_client = httpx.Client(verify=False)
         
-        # Ensure base_url ends with /v1
         if base_url and not base_url.endswith('/v1'):
             if base_url.endswith('/'):
                 base_url = f"{base_url}v1"
@@ -174,7 +242,6 @@ class CambrianLLMClient(LLMClient):
             content = response.choices[0].message.content
             result = json.loads(content)
             
-            # Combine title and summary for backward compatibility and frontend display
             if 'title' in result and 'summary' in result:
                 result['ai_summary'] = f"{result['title']}\n{result['summary']}"
             elif 'title' in result:
@@ -185,15 +252,43 @@ class CambrianLLMClient(LLMClient):
             return result
         except Exception as e:
             print(f"Cambrian LLM API call failed ({self.base_url}): {e}")
-            return {
-                "root_cause": "AI Analysis Failed",
-                "solution": f"Error connecting to Cambrian: {str(e)}",
-                "ai_summary": "Analysis failed due to Cambrian API error.",
-                "severity": "Low",
-                "category": "Unknown",
-                "confidence_score": 1,
-                "suggested_assignment": "Unknown"
-            }
+            return self._get_error_response(e)
+
+    def analyze_submission(self, failures_text: str) -> dict:
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": SUBMISSION_SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Analyze these failures from a GMS submission:\n\n{failures_text[:10000]}"}
+                ],
+                response_format={"type": "json_object"}
+            )
+            content = response.choices[0].message.content
+            return json.loads(content)
+        except Exception as e:
+             print(f"Cambrian LLM Submission Analysis failed: {e}")
+             return self._get_submission_error_response(e)
+
+    def _get_error_response(self, e):
+         return {
+            "root_cause": "AI Analysis Failed",
+            "solution": f"Error connecting to Cambrian: {str(e)}",
+            "ai_summary": "Analysis failed due to Cambrian API error.",
+            "severity": "Low",
+            "category": "Unknown",
+            "confidence_score": 1,
+            "suggested_assignment": "Unknown"
+        }
+        
+    def _get_submission_error_response(self, e):
+         return {
+            "executive_summary": f"AI Analysis Failed: {str(e)}",
+            "top_risks": ["Cambrian API Error"],
+            "recommendations": ["Check Cambrian Token"],
+            "severity_score": 0
+        } 
+
 
 
 def get_llm_client():
