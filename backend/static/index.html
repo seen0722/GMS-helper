@@ -459,6 +459,15 @@
                 Settings
             </a>
         </nav>
+        
+        <!-- Projects / Products Section -->
+        <div class="px-6 mt-6 mb-2">
+            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Projects</h3>
+        </div>
+        <nav class="px-4 space-y-1.5 overflow-y-auto flex-1 custom-scrollbar" id="sidebar-products">
+            <!-- Product items injected by JS -->
+             <div class="px-4 py-2 text-xs text-slate-500 italic">Loading...</div>
+        </nav>
         <div class="p-4 border-t border-slate-800">
             <button id="btn-reset" type="button"
                 class="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-900/30 text-red-400 hover:bg-red-900/50 rounded transition-colors text-sm font-medium">
@@ -731,8 +740,8 @@
             </button>
 
             <!-- Header Card (Frosted Glass) -->
-            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 relative overflow-hidden transition-all duration-300">
-                <div id="submission-status-bar" class="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-slate-400 to-slate-500"></div>
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 relative transition-all duration-300">
+                <div id="submission-status-bar" class="absolute top-0 left-0 w-full h-1.5 rounded-t-2xl bg-gradient-to-r from-slate-400 to-slate-500"></div>
                 
                 <div class="flex justify-between items-start">
                     <div class="flex-1">
@@ -763,14 +772,36 @@
                         </div>
                     </div>
                     
-                    <!-- Status Toggle -->
-                    <div class="flex items-center gap-3">
-                        <div class="segmented-control" id="submission-status-control">
-                            <button onclick="updateSubmissionStatus('draft')" class="segmented-item" data-status="draft">Draft</button>
-                            <button onclick="updateSubmissionStatus('ready')" class="segmented-item" data-status="ready">Ready</button>
-                            <button onclick="updateSubmissionStatus('published')" class="segmented-item" data-status="published">Published</button>
+                        <!-- Lock Toggle (Apple Switch) -->
+                        <div class="flex items-center gap-3 mr-2">
+                            <div class="flex flex-col items-end">
+                                <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider transition-colors duration-300" id="lock-label">Active</span>
+                                <span class="text-[9px] text-slate-400 font-medium transition-colors duration-300" id="lock-helper-text">Accepting Reruns</span>
+                            </div>
+                            
+                            <div class="relative group">
+                                <button id="btn-lock-toggle" onclick="toggleSubmissionLock(currentSubmissionId)" class="ios-toggle" role="switch" aria-checked="false">
+                                    <span class="ios-toggle-dot"></span>
+                                </button>
+                                
+                                <!-- Tooltip -->
+                                <div class="absolute top-full right-0 mt-3 w-64 p-4 bg-slate-900 text-white text-xs rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none">
+                                    <div class="font-bold text-sm mb-1 text-slate-200">Session Locking</div>
+                                    <div class="space-y-2">
+                                        <div class="flex gap-2">
+                                            <div class="w-1.5 h-1.5 rounded-full bg-slate-500 mt-1.5 flex-shrink-0"></div>
+                                            <div><strong class="text-slate-300">Active (Unlocked):</strong> Auto-merges new uploads from this device (fixing failures).</div>
+                                        </div>
+                                        <div class="flex gap-2">
+                                            <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 mt-1.5 flex-shrink-0"></div>
+                                            <div><strong class="text-emerald-300">Locked:</strong> Freezes this submission. Next upload will create a fresh Phase.</div>
+                                        </div>
+                                    </div>
+                                    <div class="absolute -top-1 right-4 w-2 h-2 bg-slate-900 transform rotate-45"></div>
+                                </div>
+                            </div>
                         </div>
-                        
+
                         <div class="w-px h-6 bg-slate-200 mx-1"></div>
                         
                         <!-- Export Button -->
@@ -782,13 +813,25 @@
                             </svg>
                         </button>
                         
-                        <button onclick="confirmDelete(currentSubmissionId)" 
-                            class="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                            title="Delete Submission">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-                            </svg>
-                        </button>
+                        <div class="relative group">
+                            <button class="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="More Actions">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"/></svg>
+                            </button>
+                            <!-- Dropdown Menu -->
+                            <!-- Dropdown Menu -->
+                            <div class="absolute right-0 top-full pt-2 w-48 hidden group-hover:block z-50">
+                                <div class="bg-white rounded-xl shadow-apple-elevated border border-slate-100 p-1">
+                                    <button onclick="enableMoveRunsMode()" class="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 hover:text-blue-600 rounded-lg flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/></svg>
+                                        Split / Move Runs
+                                    </button>
+                                    <button onclick="confirmDelete(currentSubmissionId)" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                                        Delete Submission
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -826,10 +869,104 @@
                         class="segmented-item px-8 py-2 active">
                         Consolidated Report
                     </button>
+                     <button onclick="switchSubmissionTab('analysis')" id="sub-tab-btn-analysis"
+                        class="segmented-item px-8 py-2">
+                        AI Analysis
+                    </button>
                     <button onclick="switchSubmissionTab('runs')" id="sub-tab-btn-runs"
                         class="segmented-item px-8 py-2">
                         Test Runs
                     </button>
+                </div>
+            </div>
+
+            <!-- Tab: AI Analysis -->
+            <div id="sub-tab-analysis" class="hidden space-y-6">
+                
+                <!-- AI Empty State (Not Analyzed) -->
+                <div id="submission-analysis-empty" class="bg-white rounded-2xl shadow-apple border border-slate-100 p-12 text-center">
+                    <div class="w-16 h-16 bg-indigo-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg class="w-8 h-8 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-bold text-slate-900 mb-2">Analyze Submission Quality</h3>
+                    <p class="text-slate-500 mb-6 max-w-md mx-auto">
+                        Generate a comprehensive AI report for this submission. The AI will filter out recovered failures, analyze persistent issues, and provide a strategic executive summary.
+                    </p>
+                    <button onclick="triggerSubmissionAnalysis(currentSubmissionId)" class="btn-primary bg-indigo-600 text-white px-6 py-2.5 rounded-full shadow-lg shadow-indigo-200 hover:bg-indigo-700 transition-all font-semibold flex items-center gap-2 mx-auto">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        Run AI Analysis
+                    </button>
+                    <p class="text-xs text-slate-400 mt-4">Powered by configured LLM Provider</p>
+                </div>
+
+                <!-- AI Loaded Content -->
+                <div id="submission-analysis-content" class="hidden space-y-6">
+                    <!-- Top KPI Grid -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <!-- Severity Score -->
+                        <div class="bg-white p-6 rounded-2xl shadow-apple border border-slate-100 relative overflow-hidden group">
+                            <div class="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-bl-full -mr-4 -mt-4 opacity-50 group-hover:scale-110 transition-transform"></div>
+                            <div class="relative z-10">
+                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Quality Severity</div>
+                                <div class="flex items-baseline gap-2">
+                                    <div class="text-4xl font-display font-bold text-slate-900" id="sub-kpi-severity">-</div>
+                                    <div class="text-sm font-medium text-slate-400">/ 100</div>
+                                </div>
+                                <div class="mt-3 h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                     <div id="sub-kpi-severity-bar" class="h-full bg-indigo-500 rounded-full transition-all duration-1000" style="width: 0%"></div>
+                                </div>
+                                <div class="mt-2 text-xs font-medium text-slate-500" id="sub-kpi-severity-label">Calculating...</div>
+                            </div>
+                        </div>
+
+                        <!-- Executive Summary -->
+                        <div class="bg-white p-6 rounded-2xl shadow-apple border border-slate-100 md:col-span-2 relative">
+                             <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Executive Summary</div>
+                             <p id="sub-ai-summary" class="text-slate-700 leading-relaxed text-sm font-medium">
+                                 Loading summary...
+                             </p>
+                             <div class="absolute top-4 right-4 text-slate-200">
+                                 <svg class="w-12 h-12 opacity-20" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                             </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <!-- Top Risks -->
+                        <div class="bg-white p-6 rounded-2xl shadow-apple border border-slate-100">
+                            <div class="flex items-center gap-2 mb-4">
+                                <span class="p-1.5 rounded-lg bg-red-50 text-red-500">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                </span>
+                                <h3 class="font-bold text-slate-900">Top Technical Risks</h3>
+                            </div>
+                            <ul id="sub-ai-risks" class="space-y-3">
+                                <!-- Injected -->
+                            </ul>
+                        </div>
+
+                        <!-- Recommendations -->
+                        <div class="bg-white p-6 rounded-2xl shadow-apple border border-slate-100">
+                            <div class="flex items-center gap-2 mb-4">
+                                <span class="p-1.5 rounded-lg bg-emerald-50 text-emerald-500">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                </span>
+                                <h3 class="font-bold text-slate-900">Strategic Recommendations</h3>
+                            </div>
+                            <ul id="sub-ai-recommendations" class="space-y-3">
+                                <!-- Injected -->
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <!-- Re-run Button -->
+                    <div class="text-right">
+                         <button onclick="triggerSubmissionAnalysis(currentSubmissionId)" class="text-xs text-slate-400 hover:text-indigo-600 transition-colors">
+                             Re-run Analysis
+                         </button>
+                    </div>
                 </div>
             </div>
 
@@ -919,7 +1056,13 @@
                 <div class="absolute top-0 left-0 w-1.5 h-full bg-primary-500" id="detail-header-bar"></div>
                 <div class="flex items-center gap-6">
                     <div>
-                        <h3 class="text-xl font-display font-bold text-slate-900 flex items-center gap-2" id="detail-suite-name">CTS</h3>
+                        <div class="flex items-center gap-3">
+                            <h3 class="text-xl font-display font-bold text-slate-900 flex items-center gap-2" id="detail-suite-name">CTS</h3>
+                            <button id="btn-view-submission" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full border border-indigo-100 font-semibold hover:bg-indigo-100 transition-colors flex items-center gap-1 group">
+                                <span id="detail-submission-name">View Submission</span>
+                                <svg class="w-3 h-3 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                            </button>
+                        </div>
                         <div id="detail-device" class="mt-1"></div>
                     </div>
                     <p class="text-xs text-slate-400" id="detail-date">-</p>

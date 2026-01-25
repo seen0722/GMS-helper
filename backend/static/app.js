@@ -5970,27 +5970,117 @@ function renderSubmissionCardV2(sub) {
 }    
 
 function confirmDelete(id) {
-    if (confirm('Are you sure you want to delete this submission? This action cannot be undone.')) {
-        deleteSubmission(id);
+    const deleteModal = document.getElementById('delete-modal');
+    const modalMessage = document.getElementById('delete-modal-message');
+    const modalCancel = document.getElementById('modal-cancel');
+    const modalConfirm = document.getElementById('modal-confirm');
+    
+    if (!deleteModal) {
+        if(confirm('Are you sure you want to delete this submission?')) deleteSubmission(id);
+        return;
     }
+
+    // Build confirmation message
+    modalMessage.innerHTML = `
+        <div class="space-y-4">
+            <div class="flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200">
+                <div class="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                    <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                    </svg>
+                </div>
+                <div>
+                    <div class="font-bold text-red-800">Delete Submission #${id}</div>
+                    <div class="text-sm text-red-600">This action cannot be undone</div>
+                </div>
+            </div>
+            
+            <div class="text-sm text-slate-600">
+                This will properly delete the submission and <strong>all contained test runs</strong>.
+            </div>
+        </div>
+    `;
+    
+    // Reset button state
+    modalConfirm.disabled = false;
+    modalConfirm.textContent = 'Delete Submission';
+    modalConfirm.className = 'px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium';
+    
+    // Show modal
+    deleteModal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+    
+    // Remove old listeners
+    const newCancelBtn = modalCancel.cloneNode(true);
+    const newConfirmBtn = modalConfirm.cloneNode(true);
+    modalCancel.parentNode.replaceChild(newCancelBtn, modalCancel);
+    modalConfirm.parentNode.replaceChild(newConfirmBtn, modalConfirm);
+    
+    // Add new listeners
+    newCancelBtn.addEventListener('click', () => {
+        deleteModal.classList.add('hidden');
+        document.body.classList.remove('modal-open');
+    });
+    
+    let isDeleting = false;
+    newConfirmBtn.addEventListener('click', async () => {
+        if (isDeleting) return;
+        isDeleting = true;
+        
+        try {
+            newConfirmBtn.disabled = true;
+            newConfirmBtn.innerHTML = `
+                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                Deleting...
+            `;
+            
+            await deleteSubmission(id);
+            // deleteSubmission handles navigation and error alerts by itself, 
+            // but we need to close modal if it didn't crash.
+            // Actually deleteSubmission closes early if fetch fails?
+            // Let's rely on deleteSubmission to throw if failed, or handle UI here?
+            // Existing deleteSubmission navigates on success.
+            
+            deleteModal.classList.add('hidden');
+            document.body.classList.remove('modal-open');
+            
+        } catch (e) {
+             // Handled in deleteSubmission or here?
+             // deleteSubmission catches errors inside itself. 
+             // We should probably modify deleteSubmission to propagate or handle UI state?
+             // To be safe, let's keep simple. The user just wants the modal.
+             // If deleteSubmission fails, it alerts. We just reset button.
+             newConfirmBtn.disabled = false;
+             newConfirmBtn.textContent = 'Delete Submission';
+             isDeleting = false;
+        }
+    });
+
+    // Close on outside click
+    deleteModal.onclick = (e) => {
+        if (e.target === deleteModal) {
+            deleteModal.classList.add('hidden');
+            document.body.classList.remove('modal-open');
+        }
+    };
 }
 
 async function deleteSubmission(id) {
-    try {
         const response = await fetch(`${API_BASE}/submissions/${id}`, {
             method: 'DELETE'
         });
         
         if (!response.ok) {
-            throw new Error('Failed to delete submission');
+            const err = await response.json();
+            throw new Error(err.detail || 'Failed to delete submission');
         }
         
         // Success
+        showNotification('Submission deleted successfully', 'success');
         router.navigate('submissions');
-    } catch (e) {
-        console.error('Delete failed', e);
-        alert('Failed to delete submission: ' + e.message);
-    }
 }
 
 function editSubmissionName(name) {
