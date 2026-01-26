@@ -3,8 +3,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, asc
 from typing import List, Optional
 from datetime import datetime
+import json
 from backend.database.database import get_db
 from backend.database import models
+from backend.services.suite_service import SuiteService
 
 from pydantic import BaseModel
 
@@ -105,31 +107,9 @@ def get_submissions(skip: int = 0, limit: int = 20, product_filter: Optional[str
         # Calculate suite status summary
         suite_summary = {}
         
-        # Helper to match suite (handling CTS vs CTSonGSI)
-        def match_suite(run, config):
-            name = (run.test_suite_name or '').upper()
-            
-            if config.match_rule == 'GSI':
-                # Explicit GSI check using product/model logic same as frontend, or trust match_suite logic here
-                # Backend check:
-                is_gsi = (run.build_product and 'gsi' in run.build_product.lower()) or \
-                         (run.build_model and 'gsi' in run.build_model.lower())
-                
-                # It matches if name is CTS AND fingerprint differs from target OR explicit GSI product
-                return 'CTS' in name and (run.device_fingerprint != sub.target_fingerprint or is_gsi)
-            
-            if config.name == 'CTS': # Standard CTS (exclude GSI)
-                # If rule is Standard but name is CTS, exclude GSI
-                is_gsi = (run.device_fingerprint != sub.target_fingerprint) or \
-                         (run.build_product and 'gsi' in run.build_product.lower()) or \
-                         (run.build_model and 'gsi' in run.build_model.lower())
-                return 'CTS' in name and not is_gsi
-            
-            return config.name in name
-
         for suite_cfg in suites_config:
             # Find runs matching this suite type
-            matching_runs = [r for r in sub.test_runs if match_suite(r, suite_cfg)]
+            matching_runs = [r for r in sub.test_runs if SuiteService.match_suite(r, suite_cfg, sub.target_fingerprint)]
             
             if not matching_runs:
                 suite_summary[suite_cfg.name] = {"status": "missing", "failed": 0, "passed": 0}
@@ -210,7 +190,9 @@ def get_submissions(skip: int = 0, limit: int = 20, product_filter: Optional[str
                     "initial_failed": len(all_unique_failures), # Total unique failures ever seen
                     "recovered": recovered_failures_count,
                     "run_count": len(matching_runs),
-                    "is_merged": len(matching_runs) > 1
+                    "is_merged": len(matching_runs) > 1,
+                    "latest_run_id": matching_runs[-1].id,
+                    "run_ids": [r.id for r in matching_runs]
                 }
 
         
@@ -223,7 +205,9 @@ def get_submissions(skip: int = 0, limit: int = 20, product_filter: Optional[str
             "created_at": sub.created_at,
             "updated_at": sub.updated_at,
             "run_count": run_count,
-            "suite_summary": suite_summary
+            "run_count": run_count,
+            "suite_summary": suite_summary,
+            "cluster_count": len(json.loads(sub.analysis_result).get("analyzed_clusters", [])) if sub.analysis_result else 0
         })
     
     # Calculate total count for pagination
@@ -256,6 +240,7 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
          run_list.append({
              "id": run.id,
              "test_suite_name": run.test_suite_name,
+             "suite_plan": run.suite_plan,  # Added suite_plan
              "start_time": run.start_time,
              "status": run.status,
              "passed_tests": run.passed_tests,
@@ -277,30 +262,11 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
              ]
          })
     
-    # helper to check if run matches suite type (handling CTS vs CTSonGSI)
-    def match_suite(run, config):
-        name = (run.test_suite_name or '').upper()
-        
-        if config.match_rule == 'GSI':
-            # It matches if name is CTS AND fingerprint differs from target OR explicit GSI product
-            is_gsi_product = (run.build_product and 'gsi' in run.build_product.lower()) or \
-                             (run.build_model and 'gsi' in run.build_model.lower())
-            return 'CTS' in name and (run.device_fingerprint != sub.target_fingerprint or is_gsi_product)
-            
-        if config.name == 'CTS':
-            # Matches CTS only if fingerprint MATCHES target (or we strictly exclude GSI)
-            is_gsi = (run.device_fingerprint != sub.target_fingerprint) or \
-                     (run.build_product and 'gsi' in run.build_product.lower()) or \
-                     (run.build_model and 'gsi' in run.build_model.lower())
-            return 'CTS' in name and not is_gsi
-            
-        return config.name in name
-
     # --- Calculate Suite Summary (Optimistic Merge) ---
     suite_summary = {}
 
     for suite_cfg in suites_config:
-        matching_runs = [r for r in runs if match_suite(r, suite_cfg)]
+        matching_runs = [r for r in runs if SuiteService.match_suite(r, suite_cfg, sub.target_fingerprint)]
         
         if not matching_runs:
             suite_summary[suite_cfg.name] = {"status": "missing", "failed": 0, "passed": 0}
@@ -357,7 +323,9 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
                 "initial_failed": len(all_unique_failures),
                 "recovered": recovered_failures_count,
                 "run_count": len(matching_runs),
-                "is_merged": len(matching_runs) > 1
+                "is_merged": len(matching_runs) > 1,
+                "latest_run_id": matching_runs[-1].id,
+                "run_ids": [r.id for r in matching_runs]
             }
 
     # --- Phase 3: Intelligence Warnings ---
@@ -367,7 +335,7 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
 
     # 1. Missing Suite Detection
     for suite_cfg in suites_config:
-        has_suite = any(match_suite(r, suite_cfg) for r in runs)
+        has_suite = any(SuiteService.match_suite(r, suite_cfg, sub.target_fingerprint) for r in runs)
         if not has_suite:
             warnings.append({
                 "type": "missing_suite",

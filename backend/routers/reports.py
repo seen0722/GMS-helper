@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
 from backend.database.database import get_db
 from backend.database import models
@@ -48,15 +48,33 @@ def _aggregate_submission_failures(db: Session, submission_id: int) -> List[dict
 
 
 @router.post("/submissions/{submission_id}/analyze")
-def analyze_submission(submission_id: int, db: Session = Depends(get_db)):
+def analyze_submission(submission_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """
     Trigger AI analysis for the entire submission.
     Aggregates persistent failures and asks LLM for a high-level report.
+    Also triggers detailed clustering for all runs if missing.
     """
     # 1. Check submission
     sub = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found")
+
+    # Trigger Clustering for all runs in background to ensure 'Clusters' tab is populated
+    # Use Service directly with a wrapper for Session management
+    from backend.database.database import SessionLocal
+    from backend.services.analysis_service import AnalysisService
+    
+    def _run_analysis_bg(rid: int):
+        session = SessionLocal()
+        try:
+            AnalysisService.run_analysis_task(rid, session)
+        finally:
+            session.close()
+
+    runs = db.query(models.TestRun).filter(models.TestRun.submission_id == submission_id).all()
+    for run in runs:
+        # We re-run analysis to ensure clusters are up to date with new logic
+        background_tasks.add_task(_run_analysis_bg, run.id)
         
     # 2. Aggregate Failures
     failures = _aggregate_submission_failures(db, submission_id)

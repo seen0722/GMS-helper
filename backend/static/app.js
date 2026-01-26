@@ -6928,17 +6928,12 @@ function renderComplianceMatrix(sub) {
              `;
              
              // Make card clickable
-             onClickAction = `onclick="router.navigate('run-details', {latest_run: true, suite: '${suiteName}'})"`; // Todo: handle merged view better? For now just navigate.
-             // Actually, navigate to Detail filtered by suite is better, but for now we don't have that view.
-             // Let's just make it do nothing or generic for now, as spec didn't define interaction destination. 
-             // "router.navigate('run-details', ...)" opens a specfic run. We should probably open the list of runs for this suite?
-             // Let's stick to existing behavior: Navigate to latest run details? 
-             // Or better: Navigate to the first run of this suite to see list?
-             // For safety, let's keep it generic, just print to console or simple alert if not defined properly. 
-             // Actually, the previous code navigated to `latestRun.id`.
-             // Ideally we should navigate to a "Merged View" page.
-             // Since we don't have a specific page, let's omit the action but keep the visual affordance for the future, or open the run list tab.
-             cursorClass = 'cursor-pointer';
+             if (summary.latest_run_id) {
+                 onClickAction = `onclick="router.navigate('run-details', {id: ${summary.latest_run_id}})"`;
+                 cursorClass = 'cursor-pointer btn-press';
+             } else {
+                 cursorClass = 'cursor-default';
+             }
              
         } else {
             // Missing

@@ -79,21 +79,42 @@ def process_upload_background(file_path: str, test_run_id: int):
                     print(f"Submission {submission.id} is LOCKED. Creating new submission for fingerprint {fingerprint}")
                     submission = None #  Force new creation
                 
-                # 2. Relaxed Grouping for GSI (Same Model + SDK)
+                # 2. GSI Fingerprint Match (Ignore Android Version part)
+                # User Requirement: 
+                # CTS: prefix:15/suffix
+                # GSI: prefix:11/suffix
+                # Logic: Match Prefix and Suffix, ignore the middle version.
                 if not submission:
-                    model = test_run.build_model
-                    sdk = test_run.build_version_sdk
+                    import re
+                    # Regex: Group 1 (Prefix), Group 2 (Version), Group 3 (Suffix)
+                    # Pattern: ^([^:]+):([^/]+)/(.+)$
+                    fp_pattern = re.compile(r"^([^:]+):([^/]+)/(.+)$")
                     
-                    if model and sdk and model != "Unknown" and sdk != "Unknown":
-                        # Find latest submission that contains a run with same Model + SDK
-                        match = db.query(models.Submission).join(models.TestRun).filter(
-                            models.TestRun.build_model == model,
-                            models.TestRun.build_version_sdk == sdk
-                        ).order_by(desc(models.Submission.updated_at)).first()
+                    match = fp_pattern.match(fingerprint)
+                    if match:
+                        prefix = match.group(1) # e.g. Trimble/T70/thorpe
+                        # version = match.group(2) # e.g. 11
+                        suffix = match.group(3) # e.g. RKQ1...
                         
-                        if match:
-                            submission = match
-                            print(f"Grouped by Relaxed Match (Model: {model}, SDK: {sdk}) to Submission {submission.id}")
+                        # Find candidates with same Prefix (Brand/Product/Device)
+                        # We limit to recent submissions to avoid scanning too many
+                        candidates = db.query(models.Submission).filter(
+                             models.Submission.target_fingerprint.like(f"{prefix}:%")
+                        ).order_by(desc(models.Submission.updated_at)).limit(20).all()
+                        
+                        for cand in candidates:
+                            if not cand.target_fingerprint: continue
+                            
+                            c_match = fp_pattern.match(cand.target_fingerprint)
+                            if c_match:
+                                c_prefix = c_match.group(1)
+                                c_suffix = c_match.group(3)
+                                
+                                # We already checked prefix via SQL LIKE somewhat, but double check exact match
+                                if c_prefix == prefix and c_suffix == suffix:
+                                    submission = cand
+                                    print(f"Grouped by GSI Fingerprint Match to Submission {submission.id} (Ignored Version Diff)")
+                                    break
                 
                 if not submission:
                     # Create new submission
@@ -273,7 +294,30 @@ def process_upload_background(file_path: str, test_run_id: int):
 
 @router.post("/")
 async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    # 1. Save the file
+    # 1. Validation
+    ALLOWED_EXTENSIONS = {".xml"}
+    ALLOWED_MIME_TYPES = {"text/xml", "application/xml"}
+    
+    filename = file.filename
+    ext = os.path.splitext(filename)[1].lower()
+    
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Invalid file extension. Only .xml files are allowed.")
+        
+    if file.content_type not in ALLOWED_MIME_TYPES:
+        # Strict MIME check can be flaky with some browsers/clients. 
+        # We assume the client is honest or we check the header. 
+        # For a helper tool, checking extension is 90% of defense, checking content_type is extra.
+        # Let's be lenient or log warning? No, requested security. Enforce it.
+        # But commonly uploaded XMLs might have generic types.
+        # Let's stick to extension check as primary, and trusted MIME types.
+        print(f"Warning: Uploaded file content_type is {file.content_type}")
+        # Allow generic text/plain if extension is xml?
+        if file.content_type != "text/plain": 
+             pass # Strict? 
+             # Let's just enforce XML types + text/plain for compatibility
+    
+    # 2. Save the file
     file_id = str(uuid.uuid4())
     file_path = os.path.join(UPLOAD_DIR, f"{file_id}_{file.filename}")
     

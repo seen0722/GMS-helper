@@ -978,6 +978,16 @@
                                     </button>
                                 </div>
                                 <div class="h-6 w-px bg-slate-200"></div>
+                                <!-- Search (REQ-05) -->
+                                <div class="relative group mr-4">
+                                    <input type="text" id="sub-analysis-search" placeholder="Search patterns..." 
+                                        class="pl-9 pr-4 py-1.5 text-xs font-medium bg-slate-100 border-transparent focus:bg-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 rounded-lg transition-all w-60"
+                                        oninput="filterAnalysisTable(this.value)">
+                                    <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1.5 group-focus-within:text-indigo-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                                </div>
+
+                                <div class="h-6 w-px bg-slate-200"></div>
+
                                 <!-- Filter -->
                                 <div class="flex items-center gap-4">
                                     <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Unsynced only</span>
@@ -1005,10 +1015,9 @@
                             <table class="w-full text-sm text-left">
                                 <thead class="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
                                     <tr>
-                                        <!-- Same headers as Run Details (REQ-03) -->
-                                        <th class="px-4 py-3">Summary</th>
-                                        <th class="px-4 py-3 w-24">Impact</th>
-                                        <th class="px-4 py-3 w-32">Confidence</th>
+                                        <th class="px-4 py-3 cursor-pointer select-none hover:text-slate-800" onclick="sortAnalysisTable('summary')">Summary</th>
+                                        <th class="px-4 py-3 w-24 cursor-pointer select-none hover:text-slate-800" onclick="sortAnalysisTable('impact')">Impact</th>
+                                        <th class="px-4 py-3 w-32 cursor-pointer select-none hover:text-slate-800" onclick="sortAnalysisTable('confidence')">Confidence</th>
                                         <th class="px-4 py-3 w-28">AI Suggestion</th>
                                         <th class="px-4 py-3 w-28">Owner</th>
                                         <th class="px-4 py-3 w-32">Redmine</th>

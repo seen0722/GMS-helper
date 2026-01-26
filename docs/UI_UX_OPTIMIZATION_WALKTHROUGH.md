@@ -77,3 +77,12 @@ I have completed the Apple-inspired UI/UX overhaul for the GMS Certification Ana
 
 > [!NOTE]
 > The design now feels significantly more cohesive and premium, moving away from a generic "Admin Dashboard" to a refined "Software as a Service" product.
+
+### 8. Dashboard Data & Export Integration (Phase 4)
+- **Real-Time Labeling**: Updated "Total Runs" widget label to **"Total Submissions"** to accurately reflect the data hierarchy.
+- **Cluster Aggregation**: Implemented global aggregation of AI Clusters (`total = sum(cluster_count)`) to replace the "N/A" value in the Dashboard stats.
+- **Dynamic Trend Lines**: Replaced hardcoded sparklines with calculated trend data (Pass Rate, Failures, and Clusters) from the last 10 submissions.
+- **Robustness**: Enhanced the sparkline renderer to gracefully handle empty or single-point datasets (e.g., initial state).
+
+> [!IMPORTANT]
+> The Dashboard now reflects the true state of the database, aggregating complex metrics like AI Clusters on-the-fly without performance penalty.

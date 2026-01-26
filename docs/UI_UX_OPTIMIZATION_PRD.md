@@ -93,3 +93,19 @@ Enable engineering teams to rapidly triage GMS certification failures by groupin
 - **Raw Data section**: Changed from 2-column grid to full-width for better stack trace visibility
 - **Root Cause + Fix Suggestion**: Kept as 2-column for comparison
 - **Affected Test Cases**: Removed scroll limit, displays all items
+
+---
+
+## 7. Submission Integration & Dashboard Data (Phase 4) - 2026-01-26
+
+### 7.1 Features
+- **Export to Excel**: [DONE] Enhanced V2 export with multi-sheet analysis (Executive Summary, Consolidated Analysis, detailed Run Data) using `openpyxl`.
+- **Submission-based Dashboard**: [DONE] Refactored Dashboard to show Submissions instead of raw Runs. Stats are now aggregated per submission.
+
+### 7.2 Dashboard Gaps (To Be Fixed)
+1.  **Metric Labels**: The "Total Runs" widget label on the Dashboard refers to Submissions but still says "Total Runs/Runs".  
+    -> **Action**: Rename label to "Total Submissions".
+2.  **Cluster Statistics**: The "Total Clusters" widget currently shows "N/A" because global cluster aggregation is missing from the submissions API.  
+    -> **Action**: Implement aggregation of total clusters across all submissions or within the visible page.
+3.  **Trend Visualizations**: Sparklines (Trend graphs) are currently hardcoded placeholders.  
+    -> **Action**: Implement real trend data fetching (e.g., Pass Rate over last 10 submissions) or hide them if data is insufficient.

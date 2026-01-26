@@ -289,6 +289,129 @@ def bulk_create_redmine_issues(request: BulkCreateRequest, db: Session = Depends
     }
 
 
+class SubmissionBulkCreateRequest(BaseModel):
+    submission_id: int
+    project_id: int
+    suite_filter: Optional[str] = None
+    create_children: bool = False
+
+
+@router.post("/redmine/submission/bulk-create")
+def bulk_create_submission_issues(request: SubmissionBulkCreateRequest, db: Session = Depends(get_db)):
+    client = get_redmine_client(db)
+    resolver = get_assignment_resolver()
+    
+    # 1. Identify relevant Test Runs
+    sub = db.query(models.Submission).filter(models.Submission.id == request.submission_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    runs_query = db.query(models.TestRun).filter(models.TestRun.submission_id == request.submission_id)
+    all_runs = runs_query.all()
+    
+    target_run_ids = []
+    
+    if not request.suite_filter or request.suite_filter.lower() == 'all':
+        target_run_ids = [r.id for r in all_runs]
+    else:
+        filter_upper = request.suite_filter.upper()
+        for run in all_runs:
+            run_suite_name = (run.test_suite_name or '').upper()
+            # GSI Logic
+            # 1. suite_plan is 'cts-on-gsi' (Strongest Signal)
+            run_plan = (run.suite_plan or '').lower()
+            is_gsi_plan = 'cts-on-gsi' in run_plan
+            
+            is_gsi = is_gsi_plan or \
+                     (run.build_product and 'gsi' in run.build_product.lower()) or \
+                     (run.build_model and 'gsi' in run.build_model.lower())
+
+            if filter_upper == 'CTS':
+                if 'CTS' in run_suite_name and not is_gsi: target_run_ids.append(run.id)
+            elif filter_upper == 'GSI' or filter_upper == 'CTSONGSI':
+                if 'CTS' in run_suite_name and is_gsi: target_run_ids.append(run.id)
+            else:
+                if filter_upper in run_suite_name: target_run_ids.append(run.id)
+
+    if not target_run_ids:
+         return {"message": "No runs match the suite filter", "created": 0}
+
+    # 2. Get clusters for these runs
+    clusters = db.query(models.FailureCluster).join(models.FailureAnalysis).join(models.TestCase).filter(
+        models.TestCase.test_run_id.in_(target_run_ids),
+        models.FailureCluster.redmine_issue_id == None
+    ).distinct().all()
+
+    if not clusters:
+        return {"message": "No clusters without Redmine issues in selected suite", "created": 0}
+
+    created_count = 0
+    failed_count = 0
+    results = []
+    
+    for cluster in clusters:
+        try:
+            # Check race condition
+            db.refresh(cluster)
+            if cluster.redmine_issue_id: continue
+
+            # Get failures for this cluster within the targeted runs
+            failures = db.query(models.TestCase).join(models.FailureAnalysis).filter(
+                models.FailureAnalysis.cluster_id == cluster.id,
+                models.TestCase.test_run_id.in_(target_run_ids)
+            ).all()
+
+            if not failures: continue
+
+            # Determine dominant module
+            module_counts = {}
+            for f in failures:
+                mod = f.module_name or "Unknown"
+                module_counts[mod] = module_counts.get(mod, 0) + 1
+            sorted_modules = sorted(module_counts.items(), key=lambda x: x[1], reverse=True)
+            primary_module_name = sorted_modules[0][0] if sorted_modules else "Unknown"
+
+            # Prepare data using the first failure's run info
+            first_failure = failures[0]
+            run = db.query(models.TestRun).filter(models.TestRun.id == first_failure.test_run_id).first()
+            
+            cluster_data, run_data, failure_dicts = _prepare_issue_context(cluster, run, failures)
+            content = generate_issue_content(cluster_data, run_data, primary_module_name, failure_dicts, get_app_base_url(db))
+            
+            assignment = resolver.resolve_assignment(
+                module_name=primary_module_name,
+                severity=cluster.severity or "Medium"
+            )
+
+            issue = client.create_issue(
+                project_id=request.project_id,
+                subject=content["subject"],
+                description=content["description"],
+                priority_id=assignment["priority_id"],
+                assigned_to_id=assignment["user_id"]
+            )
+
+            if issue:
+                cluster.redmine_issue_id = issue['id']
+                db.commit()
+                created_count += 1
+                results.append({"cluster_id": cluster.id, "issue_id": issue['id'], "status": "created"})
+            else:
+                failed_count += 1
+                results.append({"cluster_id": cluster.id, "status": "failed"})
+
+        except Exception as e:
+            failed_count += 1
+            results.append({"cluster_id": cluster.id, "status": "error", "error": str(e)})
+
+    return {
+        "message": f"Created {created_count} issues, {failed_count} failed",
+        "created": created_count,
+        "failed": failed_count,
+        "results": results
+    }
+
+
 # ============================================================
 # Phase 2: Smart Issue Creation Endpoints (PRD Redmine Automation)
 # ============================================================
