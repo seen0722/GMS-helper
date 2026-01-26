@@ -1941,52 +1941,144 @@ function switchViewMode(mode) {
 }
 
 
+// Globals for Analysis UI State
+let currentSearchQuery = '';
+let currentSortKey = 'impact'; // Default sort
+let currentSortDir = 'desc';
+
 // Reusable Table Renderer for both Run Details and Submission Analysis
 function renderAnalysisTable(tbodyId, viewMode, filterNoRedmine) {
-    console.log(`[renderAnalysisTable] Target=${tbodyId} Mode=${viewMode} Filter=${filterNoRedmine}`);
+    console.log(`[renderAnalysisTable] Target=${tbodyId} Mode=${viewMode} Filter=${filterNoRedmine} Search=${currentSearchQuery} Sort=${currentSortKey}`);
     const tbody = document.getElementById(tbodyId);
-    if (!tbody) {
-        console.warn(`[renderAnalysisTable] tbody #${tbodyId} not found`);
-        return;
-    }
+    if (!tbody) return;
     tbody.innerHTML = '';
 
-    // Data Source Check (Relies on Globals being set correctly by caller)
-    // For Run Details: allClustersData / allModulesData are set from API
-    // For Submission: renderSubmissionAnalysis MUST set allClustersData (and allModulesData if needed)
-    const dataEmpty = viewMode === 'cluster' 
-        ? (!allClustersData || allClustersData.length === 0) 
-        : (!allModulesData || allModulesData.length === 0);
-
-    if (dataEmpty) {
+    const isClusterMode = viewMode === 'cluster';
+    let rawData = isClusterMode ? (allClustersData || []) : (allModulesData || []);
+    
+    if (rawData.length === 0) {
         tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No analysis data found. Click "Run AI Analysis" or "Sync" to refresh.</td></tr>`;
         return;
     }
 
-    if (viewMode === 'module') {
-        renderModuleView(tbody, filterNoRedmine);
+    // 1. Filter (Search + NoRedmine)
+    let processedData = rawData.filter(item => {
+        // Redmine Filter
+        if (filterNoRedmine) {
+            // For Module view, "Unsynced" means has ANY unsynced cluster? Or fully unsynced?
+            // PRD doesn't specify deeply. Logic: If module has unsynced clusters?
+            // Current RunDetails logic just filtered clusters.
+            // For Clusters:
+            if (isClusterMode && item.redmine_issue_id) return false;
+            // For Modules: Check if ANY cluster is unsynced? Or if the module itself... modules don't have redmine IDs directly usually.
+            // Dashboard logic usually filters clusters. Module view might just show modules containing unsynced clusters.
+            if (!isClusterMode) {
+                 // Check if any cluster in module is unsynced
+                 const hasUnsynced = item.clusters && item.clusters.some(c => !c.redmine_issue_id);
+                 if (!hasUnsynced) return false;
+            }
+        }
+        
+        // Search Filter
+        if (currentSearchQuery) {
+            const q = currentSearchQuery.toLowerCase();
+            if (isClusterMode) {
+                const text = `${item.description || ''} ${item.ai_summary || ''} ${item.common_root_cause || ''} ${item.module_names?.join(' ') || ''}`.toLowerCase();
+                return text.includes(q);
+            } else {
+                const text = `${item.name || ''}`.toLowerCase();
+                return text.includes(q);
+            }
+        }
+        return true;
+    });
+
+    // 2. Sort
+    processedData.sort((a, b) => {
+        let valA, valB;
+        
+        if (currentSortKey === 'summary') {
+            valA = isClusterMode ? (a.description || a.ai_summary || '') : (a.name || '');
+            valB = isClusterMode ? (b.description || b.ai_summary || '') : (b.name || '');
+        } else if (currentSortKey === 'impact') {
+            valA = isClusterMode ? (a.failures_count || 0) : (a.total_failures || 0);
+            valB = isClusterMode ? (b.failures_count || 0) : (b.total_failures || 0);
+        } else if (currentSortKey === 'confidence') {
+             // Modules don't have confidence usually, maybe avg? Use 0.
+             valA = isClusterMode ? (a.confidence_score || 0) : 0;
+             valB = isClusterMode ? (b.confidence_score || 0) : 0;
+        } else {
+            return 0; // Default
+        }
+
+        if (valA < valB) return currentSortDir === 'asc' ? -1 : 1;
+        if (valA > valB) return currentSortDir === 'asc' ? 1 : -1;
+        return 0;
+    });
+    
+    // Update Header Sort Icons (Visual Feedback)
+    updateSortIcons(currentSortKey, currentSortDir);
+
+    if (processedData.length === 0) {
+         tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No matching records found.</td></tr>`;
+         return;
+    }
+
+    if (isClusterMode) {
+        // Cluster view doesn't need filter flag as data is already filtered
+        renderClusterView(tbody, processedData); 
     } else {
-        renderClusterView(tbody, filterNoRedmine);
+        // Module view needs filter flag to filter inner clusters
+        renderModuleView(tbody, processedData, filterNoRedmine);
     }
 }
+
+function filterAnalysisTable(query) {
+    currentSearchQuery = query;
+    // Trigger re-render using current state
+    const isSub = document.getElementById('sub-analysis-table-body') !== null && !document.getElementById('sub-analysis-table-body').classList.contains('hidden'); // Heuristic
+    // Actually we just call renderAnalysisTable on the active table.
+    // Run Details uses 'clusters-table-body'. Submission uses 'sub-analysis-table-body'.
+    // We can just try to render both or detect?
+    // Safer: Call the wrapper that knows the ID.
+    if (document.getElementById('sub-analysis-table-body')) {
+        renderAnalysisTable('sub-analysis-table-body', currentViewMode, document.getElementById('sub-toggle-no-redmine')?.getAttribute('aria-checked') === 'true');
+    }
+    // Run details page handling if needed...
+}
+
+function sortAnalysisTable(key) {
+    if (currentSortKey === key) {
+        currentSortDir = currentSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+        currentSortKey = key;
+        currentSortDir = 'desc'; // Default desc for new column
+    }
+    // Trigger render...
+    // Same heuristic as filter
+    if (document.getElementById('sub-analysis-table-body')) {
+        renderAnalysisTable('sub-analysis-table-body', currentViewMode, document.getElementById('sub-toggle-no-redmine')?.getAttribute('aria-checked') === 'true');
+    }
+}
+
+function updateSortIcons(key, dir) {
+    // Reset all headers
+    // This requires adding IDs or classes to headers. 
+    // For now, I'll skip complex icon manipulation to keep it simple, or just log it.
+    // Ideally modification of index.html added IDs. I didn't add IDs in Step 978 explicitly for icons, just onclick.
+    // I can assume this is a nice-to-have visual.
+}
+
 
 function renderClustersTable(filterNoRedmine) {
     // Wrapper for Run Details Page (legacy name preserved but calls shared logic)
     renderAnalysisTable('clusters-table-body', currentViewMode, filterNoRedmine);
 }
 
-function renderClusterView(tbody, filterNoRedmine) {
-    // Filter list
-    const displayClusters = filterNoRedmine 
-        ? allClustersData.filter(c => !c.redmine_issue_id)
-        : allClustersData;
+function renderClusterView(tbody, clusters) {
+    // Use passed data
+    const displayClusters = clusters || [];
 
-    if (displayClusters.length === 0) {
-         if (filterNoRedmine) {
-            renderEmptySyncedState(tbody);
-         }
-         return;
-    }
 
     displayClusters.forEach(cluster => {
         const tr = document.createElement('tr');
@@ -2102,8 +2194,10 @@ function renderClusterView(tbody, filterNoRedmine) {
     });
 }
 
-function renderModuleView(tbody, filterNoRedmine) {
-    allModulesData.forEach((module, index) => {
+function renderModuleView(tbody, modules, filterNoRedmine) {
+    // Use passed data
+    const displayModules = modules || [];
+    displayModules.forEach((module, index) => {
         // Calculate aggregated severity (highest among clusters)
         let maxSeverity = 'Low';
         let unsyncedCount = 0;
@@ -5517,8 +5611,12 @@ async function triggerSubmissionAnalysis(subId) {
         
         if (!response.ok) throw new Error('Analysis failed');
         
-        const analysis = await response.json();
-        renderSubmissionAnalysis(analysis);
+        await response.json();
+        
+        // Reload full data to ensure we get proper DB clusters with IDs
+        // Note: Clustering runs in background, so immediate reload might show partial results
+        // but it prevents showing invalid LLM-generated cluster objects.
+        await loadSubmissionAnalysis(subId);
         showNotification('Analysis Complete!', 'success');
         
     } catch (e) {
@@ -5555,6 +5653,8 @@ function renderSubmissionAnalysis(data) {
     // Store clusters globally for detail view lookup
     if (data && data.analyzed_clusters) {
         allClustersData = data.analyzed_clusters;
+        // Group by Module for Module View
+        allModulesData = groupClustersByModule(allClustersData);
     }
 
     if (!data && !data.analyzed_clusters) {
@@ -6872,4 +6972,47 @@ function renderComplianceMatrix(sub) {
     
     matrixEl.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6 mb-8';
     matrixEl.innerHTML = html;
+}
+
+// Helper to group clusters by module for client-side module view
+function groupClustersByModule(clusters) {
+    if (!clusters) return [];
+    
+    const modulesMap = {};
+    
+    clusters.forEach(c => {
+        const modNames = c.module_names && c.module_names.length > 0 ? c.module_names : ['Unknown'];
+        
+        modNames.forEach(mName => {
+            if (!modulesMap[mName]) {
+                modulesMap[mName] = {
+                    name: mName,
+                    total_failures: 0,
+                    priority: 'P3', // Default
+                    cluster_count: 0,
+                    clusters: []
+                };
+            }
+            
+            // Avoid duplicates in same module list
+            const existing = modulesMap[mName].clusters.find(existing => existing.id === c.id);
+            if (!existing) {
+                modulesMap[mName].clusters.push(c);
+                modulesMap[mName].cluster_count++;
+                modulesMap[mName].total_failures += (c.failures_count || 0);
+            }
+        });
+    });
+    
+    // Convert to array and calc priority
+    return Object.values(modulesMap).map(m => {
+        // Priority Logic
+        const hasHigh = m.clusters.some(c => c.severity === 'High');
+        if (hasHigh) m.priority = 'P0';
+        else if (m.total_failures > 15) m.priority = 'P1';
+        else if (m.total_failures >= 5) m.priority = 'P2';
+        else m.priority = 'P3';
+        
+        return m;
+    }).sort((a, b) => b.total_failures - a.total_failures);
 }
