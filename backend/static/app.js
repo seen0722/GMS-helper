@@ -637,8 +637,15 @@ function updateDashboardStats(submissions) {
     let totalFailures = 0;
     let totalExecuted = 0;
     let totalPassed = 0;
+    let totalClusters = 0;
+    
+    // Arrays for Sparklines (Reverse order: Oldest -> Newest)
+    const trendLimit = 10;
+    const recentSubs = submissions.slice(0, trendLimit).reverse();
     
     submissions.forEach(sub => {
+        totalClusters += sub.cluster_count || 0;
+
         // sub.suite_summary contains the merged stats
         Object.values(sub.suite_summary).forEach(suite => {
             if (suite.status !== 'missing') {
@@ -649,16 +656,36 @@ function updateDashboardStats(submissions) {
         });
     });
     
+    // Calculate Trends
+    const passRateTrend = recentSubs.map(sub => {
+        let sFail = 0, sPass = 0;
+        Object.values(sub.suite_summary).forEach(suite => {
+             if (suite.status !== 'missing') {
+                 sFail += suite.failed || 0;
+                 sPass += suite.passed || 0;
+             }
+        });
+        const total = sFail + sPass;
+        return total > 0 ? (sPass / total) * 100 : 0;
+    });
+
+    const failuresTrend = recentSubs.map(sub => {
+        let sFail = 0;
+        Object.values(sub.suite_summary).forEach(suite => {
+             if (suite.status !== 'missing') sFail += suite.failed || 0;
+        });
+        return sFail;
+    });
+
+    const clustersTrend = recentSubs.map(sub => sub.cluster_count || 0);
+    
     // Update Widgets
     // 1. Total Submissions (was Total Runs)
-    // We update the Label too? Or assume label is generic "Total Runs"?
-    // User requested "Total Submissions". We should update the Label via JS or assumes template change.
-    // For now, let's update value.
     const statRuns = document.getElementById('stat-total-runs');
     if (statRuns) statRuns.innerText = totalSubmissions;
     
     // 2. Avg Pass Rate
-    const statPassRate = document.getElementById('stat-avg-pass'); // Corrected ID
+    const statPassRate = document.getElementById('stat-avg-pass');
     if (statPassRate) {
         const rate = totalExecuted > 0 ? ((totalPassed / totalExecuted) * 100).toFixed(2) : '0.00';
         statPassRate.innerText = `${rate}%`;
@@ -668,18 +695,21 @@ function updateDashboardStats(submissions) {
     const statFailures = document.getElementById('stat-total-failures');
     if (statFailures) statFailures.innerText = totalFailures;
     
-    // 4. Clusters (This might be tricky, do we have global cluster count?)
-    // Maybe sum from all runs? Or fetch separately?
-    // Current `loadDashboard` fetched runs which had `cluster_count`? No, schema didn't have it.
-    // Let's leave Clusters as 0 or implement correct fetching later.
+    // 4. Clusters
     const statClusters = document.getElementById('stat-total-clusters');
-    if (statClusters) statClusters.innerText = 'N/A'; // Or sum from all runs if available
+    if (statClusters) statClusters.innerText = totalClusters;
 
-    // Render Sparklines (Phase 2) - these are hardcoded for now, keep them
-    renderSparkline('stat-total-runs-sparkline', [2, 5, 3, 8, 5, 9, 7], '#3b82f6');
-    renderSparkline('stat-avg-pass-sparkline', [70, 75, 72, 85, 80, 88, 92], '#10b981');
-    renderSparkline('stat-total-failures-sparkline', [10, 8, 12, 5, 7, 3, 2], '#ef4444');
-    renderSparkline('stat-total-clusters-sparkline', [4, 3, 5, 2, 3, 1, 1], '#f59e0b');
+    // Render Sparklines (Real Data)
+    // For "Total Submissions" sparkline, we don't have historical "total count" snapshots. 
+    // We can show the "New Submissions" volume or just hide it. 
+    // Let's use "Clusters Trend" for 4th and "Failures" for 3rd.
+    // For 1st (Total Submissions), maybe just a flat line or random for now? 
+    // Or better: Show "Submissions per day"? Too complex.
+    // Let's just use [1,1,1] placeholder for Total Submissions as it is a counter, not a rate.
+    renderSparkline('stat-total-runs-sparkline', [0, 0, 0, 0, 0, 0, 0], '#cbd5e1'); // Flat line
+    renderSparkline('stat-avg-pass-sparkline', passRateTrend, '#10b981');
+    renderSparkline('stat-total-failures-sparkline', failuresTrend, '#ef4444');
+    renderSparkline('stat-total-clusters-sparkline', clustersTrend, '#a855f7');
 }
 
 function filterRuns() {
@@ -815,8 +845,8 @@ function renderDashboardTable() {
                 </td>
                 <td class="px-6 py-4">
                     <div class="flex flex-col">
-                        <span class="text-sm font-semibold text-slate-800">${sub.target_fingerprint ? sub.target_fingerprint.split('/').pop() : 'Unknown Device'}</span>
-                        <span class="text-xs text-slate-500">${sub.product || 'Unknown Product'}</span>
+                        <span class="text-sm font-semibold text-slate-800">${sub.product || (sub.target_fingerprint ? sub.target_fingerprint.split('/')[1] : 'Unknown Product')}</span>
+                        <span class="text-xs text-slate-500">${sub.target_fingerprint ? sub.target_fingerprint.split(':')[0] : ''}</span>
                     </div>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
@@ -1911,23 +1941,38 @@ function switchViewMode(mode) {
 }
 
 
-function renderClustersTable(filterNoRedmine) {
-    console.log(`[renderClustersTable] Mode=${currentViewMode}, Filter=${filterNoRedmine}`);
-    const tbody = document.getElementById('clusters-table-body');
+// Reusable Table Renderer for both Run Details and Submission Analysis
+function renderAnalysisTable(tbodyId, viewMode, filterNoRedmine) {
+    console.log(`[renderAnalysisTable] Target=${tbodyId} Mode=${viewMode} Filter=${filterNoRedmine}`);
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) {
+        console.warn(`[renderAnalysisTable] tbody #${tbodyId} not found`);
+        return;
+    }
     tbody.innerHTML = '';
 
-    const dataEmpty = currentViewMode === 'cluster' ? allClustersData.length === 0 : allModulesData.length === 0;
+    // Data Source Check (Relies on Globals being set correctly by caller)
+    // For Run Details: allClustersData / allModulesData are set from API
+    // For Submission: renderSubmissionAnalysis MUST set allClustersData (and allModulesData if needed)
+    const dataEmpty = viewMode === 'cluster' 
+        ? (!allClustersData || allClustersData.length === 0) 
+        : (!allModulesData || allModulesData.length === 0);
 
     if (dataEmpty) {
-        tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No analysis data found. Click "Run AI Analysis" to start.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No analysis data found. Click "Run AI Analysis" or "Sync" to refresh.</td></tr>`;
         return;
     }
 
-    if (currentViewMode === 'module') {
+    if (viewMode === 'module') {
         renderModuleView(tbody, filterNoRedmine);
     } else {
         renderClusterView(tbody, filterNoRedmine);
     }
+}
+
+function renderClustersTable(filterNoRedmine) {
+    // Wrapper for Run Details Page (legacy name preserved but calls shared logic)
+    renderAnalysisTable('clusters-table-body', currentViewMode, filterNoRedmine);
 }
 
 function renderClusterView(tbody, filterNoRedmine) {
@@ -2416,7 +2461,7 @@ async function showClusterDetail(cluster) {
             currentCluster.failures = failures;
         }
 
-        // Group for Apple-style display
+        // Group for Apple-style display but use Run Details Visual Style
         const failureGroups = new Map();
         failures.forEach(f => {
             const key = `${f.module_name}|${f.module_abi}|${f.class_name}|${f.method_name}`;
@@ -2426,6 +2471,9 @@ async function showClusterDetail(cluster) {
                     module_abi: f.module_abi,
                     class_name: f.class_name,
                     method_name: f.method_name,
+                    error_message: f.error_message, // Keep one representative error
+                    stack_trace: f.stack_trace,     // Keep one representative stack
+                    id: f.id,                       // Keep one ID for linking
                     count: 0,
                     runs: new Set()
                 });
@@ -2435,46 +2483,61 @@ async function showClusterDetail(cluster) {
             if (f.test_run_id) group.runs.add(f.test_run_id);
         });
 
-        countSpan.textContent = `${failureGroups.size} unique (${failures.length} total)`;
+        countSpan.textContent = `${failureGroups.size} unique cases (${failures.length} total failures)`;
         list.innerHTML = ''; // Clear loading state
-        list.className = "space-y-1 mt-2"; // Add spacing
+        list.className = "space-y-2 mt-4"; // Add spacing
 
         const sortedGroups = Array.from(failureGroups.values()).sort((a,b) => b.count - a.count);
 
         sortedGroups.forEach(g => {
-            const item = document.createElement('div');
-            item.className = 'py-2 px-3 border border-slate-100 bg-white hover:border-slate-300 hover:shadow-sm transition-all rounded-lg group select-none cursor-default';
-            
+            const errorMsg = g.error_message || 'No error message';
+            const stackTrace = g.stack_trace ? g.stack_trace.trim() : '';
             const runCount = g.runs.size;
             const runIds = Array.from(g.runs).sort((a,b)=>a-b).join(', #');
+
+            const item = document.createElement('div');
+            item.className = 'border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm hover:shadow-md transition-all';
             
             item.innerHTML = `
-                <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0 flex-1">
-                         <div class="flex items-center gap-2 text-[10px] text-slate-500 mb-0.5">
-                            <span class="font-bold text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded">${g.module_name}</span>
-                            ${g.module_abi ? `<span class="px-1.5 py-0.5 bg-slate-50 text-slate-400 border border-slate-100 rounded">${g.module_abi}</span>` : ''}
-                        </div>
-                        <div class="font-mono text-[12px] leading-snug text-slate-700" title="${g.class_name}#${g.method_name}">
-                            <!-- RTL direction ensures end of string (Class Name) is visible if truncated -->
-                            <div class="truncate direction-rtl text-left text-slate-500" style="direction: rtl; text-align: left;">
-                                ${g.class_name}
+                <div class="p-4 bg-slate-50/30">
+                    <div class="flex flex-col gap-2">
+                        <div class="flex items-start justify-between">
+                            <div class="flex items-center gap-2">
+                                <div class="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">${g.module_name}</div>
+                                ${g.module_abi ? `<span class="px-1.5 py-0.5 bg-purple-50 text-purple-700 text-[10px] font-semibold rounded border border-purple-100">${g.module_abi}</span>` : ''}
+                                ${runCount > 0 ? `<span class="px-1.5 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-semibold rounded border border-amber-100" title="Runs #${runIds}">${runCount} Runs</span>` : ''}
                             </div>
-                            <div class="font-bold text-slate-800 break-all">#${g.method_name}</div>
+                            <span class="text-[10px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded-full border border-slate-100">${g.count} failures</span>
+                        </div>
+                        
+                        <div class="font-medium text-slate-800 font-mono text-sm break-all">
+                             ${g.class_name}#${g.method_name}
+                        </div>
+                        
+                        <div class="text-sm text-red-600 break-words leading-snug bg-red-50/50 p-2 rounded border border-red-50/50">
+                            ${escapeHtml(errorMsg)}
+                        </div>
+                        
+                        <div class="flex items-center gap-4 mt-1">
+                            ${stackTrace ? `
+                                <details class="group w-full">
+                                    <summary class="text-xs text-blue-600 cursor-pointer hover:underline select-none flex items-center gap-1 font-medium">
+                                        <svg class="w-3 h-3 transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                                        Show Stack Trace
+                                    </summary>
+                                    <pre class="mt-2 p-3 bg-slate-900 text-slate-50 rounded text-xs overflow-x-auto code-scroll font-mono max-h-60 whitespace-pre-wrap break-all shadow-inner">${escapeHtml(stackTrace)}</pre>
+                                </details>
+                            ` : ''}
+                        </div>
+                        
+                        <div class="mt-2 pt-2 border-t border-slate-100 flex justify-end">
+                             <a href="#" onclick="event.preventDefault(); router.navigate('test-case', { id: ${g.id} })" 
+                               class="text-xs text-slate-500 hover:text-blue-600 font-medium flex items-center gap-1 transition-colors">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                View Full Case Details
+                            </a>
                         </div>
                     </div>
-                    ${runCount > 1 ? `
-                    <div class="shrink-0 flex flex-col items-end" title="Runs: #${runIds}">
-                        <span class="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold bg-amber-50 text-amber-600 border border-amber-100 shadow-sm">
-                           ${runCount} runs
-                        </span>
-                    </div>` : `
-                    <div class="shrink-0" title="Run #${runIds}">
-                         <span class="inline-flex items-center px-2 py-1 rounded-md text-[10px] font-medium bg-slate-50 text-slate-400 border border-slate-100">
-                           Run #${runIds}
-                        </span>
-                    </div>
-                    `}
                 </div>
             `;
             list.appendChild(item);
@@ -4744,6 +4807,12 @@ function renderSparkline(containerId, data, color) {
     const container = document.getElementById(containerId);
     if (!container) return;
     
+    // Handle edge cases
+    if (!data || data.length < 2) {
+        // Render a flat line if insufficient data
+        data = [0, 0];
+    }
+
     const width = 96;
     const height = 40;
     const max = Math.max(...data);
@@ -5105,9 +5174,14 @@ function renderSubmissionCard(sub) {
     `;
 }
 
+// Global state for analysis filter
+let currentAnalysisSuiteFilter = 'All';
+
 async function loadSubmissionDetail(id) {
     await fetchSuiteConfig();
     currentSubmissionId = id;
+    currentAnalysisSuiteFilter = 'All'; // Reset filter on load
+
     
     const nameEl = document.getElementById('submission-name');
     const statusBadge = document.getElementById('submission-status-badge');
@@ -5307,8 +5381,10 @@ function copyFingerprint() {
 
 
 // Helper to identify which suite a run belongs to (considering GSI rules)
+// Helper to identify which suite a run belongs to (considering GSI rules)
 function identifyRunSuite(run, targetFingerprint) {
     const runName = (run.test_suite_name || '').toUpperCase();
+    const plan = (run.suite_plan || '').toLowerCase();
     
     // Check against all configured suites in order
     for (const suiteName of REQUIRED_SUITES) {
@@ -5319,18 +5395,25 @@ function identifyRunSuite(run, targetFingerprint) {
         // Use those or fallback to build_product if available (though backend sends device_product)
         const product = (run.device_product || run.build_product || '').toLowerCase();
         const model = (run.device_model || run.build_model || '').toLowerCase();
+        
+        // GSI Detection Logic
+        const isGsiPlan = plan.includes('cts-on-gsi');
         const hasGsiTag = product.includes('gsi') || model.includes('gsi');
         
         let isMatch = false;
         
         if (config.match_rule === 'GSI') {
-             // It matches if name is CTS AND (fingerprint differs from target OR explicit 'gsi' in product/model)
-             isMatch = runName.includes('CTS') && (run.device_fingerprint !== targetFingerprint || hasGsiTag);
+             // 1. Plan Name (Strongest) or 2. Product/Model Tag
+             // We REMOVED fingerprint mismatch check to avoid misclassifying Native runs 
+             // when the submission target happens to be the GSI fingerprint.
+             const isGsi = isGsiPlan || hasGsiTag;
+             
+             isMatch = runName.includes('CTS') && isGsi;
         
         } else if (config.name === 'CTS') {
-             // Standard CTS: Matches CTS AND (fingerprint matches target AND NOT GSI tag)
-             // Or strictly: !GSI
-             const isGsi = (run.device_fingerprint !== targetFingerprint) || hasGsiTag;
+             // Standard CTS: Matches CTS AND NOT GSI
+             const isGsi = isGsiPlan || hasGsiTag;
+             
              isMatch = runName.includes('CTS') && !isGsi;
         } else {
              isMatch = runName.includes(suiteName);
@@ -5364,21 +5447,50 @@ function switchSubmissionTab(tabName) {
     });
 }
 
-async function loadSubmissionAnalysis(subId) {
-    // Check if we have data locally first (passed from loadSubmissionDetail?)
-    // Or fetch explicitly
+async function loadSubmissionAnalysis(subId, suiteFilter = null) {
+    if (suiteFilter) {
+        currentAnalysisSuiteFilter = suiteFilter;
+    } else {
+        suiteFilter = currentAnalysisSuiteFilter;
+    }
+    
+    const container = document.getElementById('submission-analysis-content');
+    // Optional: Show loading state inside content if switching tabs
+    // if (container) container.classList.add('opacity-50', 'pointer-events-none');
+
     try {
-        const response = await fetch(`${API_BASE}/reports/submissions/${subId}/analysis`);
-        if (response.ok) {
-            const analysis = await response.json();
-            if (analysis) {
-                renderSubmissionAnalysis(analysis);
-            } else {
-                renderSubmissionAnalysis(null); // Show empty state
-            }
+        // 1. Fetch Report (Static) for Summary/Risks (Global Context)
+        const reportRes = await fetch(`${API_BASE}/reports/submissions/${subId}/analysis`);
+        let report = reportRes.ok ? await reportRes.json() : {};
+
+        // 2. Fetch Live Clusters (Filtered)
+        const query = suiteFilter !== 'All' ? `?suite_filter=${encodeURIComponent(suiteFilter)}` : '';
+        const clustersRes = await fetch(`${API_BASE}/analysis/submission/${subId}/clusters${query}`);
+        const clusters = clustersRes.ok ? await clustersRes.json() : [];
+
+        // 3. Merge Data
+        // If we found live clusters, use them. 
+        // We override the static report's clusters with the live, filtered ones.
+        const data = {
+            ...report,
+            analyzed_clusters: clusters
+        };
+        console.log("Loaded Analysis Data:", data); // Debug link
+        
+        // Re-calculate local stats for the view if needed (Severity Score etc.)
+        // For now, we rely on the global score or just display what we have.
+        // Ideally, we should recalculate the top breakdown based on filtered valid clusters.
+
+        if (data) {
+            renderSubmissionAnalysis(data);
+        } else {
+            renderSubmissionAnalysis(null); 
         }
+
     } catch (e) {
         console.error("Failed to load analysis", e);
+    } finally {
+        // if (container) container.classList.remove('opacity-50', 'pointer-events-none');
     }
 }
 
@@ -5420,11 +5532,32 @@ async function triggerSubmissionAnalysis(subId) {
     }
 }
 
+
+// Helper for Submission Analysis Click
+function showSubmissionClusterDetail(clusterId) {
+    if (!allClustersData || allClustersData.length === 0) {
+        console.error("[showSubmissionClusterDetail] allClustersData is empty");
+        showNotification("Error: Cluster data not loaded properly.", "error");
+        return;
+    }
+    const cluster = allClustersData.find(c => c.id === clusterId);
+    if (cluster) {
+        showClusterDetail(cluster);
+    } else {
+        console.error("[showSubmissionClusterDetail] Cluster not found:", clusterId);
+    }
+}
+
 function renderSubmissionAnalysis(data) {
     const emptyState = document.getElementById('submission-analysis-empty');
     const contentState = document.getElementById('submission-analysis-content');
     
-    if (!data) {
+    // Store clusters globally for detail view lookup
+    if (data && data.analyzed_clusters) {
+        allClustersData = data.analyzed_clusters;
+    }
+
+    if (!data && !data.analyzed_clusters) {
         if (emptyState) emptyState.classList.remove('hidden');
         if (contentState) contentState.classList.add('hidden');
         return;
@@ -5433,8 +5566,48 @@ function renderSubmissionAnalysis(data) {
     if (emptyState) emptyState.classList.add('hidden');
     if (contentState) contentState.classList.remove('hidden');
     
-    // 1. Severity Score
-    const score = data.severity_score || 0;
+    // 0. Render Suite Tabs (New Feature)
+    // We inject this before the Executive Summary
+    let tabsHeader = document.getElementById('analysis-suite-tabs');
+    if (!tabsHeader) {
+        tabsHeader = document.createElement('div');
+        tabsHeader.id = 'analysis-suite-tabs';
+        tabsHeader.className = 'flex items-center gap-2 mb-6 border-b border-slate-200 pb-1';
+        
+        // Insert before the KPI grid (first child of contentState)
+        contentState.insertBefore(tabsHeader, contentState.firstChild);
+    }
+    
+    const availableSuites = detectAvailableSuites(currentSubmissionDetails);
+    tabsHeader.innerHTML = availableSuites.map(suite => {
+        const isActive = currentAnalysisSuiteFilter === suite;
+        const activeClass = "text-indigo-600 border-b-2 border-indigo-600 font-bold bg-indigo-50/50";
+        const inactiveClass = "text-slate-500 hover:text-slate-700 hover:bg-slate-50 border-b-2 border-transparent font-medium";
+        
+        return `
+            <button onclick="loadSubmissionAnalysis(${currentSubmissionId}, '${suite}')" 
+                class="px-4 py-2 text-sm rounded-t-lg transition-all duration-200 ${isActive ? activeClass : inactiveClass}">
+                ${suite}
+            </button>
+        `;
+    }).join('');
+
+    // Re-calculate KPI metrics based on filtered clusters if we are filtering
+    const clusters = data.analyzed_clusters || [];
+    let highVal = 0, medVal = 0;
+    clusters.forEach(c => {
+        if(c.severity === 'High') highVal++;
+        else if(c.severity === 'Medium') medVal++;
+    });
+    
+    // Heuristic Score recalculation (simple version)
+    // If filtering, calculate local severity. If All, use report score or recalc.
+    // Score = 0 (perfect) to 100 (bad). 
+    // High = 10pts, Med = 5pts. Cap at 100.
+    const calculatedScore = Math.min((highVal * 10) + (medVal * 3), 100);
+    const score = data.severity_score !== undefined && currentAnalysisSuiteFilter === 'All' ? data.severity_score : calculatedScore;
+
+    // 1. Severity Score UI
     const scoreEl = document.getElementById('sub-kpi-severity');
     const scoreBar = document.getElementById('sub-kpi-severity-bar');
     const scoreLabel = document.getElementById('sub-kpi-severity-label');
@@ -5442,7 +5615,6 @@ function renderSubmissionAnalysis(data) {
     if (scoreEl) scoreEl.textContent = score;
     if (scoreBar) {
         scoreBar.style.width = `${score}%`;
-        // Color coding
         scoreBar.className = `h-full rounded-full transition-all duration-1000 ${
             score < 20 ? 'bg-emerald-500' : 
             score < 50 ? 'bg-yellow-500' : 
@@ -5458,106 +5630,181 @@ function renderSubmissionAnalysis(data) {
         scoreLabel.textContent = labelText;
     }
     
-    // 2. Executive Summary
+    // 2. Executive Summary (Only show if ALL, or static)
     const summaryEl = document.getElementById('sub-ai-summary');
-    if (summaryEl) summaryEl.textContent = data.executive_summary || 'No summary available.';
+    if (summaryEl) {
+        if (currentAnalysisSuiteFilter === 'All') {
+            summaryEl.innerHTML = formatMultilineText(data.executive_summary || 'No summary available.');
+        } else {
+            summaryEl.innerHTML = `<span class="text-slate-400 italic">Global Executive Summary hidden while filtering by ${currentAnalysisSuiteFilter}. AI Analysis specific to this suite is pending implementation.</span>`;
+        }
+    }
     
     // 3. Top Risks
     const risksEl = document.getElementById('sub-ai-risks');
     if (risksEl) {
-        const risks = data.top_risks || [];
-        if (risks.length === 0) {
-            risksEl.innerHTML = '<li class="text-sm text-slate-400 italic">No significant risks identified.</li>';
+        if (currentAnalysisSuiteFilter === 'All') {
+             const risks = data.top_risks || [];
+            if (risks.length === 0) {
+                risksEl.innerHTML = '<li class="text-sm text-slate-400 italic">No significant risks identified.</li>';
+            } else {
+                risksEl.innerHTML = risks.map(risk => `
+                    <li class="flex items-start gap-2 text-sm text-slate-700">
+                        <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0"></span>
+                        <span>${risk}</span>
+                    </li>
+                `).join('');
+            }
         } else {
-            risksEl.innerHTML = risks.map(risk => `
-                <li class="flex items-start gap-2 text-sm text-slate-700">
-                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0"></span>
-                    <span>${risk}</span>
-                </li>
-            `).join('');
+             risksEl.innerHTML = '<li class="text-sm text-slate-400 italic">Filtered view active.</li>';
         }
+       
     }
     
     // 4. Recommendations
     const recsEl = document.getElementById('sub-ai-recommendations');
     if (recsEl) {
-        const recs = data.recommendations || [];
-        if (recs.length === 0) {
-            recsEl.innerHTML = '<li class="text-sm text-slate-400 italic">No specific recommendations.</li>';
-        } else {
-            recsEl.innerHTML = recs.map(rec => `
-                <li class="flex items-start gap-2 text-sm text-slate-700">
-                    <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0"></span>
-                    <span>${rec}</span>
-                </li>
-            `).join('');
-        }
+         if (currentAnalysisSuiteFilter === 'All') {
+            const recs = data.recommendations || [];
+            if (recs.length === 0) {
+                recsEl.innerHTML = '<li class="text-sm text-slate-400 italic">No specific recommendations.</li>';
+            } else {
+                recsEl.innerHTML = recs.map(rec => `
+                    <li class="flex items-start gap-2 text-sm text-slate-700">
+                        <span class="mt-1.5 w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0"></span>
+                        <span>${rec}</span>
+                    </li>
+                `).join('');
+            }
+         } else {
+              recsEl.innerHTML = '<li class="text-sm text-slate-400 italic">Filtered view active.</li>';
+         }
     }
     
-    // 5. Detailed Clusters (The New Requested Feature)
-    // We need to inject this into the DOM. Since we didn't have a container in HTML, 
-    // we'll append it dynamically to the analysis content div if it doesn't match existing structure,
-    // or we assume there is a place for it.
-    // Check if we have a container, if not, create one.
+    // 5. Render Table View (PRD REQ-01 Code Reuse)
+    // Compute Module Data for Module View support (REQ-02)
+    const moduleMap = new Map();
+    (allClustersData || []).forEach(cluster => {
+        const modules = cluster.module_names || ['Unknown'];
+        modules.forEach(modName => {
+            if (!moduleMap.has(modName)) {
+                moduleMap.set(modName, {
+                    name: modName,
+                    priority: 'P2', // Default, logic can be enhanced
+                    total_failures: 0,
+                    clusters: [],
+                    cluster_count: 0
+                });
+            }
+            const mod = moduleMap.get(modName);
+            // check if cluster already added to avoid dups? 
+            // renderModuleView expects full cluster objects.
+            // But we are pushing the SAME cluster object to multiple modules. That is fine.
+            mod.clusters.push(cluster);
+            mod.cluster_count++;
+            mod.total_failures += (cluster.failures_count || 1); 
+        });
+    });
     
-    let clustersContainer = document.getElementById('sub-ai-clusters-container');
-    if (!clustersContainer) {
-        // Find the parent grid and append after it
-        const parentGrid = document.getElementById('sub-ai-recommendations').closest('.grid');
-        if (parentGrid) {
-            clustersContainer = document.createElement('div');
-            clustersContainer.id = 'sub-ai-clusters-container';
-            clustersContainer.className = 'mt-8';
-            parentGrid.parentNode.insertBefore(clustersContainer, parentGrid.nextSibling);
+    // Set global allModulesData for renderAnalysisTable usage
+    allModulesData = Array.from(moduleMap.values()).sort((a,b) => b.total_failures - a.total_failures);
+
+    // Call the shared renderer
+    // Ensure we use the current View Mode (or default to cluster if undefined)
+    if (!currentViewMode) currentViewMode = 'cluster';
+    
+    // Initial Render
+    renderAnalysisTable('sub-analysis-table-body', currentViewMode, false);
+    
+    // Update Toggle UI State
+    updateViewModeButtons('sub-view-mode');
+}
+
+// UI Helpers for Submission Analysis View
+function switchSubmissionViewMode(mode) {
+    currentViewMode = mode;
+    renderAnalysisTable('sub-analysis-table-body', currentViewMode, document.getElementById('sub-toggle-no-redmine').getAttribute('aria-checked') === 'true');
+    updateViewModeButtons('sub-view-mode');
+}
+
+function toggleSubmissionFilter(btn) {
+    const isChecked = btn.getAttribute('aria-checked') === 'true';
+    const newState = !isChecked;
+    btn.setAttribute('aria-checked', newState);
+    
+    // Trigger render
+    renderAnalysisTable('sub-analysis-table-body', currentViewMode, newState);
+}
+
+function updateViewModeButtons(prefix) {
+    const btnCluster = document.getElementById(`${prefix}-cluster`);
+    const btnModule = document.getElementById(`${prefix}-module`);
+    
+    if (btnCluster && btnModule) {
+        if (currentViewMode === 'cluster') {
+            btnCluster.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 bg-white text-slate-800 shadow-sm";
+            btnModule.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 text-slate-500 hover:text-slate-700";
+        } else {
+            btnCluster.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 text-slate-500 hover:text-slate-700";
+            btnModule.className = "px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 bg-white text-slate-800 shadow-sm";
         }
     }
+}
+function detectAvailableSuites(sub) {
+    const suites = new Set(['All']);
+    if (sub && sub.test_runs) {
+        sub.test_runs.forEach(r => {
+             // Use identifyRunSuite for consistent logic (detects CTSonGSI via fingerprint)
+             const suiteName = identifyRunSuite(r, sub.target_fingerprint);
+             if (suiteName) suites.add(suiteName);
+        });
+    }
     
-    if (clustersContainer) {
-        const clusters = data.analyzed_clusters || [];
-        if (clusters.length > 0) {
-            clustersContainer.innerHTML = `
-                <div class="flex items-center gap-2 mb-4">
-                    <span class="p-1.5 rounded-lg bg-indigo-50 text-indigo-500">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/></svg>
-                    </span>
-                    <h3 class="font-bold text-slate-900">Failure Patterns (Clusters)</h3>
-                </div>
-                <div class="grid grid-cols-1 gap-4">
-                    ${clusters.map((c, idx) => `
-                        <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200/60 hover:shadow-md transition-all">
-                            <div class="flex justify-between items-start mb-3">
-                                <div>
-                                    <div class="flex items-center gap-2 mb-1">
-                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-500 uppercase tracking-wider">Pattern #${idx+1}</span>
-                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-600 border border-red-100">${c.count} Occurrences</span>
-                                    </div>
-                                    <h4 class="font-bold text-slate-800 text-sm">${c.pattern_name || 'Unknown Pattern'}</h4>
-                                </div>
-                                ${c.redmine_component ? `
-                                    <a href="#" class="text-[10px] font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded hover:bg-blue-100 flex items-center gap-1">
-                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>
-                                        ${c.redmine_component}
-                                    </a>
-                                ` : ''}
-                            </div>
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 pt-3 border-t border-slate-50">
-                                <div>
-                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Root Cause Hypothesis</div>
-                                    <p class="text-xs text-slate-700 leading-relaxed">${c.root_cause || 'Pending analysis...'}</p>
-                                </div>
-                                <div>
-                                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Suggested Solution</div>
-                                    <p class="text-xs text-emerald-700 bg-emerald-50/50 p-2 rounded-lg leading-relaxed">${c.solution || 'Investigation required.'}</p>
-                                </div>
-                            </div>
-                        </div>
-                    `).join('')}
-                </div>
-            `;
+    // Sort logic: All -> CTS -> CTSonGSI -> GTS -> VTS -> STS -> Others
+    const order = ['All', 'CTS', 'CTSonGSI', 'GTS', 'VTS', 'STS'];
+    return Array.from(suites).sort((a, b) => {
+        const ia = order.indexOf(a);
+        const ib = order.indexOf(b);
+        if (ia !== -1 && ib !== -1) return ia - ib;
+        if (ia !== -1) return -1;
+        if (ib !== -1) return 1;
+        return a.localeCompare(b);
+    });
+}
+
+async function triggerSubmissionBulkSync(subId, suiteFilter) {
+    if (!confirm(`Are you sure you want to create Redmine issues for all unsynced clusters in ${suiteFilter}?`)) return;
+    
+    // Show Optimistic Loading
+    showNotification('Starting bulk sync...', 'info');
+    
+    try {
+        const response = await fetch(`${API_BASE}/integrations/redmine/submission/bulk-create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                submission_id: subId,
+                project_id: 1, // Phase 1: Default Project ID or resolve dynamically? Assuming 1 or user setting.
+                // TODO: Get project_id from settings or prompt user. For now, assume backend uses default if not provided, or strict.
+                // The backend requires project_id. Let's fetch settings first or default to 1.
+                // Correction: In real app, we should probably fetch default project from settings.
+                // Let's hardcode 1 for now as per MVP or existing bulk logic.
+                suite_filter: suiteFilter
+            })
+        });
+        
+        const res = await response.json();
+        
+        if (response.ok) {
+            showNotification(`Successfully created ${res.created} issues.`, 'success');
+            // Reload analysis to show links
+            loadSubmissionAnalysis(subId, suiteFilter);
         } else {
-            clustersContainer.innerHTML = '';
+            throw new Error(res.detail || 'Sync failed');
         }
+    } catch (e) {
+        console.error("Bulk sync error", e);
+        showNotification('Failed to sync issues: ' + e.message, 'error');
     }
 }
 

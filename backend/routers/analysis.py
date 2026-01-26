@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 from backend.database.database import get_db, SessionLocal
 from backend.database import models
 from backend.analysis.clustering import ImprovedFailureClusterer
 from backend.analysis.llm_client import get_llm_client
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import traceback
 
 router = APIRouter()
@@ -55,9 +55,10 @@ def run_analysis_task(run_id: int):
             # Strict GSI Separation
             # GSI runs have 'gsi' in product or model. Standard runs do not (or match target fingerprint).
             def is_gsi(r):
+                plan = (r.suite_plan or "").lower()
                 prod = (r.build_product or "").lower()
                 mod = (r.build_model or "").lower()
-                return "gsi" in prod or "gsi" in mod
+                return "cts-on-gsi" in plan or "gsi" in prod or "gsi" in mod
 
             current_is_gsi = is_gsi(run)
             newer_runs = [r for r in candidate_runs if is_gsi(r) == current_is_gsi]
@@ -475,7 +476,161 @@ def get_cluster_failures(cluster_id: int, db: Session = Depends(get_db)):
     return failures
 
 
-@router.get("/run/{run_id}/clusters/by-module")
+@router.get("/submission/{submission_id}/clusters")
+def get_submission_clusters(
+    submission_id: int, 
+    suite_filter: Optional[str] = Query(None), 
+    db: Session = Depends(get_db)
+):
+    """
+    Get aggregated clusters for a submission, optionally filtered by suite (CTS, GTS, etc.).
+    """
+    # 1. Fetch Submission to get context (target_fingerprint for GSI logic)
+    sub = db.query(models.Submission).filter(models.Submission.id == submission_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    # 2. Identify relevant Test Runs
+    runs_query = db.query(models.TestRun).filter(models.TestRun.submission_id == submission_id)
+    all_runs = runs_query.all()
+    
+    target_run_ids = []
+    
+    if not suite_filter or suite_filter.lower() == 'all':
+        target_run_ids = [r.id for r in all_runs]
+    else:
+        # Apply Suite Filtering Logic (matching logic in submissions.py)
+        filter_upper = suite_filter.upper()
+        
+        for run in all_runs:
+            run_suite_name = (run.test_suite_name or '').upper()
+            
+            # GSI Logic
+            # 1. suite_plan is 'cts-on-gsi' (Strongest Signal)
+            run_plan = (run.suite_plan or '').lower()
+            is_gsi_plan = 'cts-on-gsi' in run_plan
+            
+            # 2. Fallbacks
+            is_gsi_product = (run.build_product and 'gsi' in run.build_product.lower()) or \
+                             (run.build_model and 'gsi' in run.build_model.lower())
+            
+            is_gsi = is_gsi_plan or is_gsi_product
+
+            if filter_upper == 'CTS':
+                # CTS tab should show standard CTS, exclude GSI usually? 
+                # Or if user strictly wants "CTS" string match. 
+                # Let's align with Dashboard logic: CTS Tab = CTS Suite & NOT GSI
+                if 'CTS' in run_suite_name and not is_gsi:
+                    target_run_ids.append(run.id)
+            
+            elif filter_upper == 'GSI' or filter_upper == 'CTSONGSI':
+                # Matches GSI logic
+                if 'CTS' in run_suite_name and is_gsi:
+                     target_run_ids.append(run.id)
+            
+            else:
+                # Standard substring match for GTS, VTS, STS, etc.
+                if filter_upper in run_suite_name:
+                    target_run_ids.append(run.id)
+
+    if not target_run_ids:
+        return []
+
+    # 3. Fetch Clusters linked to these Runs
+    # Join: Cluster <- Analysis <- TestCase
+    clusters = db.query(models.FailureCluster).join(models.FailureAnalysis).join(models.TestCase).filter(
+        models.TestCase.test_run_id.in_(target_run_ids)
+    ).distinct().all()
+
+    # Get Redmine Client (Optimization: Init once)
+    try:
+        from backend.integrations.redmine_client import RedmineClient
+        from backend.utils import encryption
+        settings = db.query(models.Settings).first()
+        redmine_client = None
+        if settings and settings.redmine_url and settings.redmine_api_key:
+            try:
+                api_key = encryption.decrypt(settings.redmine_api_key)
+                redmine_client = RedmineClient(settings.redmine_url, api_key)
+            except:
+                pass
+    except:
+        redmine_client = None
+
+    # 4. Enhance Clusters with Aggregated Stats
+    enhanced_clusters = []
+    
+    # Pre-fetch resolution logic if needed
+    try:
+        from backend.integrations.assignment_resolver import get_assignment_resolver
+        resolver = get_assignment_resolver()
+    except:
+        resolver = None
+
+    for cluster in clusters:
+        # Calculate failure count *scoped to the filtered runs*
+        count = db.query(models.TestCase).join(models.FailureAnalysis).filter(
+            models.TestCase.test_run_id.in_(target_run_ids),
+            models.FailureAnalysis.cluster_id == cluster.id
+        ).count()
+        
+        if count == 0:
+            continue # Should not look happen given the main query, but safety check
+
+        # Convert to dict
+        cluster_dict = {c.name: getattr(cluster, c.name) for c in cluster.__table__.columns}
+        cluster_dict["failures_count"] = count  # Aggregated count
+        
+        # Get module names (scoped)
+        modules = db.query(models.TestCase.module_name).join(models.FailureAnalysis).filter(
+            models.TestCase.test_run_id.in_(target_run_ids),
+            models.FailureAnalysis.cluster_id == cluster.id
+        ).distinct().all()
+        cluster_dict["module_names"] = [m[0] for m in modules]
+        
+        # Redmine Info
+        if cluster.redmine_issue_id and redmine_client:
+            try:
+                issue = redmine_client.get_issue(cluster.redmine_issue_id)
+                if issue:
+                    if 'status' in issue:
+                        cluster_dict["redmine_status"] = issue['status'].get('name', 'Unknown')
+                        cluster_dict["redmine_status_id"] = issue['status'].get('id', 0)
+                    if 'assigned_to' in issue:
+                        cluster_dict["redmine_assignee"] = issue['assigned_to'].get('name')
+                        cluster_dict["redmine_assignee_id"] = issue['assigned_to'].get('id')
+            except:
+                pass
+        
+        # Suggested Assignment
+        if not cluster_dict.get("redmine_assignee") and resolver:
+            try:
+                module_for_res = cluster_dict["module_names"][0] if cluster_dict["module_names"] else None
+                assignment = resolver.resolve_assignment(module_for_res)
+                
+                # Only overwrite if resolver has a suggestion, otherwise keep AI suggestion or DB value
+                if assignment.get("team_name"):
+                    cluster_dict["suggested_assignment"] = assignment.get("team_name")
+                
+                if assignment.get("user_id"):
+                    cluster_dict["suggested_assignee_id"] = assignment.get("user_id")
+                
+                if assignment.get("resolved_from"):
+                    cluster_dict["suggested_assignee_source"] = assignment.get("resolved_from")
+            except:
+                pass
+
+        enhanced_clusters.append(cluster_dict)
+
+    # Sort: High Severity first, then by count desc
+    def sort_key(c):
+        sev_score = 3 if c.get('severity') == 'High' else (2 if c.get('severity') == 'Medium' else 1)
+        return (-sev_score, -c.get('failures_count', 0))
+    
+    enhanced_clusters.sort(key=sort_key)
+    
+    return enhanced_clusters
+
 def get_clusters_by_module(run_id: int, db: Session = Depends(get_db)):
     """
     Get clusters grouped by module for hierarchical UI display.

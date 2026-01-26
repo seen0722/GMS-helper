@@ -556,7 +556,7 @@
                         <div class="p-2 bg-blue-50 text-blue-600 rounded-xl">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                         </div>
-                        <div class="text-xs font-bold text-slate-400 uppercase tracking-widest">Total Runs</div>
+                        <div class="text-xs font-bold text-slate-400 uppercase tracking-widest">Total Submissions</div>
                     </div>
                     <div class="flex items-end justify-between">
                         <div class="text-3xl font-display font-bold text-slate-900" id="stat-total-runs">-</div>
@@ -605,7 +605,7 @@
             <div class="bg-white rounded-2xl shadow-apple border border-slate-100 overflow-hidden">
                 <div class="px-6 py-4 border-b border-slate-100 flex flex-col gap-3">
                     <div class="flex justify-between items-center">
-                        <h3 class="text-base font-display font-bold text-slate-900">Recent Test Runs</h3>
+                        <h3 class="text-base font-display font-bold text-slate-900">Recent Submissions</h3>
                         <button onclick="router.navigate('upload')"
                             class="text-sm bg-primary-600 text-white px-4 py-2 rounded-xl hover:bg-primary-700 transition-all shadow-md shadow-primary-600/20 font-semibold btn-press">
                             New Upload
@@ -961,11 +961,171 @@
                         </div>
                     </div>
                     
-                    <!-- Re-run Button -->
-                    <div class="text-right">
-                         <button onclick="triggerSubmissionAnalysis(currentSubmissionId)" class="text-xs text-slate-400 hover:text-indigo-600 transition-colors">
-                             Re-run Analysis
-                         </button>
+                    <!-- Analysis Toolbar & Table (PRD REQ-01, 02, 04) -->
+                    <div class="bg-white rounded-2xl shadow-apple border border-slate-100 overflow-hidden mt-6">
+                        <!-- Toolbar -->
+                        <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                             <div class="flex items-center gap-6">
+                                <!-- View Mode Toggle -->
+                                <div class="inline-flex rounded-lg bg-slate-100 p-0.5" role="group">
+                                    <button type="button" id="sub-view-mode-cluster" onclick="switchSubmissionViewMode('cluster')"
+                                        class="px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 bg-white text-slate-800 shadow-sm">
+                                        Cluster View
+                                    </button>
+                                    <button type="button" id="sub-view-mode-module" onclick="switchSubmissionViewMode('module')"
+                                        class="px-3 py-1.5 text-xs font-bold rounded-md transition-all duration-200 text-slate-500 hover:text-slate-700">
+                                        Module View
+                                    </button>
+                                </div>
+                                <div class="h-6 w-px bg-slate-200"></div>
+                                <!-- Filter -->
+                                <div class="flex items-center gap-4">
+                                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Unsynced only</span>
+                                    <button type="button" id="sub-toggle-no-redmine" class="ios-toggle" role="switch" aria-checked="false" onclick="toggleSubmissionFilter(this)">
+                                        <span class="ios-toggle-dot"></span>
+                                    </button>
+                                </div>
+                             </div>
+                             
+                             <!-- Actions -->
+                             <div class="flex items-center gap-3">
+                                 <button onclick="triggerSubmissionBulkSync(currentSubmissionId)" class="text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border border-transparent hover:border-blue-100">
+                                     Sync All
+                                 </button>
+                                 <div class="h-4 w-px bg-slate-200"></div>
+                                 <button onclick="triggerSubmissionAnalysis(currentSubmissionId)" class="btn-primary bg-indigo-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 text-xs font-bold shadow-lg shadow-indigo-200 hover:shadow-indigo-300">
+                                     <svg class="w-4 h-4 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                     Re-analyze
+                                 </button>
+                             </div>
+                        </div>
+                        
+                        <!-- Table (Reusing renderClustersTable Logic) -->
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
+                                    <tr>
+                                        <!-- Same headers as Run Details (REQ-03) -->
+                                        <th class="px-4 py-3">Summary</th>
+                                        <th class="px-4 py-3 w-24">Impact</th>
+                                        <th class="px-4 py-3 w-32">Confidence</th>
+                                        <th class="px-4 py-3 w-28">AI Suggestion</th>
+                                        <th class="px-4 py-3 w-28">Owner</th>
+                                        <th class="px-4 py-3 w-32">Redmine</th>
+                                        <th class="px-4 py-3 w-24">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="sub-analysis-table-body" class="divide-y divide-slate-100">
+                                    <!-- Rows injected via JS (renderAnalysisTable) -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Detailed Analysis View (Hidden by default, shown on click) -->
+                    <div id="analysis-detail-view" class="hidden bg-white rounded-2xl shadow-apple border border-slate-100 overflow-hidden mt-6">
+                        <!-- Header -->
+                        <div class="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex justify-between items-center">
+                            <h4 class="font-bold text-slate-900 text-lg" id="detail-title">Cluster Analysis</h4>
+                            <div class="flex items-center gap-3">
+                                <button onclick="openRedmineModal()" id="btn-assign-redmine"
+                                    class="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-xl transition-all flex items-center gap-2 shadow-sm">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M12 4v16m8-8H4"></path>
+                                    </svg>
+                                    Assign to Redmine
+                                </button>
+                                <span id="btn-unlink-redmine-detail" class="hidden">
+                                    <button onclick="unlinkCluster()" 
+                                            class="flex items-center gap-1.5 px-3 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 text-xs font-semibold rounded-lg transition-all shadow-sm hover:shadow">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                        </svg>
+                                        <span id="btn-unlink-redmine-text">Unlink</span>
+                                    </button>
+                                </span>
+                                <button onclick="document.getElementById('analysis-detail-view').classList.add('hidden')"
+                                    class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-all">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                            d="M6 18L18 6M6 6l12 12"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="p-5 space-y-4">
+                            <!-- AI Summary -->
+                            <div id="detail-summary-body"
+                                class="text-slate-700 text-[13px] leading-relaxed bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                            </div>
+
+                            <!-- Root Cause & Fix - Side by Side -->
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <!-- Root Cause -->
+                                <div class="bg-gradient-to-br from-purple-50 to-purple-50/30 p-4 rounded-xl border border-purple-100">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <div class="w-6 h-6 rounded-md bg-purple-100 flex items-center justify-center">
+                                            <svg class="w-3.5 h-3.5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                                            </svg>
+                                        </div>
+                                        <h5 class="text-xs font-bold text-purple-900">Root Cause</h5>
+                                    </div>
+                                    <div class="text-slate-700 text-[13px] leading-relaxed" id="detail-root-cause">-</div>
+                                </div>
+                                
+                                <!-- Fix Suggestion -->
+                                <div class="bg-gradient-to-br from-emerald-50 to-emerald-50/30 p-4 rounded-xl border border-emerald-100">
+                                    <div class="flex items-center gap-2 mb-2">
+                                        <div class="w-6 h-6 rounded-md bg-emerald-100 flex items-center justify-center">
+                                            <svg class="w-3.5 h-3.5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                            </svg>
+                                        </div>
+                                        <h5 class="text-xs font-bold text-emerald-900">Fix Suggestion</h5>
+                                    </div>
+                                    <div class="text-slate-700 text-[13px] leading-relaxed" id="detail-solution">-</div>
+                                </div>
+                            </div>
+                            
+                            <!-- Raw Data - Collapsible -->
+                            <details class="group bg-slate-50 rounded-xl border border-slate-200 overflow-hidden" open>
+                                <summary class="flex items-center justify-between px-4 py-3 cursor-pointer hover:bg-slate-100 transition-colors">
+                                    <div class="flex items-center gap-2">
+                                        <div class="w-6 h-6 rounded-md bg-slate-200 flex items-center justify-center">
+                                            <svg class="w-3.5 h-3.5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                                            </svg>
+                                        </div>
+                                        <span class="text-xs font-bold text-slate-700">Raw Data</span>
+                                        <span class="text-[11px] text-slate-400">Stack Trace & Affected Tests</span>
+                                    </div>
+                                    <svg class="w-4 h-4 text-slate-400 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                    </svg>
+                                </summary>
+                                <div class="px-4 pb-4 space-y-3 border-t border-slate-200 pt-3">
+                                    <!-- Stack Trace -->
+                                    <div>
+                                        <div class="text-[11px] font-medium text-slate-500 mb-1.5">Representative Stack Trace</div>
+                                        <pre class="bg-slate-800 text-slate-200 p-3 rounded-lg text-[11px] font-mono overflow-x-auto whitespace-pre-wrap max-h-56 code-scroll leading-relaxed"
+                                            id="detail-stack-trace">-</pre>
+                                    </div>
+                                    <!-- Affected Tests -->
+                                    <div>
+                                        <div class="text-[11px] font-medium text-slate-500 mb-1.5">
+                                            Affected Test Cases (<span id="detail-failure-count" class="font-bold text-slate-700">0</span>)
+                                        </div>
+                                        <div class="bg-white border border-slate-200 rounded-lg"
+                                            id="detail-failure-list">
+                                            <!-- List items -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </details>
+                        </div>
                     </div>
                 </div>
             </div>
