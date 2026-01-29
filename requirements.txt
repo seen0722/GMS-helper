@@ -12,3 +12,5 @@ openai
 httpx
 cryptography
 hdbscan
+openpyxl
+python-dateutil

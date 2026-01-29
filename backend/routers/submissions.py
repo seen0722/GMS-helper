@@ -174,10 +174,9 @@ def get_submissions(skip: int = 0, limit: int = 20, product_filter: Optional[str
                     else:
                         remaining_failures_count += 1
                 
-                # Total Tests = Max of total_tests (approximation) or use latest
-                # For more accuracy, we could sum unique tests, but simpler is Max(total_tests)
-                latest = matching_runs[-1]
-                total_tests = max([r.total_tests or 0 for r in matching_runs]) if matching_runs else 0
+                # Total Tests = Max of executed tests (approximation)
+                # We exclude ignored tests to show a meaningful 'Executed' total.
+                total_tests = max([(r.passed_tests or 0) + (r.failed_tests or 0) for r in matching_runs]) if matching_runs else 0
                 
                 # Calculate passed based on effective failures
                 # If we assume 'total_tests' represents the full suite size, then:
@@ -314,7 +313,7 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
                 else:
                     remaining_failures_count += 1
             
-            total_tests = max([r.total_tests or 0 for r in matching_runs]) if matching_runs else 0
+            total_tests = max([(r.passed_tests or 0) + (r.failed_tests or 0) for r in matching_runs]) if matching_runs else 0
             passed_tests = max(0, total_tests - remaining_failures_count)
             
             suite_summary[suite_cfg.name] = {

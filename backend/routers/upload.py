@@ -269,7 +269,8 @@ def process_upload_background(file_path: str, test_run_id: int):
         passed_modules_count = total_modules - failed_modules_count
             
         # Update TestRun stats and status
-        test_run.total_tests = total
+        # total_tests is now used as "Executed Tests" (Pass + Fail)
+        test_run.total_tests = passed + failed
         test_run.passed_tests = passed
         test_run.failed_tests = failed
         test_run.ignored_tests = ignored
