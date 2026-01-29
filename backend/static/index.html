@@ -785,7 +785,7 @@
                                 </button>
                                 
                                 <!-- Tooltip -->
-                                <div class="absolute top-full right-0 mt-3 w-64 p-4 bg-slate-900 text-white text-xs rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 pointer-events-none">
+                                <div class="absolute top-full right-0 mt-3 w-64 p-4 bg-slate-900 text-white text-xs rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-[100] pointer-events-none">
                                     <div class="font-bold text-sm mb-1 text-slate-200">Session Locking</div>
                                     <div class="space-y-2">
                                         <div class="flex gap-2">
@@ -1221,8 +1221,8 @@
             </button>
 
             <!-- Header Info (Compact) -->
-            <div class="bg-white px-6 py-4 rounded-2xl shadow-apple border border-slate-100 flex justify-between items-center relative overflow-hidden">
-                <div class="absolute top-0 left-0 w-1.5 h-full bg-primary-500" id="detail-header-bar"></div>
+            <div class="bg-white px-6 py-4 rounded-2xl shadow-apple border border-slate-100 flex justify-between items-center relative z-10" id="detail-header-card">
+                <div class="absolute top-0 left-0 w-1.5 h-full bg-primary-500 rounded-l-2xl" id="detail-header-bar"></div>
                 <div class="flex items-center gap-6">
                     <div>
                         <div class="flex items-center gap-3">
