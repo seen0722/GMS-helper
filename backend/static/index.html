@@ -240,6 +240,14 @@
             display: none;  /* Chrome, Safari and Opera */
         }
 
+        .apple-label {
+            @apply text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight;
+        }
+
+        .apple-header {
+            @apply font-display font-bold text-slate-900 tracking-tight;
+        }
+
         /* Page Transition Animations */
         @keyframes page-fade-in {
             from {
@@ -909,7 +917,7 @@
                         <div class="bg-white p-6 rounded-2xl shadow-apple border border-slate-100 relative overflow-hidden group">
                             <div class="absolute top-0 right-0 w-24 h-24 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-bl-full -mr-4 -mt-4 opacity-50 group-hover:scale-110 transition-transform"></div>
                             <div class="relative z-10">
-                                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Quality Severity</div>
+                                <div class="apple-label mb-2">Quality Severity</div>
                                 <div class="flex items-baseline gap-2">
                                     <div class="text-4xl font-display font-bold text-slate-900" id="sub-kpi-severity">-</div>
                                     <div class="text-sm font-medium text-slate-400">/ 100</div>
@@ -923,7 +931,7 @@
 
                         <!-- Executive Summary -->
                         <div id="card-executive-summary" class="bg-white p-6 rounded-2xl shadow-apple border border-slate-100 md:col-span-2 relative">
-                             <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Executive Summary</div>
+                             <div class="apple-label mb-3">Executive Summary</div>
                              <p id="sub-ai-summary" class="text-slate-700 leading-relaxed text-sm font-medium">
                                  Loading summary...
                              </p>
@@ -940,7 +948,7 @@
                                 <span class="p-1.5 rounded-lg bg-red-50 text-red-500">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
                                 </span>
-                                <h3 class="font-bold text-slate-900">Top Technical Risks</h3>
+                                <h3 class="apple-header text-base">Top Technical Risks</h3>
                             </div>
                             <ul id="sub-ai-risks" class="space-y-3">
                                 <!-- Injected -->
@@ -953,7 +961,7 @@
                                 <span class="p-1.5 rounded-lg bg-emerald-50 text-emerald-500">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                                 </span>
-                                <h3 class="font-bold text-slate-900">Strategic Recommendations</h3>
+                                <h3 class="apple-header text-base">Strategic Recommendations</h3>
                             </div>
                             <ul id="sub-ai-recommendations" class="space-y-3">
                                 <!-- Injected -->
@@ -990,7 +998,7 @@
 
                                 <!-- Filter -->
                                 <div class="flex items-center gap-4">
-                                    <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Unsynced only</span>
+                                    <span class="apple-label">Unsynced only</span>
                                     <button type="button" id="sub-toggle-no-redmine" class="ios-toggle" role="switch" aria-checked="false" onclick="toggleSubmissionFilter(this)">
                                         <span class="ios-toggle-dot"></span>
                                     </button>
@@ -1145,8 +1153,8 @@
                 <div class="bg-white rounded-2xl shadow-apple border border-slate-100 overflow-hidden">
                     <div class="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
                         <div class="flex items-center gap-4">
-                            <h3 class="font-bold text-slate-900">Failure Matrix</h3>
-                            <div class="text-xs font-medium text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-200">
+                            <h3 class="apple-header text-base">Failure Matrix</h3>
+                            <div class="apple-label lowercase bg-slate-50 px-2 py-0.5 rounded border border-slate-200 normal-case">
                                 Showing unique failures across all runs
                             </div>
                         </div>
@@ -1161,9 +1169,9 @@
                     
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm text-left">
-                            <thead class="bg-slate-50/50 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
-                                <tr>
-                                    <th class="px-6 py-3 w-1/3">Test Case</th>
+                            <thead class="bg-slate-50/50 border-b border-slate-100">
+                                <tr class="apple-label opacity-80">
+                                    <th class="px-6 py-4 w-1/3">Test Case</th>
                                     <!-- Dynamic Run Columns will be injected here -->
                                     <th id="header-matrix-runs"></th> 
                                     <th class="px-6 py-3 text-center">Status</th>

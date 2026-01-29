@@ -1232,7 +1232,7 @@ class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-cen
                     <!-- Footer: Fingerprint -->
                     <div class="bg-slate-50 border-t border-slate-100 px-6 py-3">
                          <div class="flex flex-col gap-1">
-                            <span class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Device Fingerprint</span>
+                            <span class="apple-label">Device Fingerprint</span>
                             <div class="font-mono text-[10px] text-slate-500 break-all select-all leading-relaxed">
                                 ${run.device_fingerprint || '-'}
                             </div>
@@ -6957,7 +6957,7 @@ function renderComplianceMatrix(sub) {
                      
                      <div class="flex justify-between items-end">
                          <div class="flex flex-col">
-                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Failures</span>
+                            <span class="apple-label">Failures</span>
                             <div class="flex items-center gap-1.5">
                                 <span class="text-lg font-bold ${isFail ? 'text-red-700' : 'text-slate-700'}">${summary.failed.toLocaleString()}</span>
                                 ${summary.recovered > 0 ? `<div class="px-1.5 py-0.5 rounded text-[9px] font-bold text-emerald-700 bg-emerald-100/80" title="${summary.recovered} issues fixed in later runs">-${summary.recovered}</div>` : ''}
@@ -6965,7 +6965,7 @@ function renderComplianceMatrix(sub) {
                          </div>
                          
                          <div class="flex flex-col items-end text-right">
-                            <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Tests</span>
+                            <span class="apple-label">Total Tests</span>
                             <span class="text-sm font-semibold text-slate-600">${total.toLocaleString()}</span>
                          </div>
                      </div>
@@ -7001,7 +7001,7 @@ function renderComplianceMatrix(sub) {
         <div class="relative group rounded-2xl p-5 border shadow-sm hover:shadow-lg transition-all duration-300 ${statusColor} ${cursorClass}" ${onClickAction}>
             <div class="flex justify-between items-start">
                 <div class="flex flex-col">
-                     <span class="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-1">${config.display_name || suiteName}</span>
+                     <span class="apple-label opacity-50 mb-1">${config.display_name || suiteName}</span>
                      ${summary && summary.status !== 'missing' ? 
                         `<span class="text-3xl font-display font-black text-slate-800 tracking-tight">${summary.status === 'pass' ? 'PASS' : 'FAIL'}</span>` : 
                         `<span class="text-3xl font-display font-black text-slate-300">-</span>`
