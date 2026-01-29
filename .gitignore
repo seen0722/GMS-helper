@@ -52,3 +52,8 @@ uploads/
 .env.local
 gms-helper-offline-*.tar.gz
 gms-helper-offline-*/
+
+# Test Reports
+reports/*.xml
+*.xml
+!test_robot_upload.xml

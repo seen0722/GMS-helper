@@ -5604,18 +5604,27 @@ async function triggerSubmissionAnalysis(subId) {
     }
     
     try {
-        showNotification('AI Analysis started... this may take a moment', 'info');
+        showNotification('AI Analysis started... request sent.', 'info');
         const response = await fetch(`${API_BASE}/reports/submissions/${subId}/analyze`, {
             method: 'POST'
         });
         
-        if (!response.ok) throw new Error('Analysis failed');
+        if (!response.ok) throw new Error('Analysis request failed');
         
         await response.json();
         
+        // Poll for completion of background clustering tasks
+        if (btn) btn.innerHTML = `
+            <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            Processing Clusters...
+        `;
+        
+        await pollSubmissionClustering(subId);
+
         // Reload full data to ensure we get proper DB clusters with IDs
-        // Note: Clustering runs in background, so immediate reload might show partial results
-        // but it prevents showing invalid LLM-generated cluster objects.
         await loadSubmissionAnalysis(subId);
         showNotification('Analysis Complete!', 'success');
         
@@ -5628,6 +5637,36 @@ async function triggerSubmissionAnalysis(subId) {
             btn.innerHTML = originalText;
         }
     }
+}
+
+async function pollSubmissionClustering(subId) {
+    const maxRetries = 60; // 2 minutes (2s interval)
+    let retries = 0;
+    
+    while (retries < maxRetries) {
+        try {
+            const res = await fetch(`${API_BASE}/submissions/${subId}`);
+            if (!res.ok) break;
+            const sub = await res.json();
+            
+            const runs = sub.test_runs || [];
+            if (runs.length === 0) return; 
+            
+            // Check if ANY run is still analyzing
+            const pending = runs.some(r => r.analysis_status === 'analyzing' || r.analysis_status === 'pending');
+            
+            if (!pending) {
+                return; // All done!
+            }
+        } catch (e) {
+            console.warn("Polling error", e);
+        }
+        
+        // Wait 2s
+        await new Promise(r => setTimeout(r, 2000));
+        retries++;
+    }
+    console.warn("Polling timed out, proceeding with available data");
 }
 
 
@@ -5731,19 +5770,26 @@ function renderSubmissionAnalysis(data) {
     }
     
     // 2. Executive Summary (Only show if ALL, or static)
+    // 2. Executive Summary (Only show if ALL, or static)
     const summaryEl = document.getElementById('sub-ai-summary');
+    const summaryCard = document.getElementById('card-executive-summary');
     if (summaryEl) {
         if (currentAnalysisSuiteFilter === 'All') {
+            if (summaryCard) summaryCard.classList.remove('hidden');
             summaryEl.innerHTML = formatMultilineText(data.executive_summary || 'No summary available.');
         } else {
-            summaryEl.innerHTML = `<span class="text-slate-400 italic">Global Executive Summary hidden while filtering by ${currentAnalysisSuiteFilter}. AI Analysis specific to this suite is pending implementation.</span>`;
+            // Hide the entire card for suite-specific views to avoid confusion
+            if (summaryCard) summaryCard.classList.add('hidden');
         }
     }
     
     // 3. Top Risks
+    // 3. Top Risks
     const risksEl = document.getElementById('sub-ai-risks');
+    const risksCard = document.getElementById('card-top-risks');
     if (risksEl) {
         if (currentAnalysisSuiteFilter === 'All') {
+            if (risksCard) risksCard.classList.remove('hidden');
              const risks = data.top_risks || [];
             if (risks.length === 0) {
                 risksEl.innerHTML = '<li class="text-sm text-slate-400 italic">No significant risks identified.</li>';
@@ -5756,15 +5802,18 @@ function renderSubmissionAnalysis(data) {
                 `).join('');
             }
         } else {
-             risksEl.innerHTML = '<li class="text-sm text-slate-400 italic">Filtered view active.</li>';
+             // Hide card
+             if (risksCard) risksCard.classList.add('hidden');
         }
-       
     }
     
     // 4. Recommendations
+    // 4. Recommendations
     const recsEl = document.getElementById('sub-ai-recommendations');
+    const recsCard = document.getElementById('card-recommendations');
     if (recsEl) {
          if (currentAnalysisSuiteFilter === 'All') {
+            if (recsCard) recsCard.classList.remove('hidden');
             const recs = data.recommendations || [];
             if (recs.length === 0) {
                 recsEl.innerHTML = '<li class="text-sm text-slate-400 italic">No specific recommendations.</li>';
@@ -5777,7 +5826,8 @@ function renderSubmissionAnalysis(data) {
                 `).join('');
             }
          } else {
-              recsEl.innerHTML = '<li class="text-sm text-slate-400 italic">Filtered view active.</li>';
+              // Hide card
+              if (recsCard) recsCard.classList.add('hidden');
          }
     }
     

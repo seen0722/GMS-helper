@@ -243,6 +243,7 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
              "suite_plan": run.suite_plan,  # Added suite_plan
              "start_time": run.start_time,
              "status": run.status,
+             "analysis_status": run.analysis_status,
              "passed_tests": run.passed_tests,
              "failed_tests": run.failed_tests,
              "device_fingerprint": run.device_fingerprint,

@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8' standalone='no' ?>
+<TestResult>
+  <TestPackage name="CtsRobotTestCases" appPackageName="android.robot.cts" abi="arm64-v8a">
+    <TestSuite name="android.robot.cts">
+      <TestCase name="RobotTest">
+        <Test name="testRobot" result="fail">
+           <Failure message="boom" />
+        </Test>
+      </TestCase>
+    </TestSuite>
+  </TestPackage>
+</TestResult>

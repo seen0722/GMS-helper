@@ -23,6 +23,7 @@ COPY --from=builder /install /usr/local
 COPY backend/ ./backend/
 COPY migrations/ ./migrations/
 COPY scripts/ ./scripts/
+COPY migrate_db.py .
 
 # Create data directory for SQLite
 RUN mkdir -p /app/data /app/uploads
