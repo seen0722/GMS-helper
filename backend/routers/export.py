@@ -49,13 +49,13 @@ def export_submission_excel(submission_id: int, db: Session = Depends(get_db)):
         latest_run = suite['runs'][-1]
         
         # Determine total tests for this suite logic
-        # Ideally we sum passed + failed from the run
-        run_total = (latest_run.passed_tests or 0) + (latest_run.failed_tests or 0)
+        # PRE-FIXED in MergeService to be consistent with UI (Max of Passed + Failed)
+        run_total = suite.get('total_tests', 0)
         total_tests_all += run_total
         
         eff_pass_rate = 100.0
         if run_total > 0:
-            eff_pass_rate = ((run_total - s_sum['remaining']) / run_total) * 100
+            eff_pass_rate = max(0, (run_total - s_sum['remaining'])) / run_total * 100
             
         suite_rows.append([
             suite['suite_name'],
@@ -126,6 +126,7 @@ def export_submission_excel(submission_id: int, db: Session = Depends(get_db)):
             cons_rows.append({
                 "Suite": suite['suite_name'],
                 "Module": item['module_name'],
+                "ABI": item.get('module_abi', ''),
                 "Test Case": f"{item['test_class']}#{item['test_method']}",
                 "Final Status": final_status,
                 "Stability": stability,
@@ -156,6 +157,7 @@ def export_submission_excel(submission_id: int, db: Session = Depends(get_db)):
             "Derived Suite": next((s['suite_name'] for s in report_data['suites'] if r in s['runs']), "Unknown"),
             "Device": r.device_fingerprint,
             "Start Time": clean_time(r.start_display), # Use clean time format
+            "Total (Pass+Fail)": (r.passed_tests or 0) + (r.failed_tests or 0),
             "Passed": r.passed_tests,
             "Failed": r.failed_tests
         })
@@ -255,9 +257,10 @@ def export_submission_excel(submission_id: int, db: Session = Depends(get_db)):
         ws_cons = wb['Consolidated Analysis']
         ws_cons.column_dimensions['A'].width = 15 # Suite
         ws_cons.column_dimensions['B'].width = 30 # Module
-        ws_cons.column_dimensions['C'].width = 50 # Test Case
-        ws_cons.column_dimensions['D'].width = 15 # Status
-        ws_cons.column_dimensions['K'].width = 60 # Error Msg
+        ws_cons.column_dimensions['C'].width = 15 # ABI
+        ws_cons.column_dimensions['D'].width = 50 # Test Case
+        ws_cons.column_dimensions['E'].width = 15 # Status
+        ws_cons.column_dimensions['L'].width = 60 # Error Msg
         
         # Header Style for Sheet 2
         for cell in ws_cons[1]:
@@ -270,8 +273,8 @@ def export_submission_excel(submission_id: int, db: Session = Depends(get_db)):
         green_font = Font(color="006100")
         green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
         
-        status_col_idx = 4 # D column (1-based index)
-        link_col_idx = 10 # J column
+        status_col_idx = 5 # E column (1-based index)
+        link_col_idx = 11 # K column
         
         for row in ws_cons.iter_rows(min_row=2, max_row=ws_cons.max_row):
             status_cell = row[status_col_idx-1]

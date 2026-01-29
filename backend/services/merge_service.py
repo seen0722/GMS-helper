@@ -33,11 +33,13 @@ class MergeService:
             
             # Detect CTSonGSI logic
             if 'CTS' in raw_name:
-                # Check fingerprint
-                if run.device_fingerprint != sub.target_fingerprint:
+                # User Requirement: 
+                # If suite_name is explicitly 'CTSONGSI', or 
+                # if it's 'CTS' but fingerprint differs from target, label as 'CTSonGSI'.
+                if raw_name == 'CTSONGSI' or (run.device_fingerprint and sub.target_fingerprint and run.device_fingerprint != sub.target_fingerprint):
                     suite_group = 'CTSonGSI'
                 else:
-                    suite_group = 'CTS' # Normalize to CTS
+                    suite_group = 'CTS'
             
             if suite_group not in runs_by_suite:
                 runs_by_suite[suite_group] = []
@@ -98,7 +100,7 @@ class MergeService:
                 
                 # Mark failures for this run
                 for f in failures:
-                    key = (f.module_name, f.class_name, f.method_name)
+                    key = (f.module_name, f.module_abi, f.class_name, f.method_name)
                     
                     if key not in case_history:
                         # Initialize history based on Module Execution Status
@@ -160,6 +162,7 @@ class MergeService:
 
                 suite_items.append({
                     "module_name": representative_failure.module_name,
+                    "module_abi": representative_failure.module_abi,
                     "test_class": representative_failure.class_name,
                     "test_method": representative_failure.method_name,
                     "initial_run_id": suite_runs[0].id,
@@ -169,10 +172,14 @@ class MergeService:
                     "failure_details": representative_failure # Passed back for Excel usage (error msg, stack trace)
                 })
                 
+            # Total Tests for this suite (Executed only - aligned with UI)
+            suite_total_tests = max([(r.passed_tests or 0) + (r.failed_tests or 0) for r in suite_runs]) if suite_runs else 0
+
             suites_data.append({
                 "suite_name": suite,
                 "run_ids": run_ids,
                 "runs": suite_runs, # Add run objects for reference
+                "total_tests": suite_total_tests,
                 "summary": {
                     "initial": suite_initial,
                     "recovered": suite_recovered,
