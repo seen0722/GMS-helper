@@ -238,9 +238,9 @@ function formatFriendlyDate(dateString) {
                     dateObj.getFullYear() === today.getFullYear();
     
     if (isToday) {
-        return `Today at ${dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        return `Today at ${dateObj.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
     } else {
-        return dateObj.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+        return dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     }
 }
 
@@ -6044,7 +6044,7 @@ function renderSubmissionRuns(container, emptyEl, runs, targetFingerprint) {
         const runsHtml = suiteRuns.map(run => {
             const totalTests = (run.passed_tests || 0) + (run.failed_tests || 0);
             const passRate = totalTests > 0 ? ((run.passed_tests / totalTests) * 100).toFixed(1) : '0.0';
-            const date = run.start_time ? new Date(run.start_time).toLocaleDateString() : '-';
+            const date = run.start_time ? new Date(run.start_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
             const statusColor = run.failed_tests > 0 ? 'text-red-600' : 'text-emerald-600';
             
             let badgeColor = 'bg-slate-100 text-slate-700';
