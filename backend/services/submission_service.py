@@ -12,7 +12,10 @@ class SubmissionService:
         suite_name: str,
         suite_plan: str,
         android_version: str = None,
-        build_product: str = None
+        build_product: str = None,
+        build_brand: str = None,
+        build_model: str = None,
+        security_patch: str = None
     ) -> models.Submission:
         """
         Identify existing submission for grouping or create a new one.
@@ -29,26 +32,20 @@ class SubmissionService:
         ).order_by(desc(models.Submission.updated_at)).first()
         
         # 2. GSI / VTS Fingerprint Match (Hardware Prefix + Vendor Suffix Match)
-        # Requirement: 
-        # - suite_name="CTS" AND suite_plan contains "cts-on-gsi"
-        # - OR suite_name="VTS" AND suite_plan contains "vts"
         is_system_replace = (
             (suite_name == "CTS" and suite_plan and "cts-on-gsi" in suite_plan.lower()) or
             (suite_name == "VTS" and suite_plan and "vts" in suite_plan.lower())
         )
 
+        match_suffix = "" # For naming if needed
         if not submission and is_system_replace:
-            # Regex: Group 1 (Prefix), Group 2 (Version), Group 3 (Build ID), Group 4 (Suffix)
-            # Pattern: ^([^:]+):([^/]+)/([^/]+)(/.+)$
-            # Example: Trimble/T70/thorpe:11/RKQ1.240423.001/02.00.11...
             fp_pattern = re.compile(r"^([^:]+):([^/]+)/([^/]+)(/.+)$")
-            
             match = fp_pattern.match(fingerprint)
             if match:
-                prefix = match.group(1) # e.g. Trimble/T70/thorpe
-                suffix = match.group(4) # e.g. /02.00.11...
+                prefix = match.group(1)
+                suffix = match.group(4)
+                match_suffix = suffix
                 
-                # Find candidates with same Prefix (Brand/Product/Device)
                 candidates = db.query(models.Submission).filter(
                      models.Submission.target_fingerprint.like(f"{prefix}:%")
                 ).order_by(desc(models.Submission.updated_at)).limit(20).all()
@@ -59,17 +56,28 @@ class SubmissionService:
                     if c_match:
                         c_prefix = c_match.group(1)
                         c_suffix = c_match.group(4)
-                        
-                        # Match hardware/vendor parts precisely
                         if c_prefix == prefix and c_suffix == suffix:
                             submission = cand
                             print(f"Grouped System-Replace Run ({suite_name}) to Submission {submission.id}")
                             break
 
         if not submission:
-            # Create new submission
-            prod = build_product or "Unknown Device"
-            sub_name = f"Submission {prod} - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
+            # Create new submission with 3PL Naming Convention
+            # Formula: [Brand] [Model] - [Security Patch] (Build: [Suffix_Partial])
+            brand = build_brand or "Unknown"
+            model = build_model or build_product or "Device"
+            patch = security_patch or "NoPatch"
+            
+            # Simple suffix indicator from Build ID or Fingerprint
+            suffix_label = "Unknown"
+            fp_pattern = re.compile(r"^([^:]+):([^/]+)/([^/]+)(/.+)$")
+            m = fp_pattern.match(fingerprint)
+            if m:
+                # Extract starting vendor version from suffix like /02.00.11... -> 02.00.11
+                raw_suffix = m.group(4).lstrip('/')
+                suffix_label = raw_suffix.split('_')[0].split(':')[0]
+            
+            sub_name = f"{brand} {model} - {patch} (Build: {suffix_label})"
             
             submission = models.Submission(
                 name=sub_name,
@@ -79,7 +87,7 @@ class SubmissionService:
                 product=build_product
             )
             db.add(submission)
-            db.flush() # Generate ID
+            db.flush()
             print(f"Created new Submission ID: {submission.id} for fingerprint: {fingerprint}")
         else:
             print(f"Matched Submission ID: {submission.id} for fingerprint: {fingerprint}")

@@ -96,6 +96,7 @@ graph LR
         subgraph "Services"
             LLMClient["llm_client.py<br/>(OpenAI/Cambrian)"]
             ClusterEngine["clustering.py"]
+            SubmissionService["submission_service.py<br/>(Grouping Logic)"]
             RedmineClient["redmine_client.py"]
         end
         
@@ -231,9 +232,10 @@ GMS-helper/
 │   ├── analysis/               # AI & ML Logic
 │   │   ├── clustering.py       # Stack Trace Clustering usage
 │   │   └── llm_client.py       # Multi-provider LLM Client
-│   ├── database/               # Data persistence
 │   │   ├── database.py         # DB Connect
 │   │   └── models.py           # SQL Models (TestRun, TestCase)
+│   ├── services/               # Shared Business Logic
+│   │   └── submission_service.py # Centralized Grouping Logic
 │   ├── routers/                # REST Controllers
 │   │   ├── analysis.py         # Analysis Endpoints
 │   │   ├── import_json.py      # Client-side ingest endpoint
@@ -258,3 +260,6 @@ The system is deployed via Docker Compose containing:
 *   `DATABASE_URL`: Path to SQLite DB.
 *   `OPENAI_API_KEY`: (Optional) for OpenAI.
 *   `CAMBRIAN_TOKEN`: (Optional) for Internal LLM.
+## 📄 Supplementary Documents
+*   [Submission Grouping Design](SUBMISSION_GROUPING_DESIGN.md) - Detailed logic for test run auto-grouping.
+*   [AI Analysis Design](LLM_INTEGRATION_DESIGN.md) - Deep dive into LLM integration.

@@ -163,7 +163,10 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
                 suite_name=data.metadata.test_suite_name or "Unknown",
                 suite_plan=data.metadata.suite_plan,
                 android_version=data.metadata.android_version,
-                build_product=data.metadata.build_product
+                build_product=data.metadata.build_product,
+                build_brand=data.metadata.build_brand,
+                build_model=data.metadata.build_model,
+                security_patch=data.metadata.security_patch
             )
             test_run.submission_id = submission.id
             db.commit()

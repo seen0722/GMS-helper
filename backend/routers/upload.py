@@ -66,89 +66,22 @@ def process_upload_background(file_path: str, test_run_id: int):
             test_run.xml_modules_total = metadata.get("modules_total", 0)
 
             # --- Submission Auto-Grouping Logic ---
+            from backend.services.submission_service import SubmissionService
+                
             fingerprint = test_run.device_fingerprint
             if fingerprint and fingerprint != "Pending...":
-                # 1. Try Exact Fingerprint Match
-                # Find latest submission for this fingerprint
-                submission = db.query(models.Submission).filter(
-                    models.Submission.target_fingerprint == fingerprint
-                ).order_by(desc(models.Submission.updated_at)).first()
-                
-                # Check Lock Status
-                if submission and submission.is_locked:
-                    print(f"Submission {submission.id} is LOCKED. Creating new submission for fingerprint {fingerprint}")
-                    submission = None #  Force new creation
-                
-                # 2. GSI / VTS Fingerprint Match (Hardware Prefix + Vendor Suffix Match)
-                # Requirement: 
-                # - suite_name="CTS" AND suite_plan contains "cts-on-gsi"
-                # - OR suite_name="VTS" AND suite_plan contains "vts"
-                is_system_replace = (
-                    (test_run.test_suite_name == "CTS" and test_run.suite_plan and "cts-on-gsi" in test_run.suite_plan.lower()) or
-                    (test_run.test_suite_name == "VTS" and test_run.suite_plan and "vts" in test_run.suite_plan.lower())
+                submission = SubmissionService.get_or_create_submission(
+                    db=db,
+                    fingerprint=fingerprint,
+                    suite_name=test_run.test_suite_name,
+                    suite_plan=test_run.suite_plan,
+                    android_version=test_run.android_version,
+                    build_product=test_run.build_product,
+                    build_brand=test_run.build_brand,
+                    build_model=test_run.build_model,
+                    security_patch=test_run.security_patch
                 )
-
-                if not submission and is_system_replace:
-                    import re
-                    # Regex: Group 1 (Prefix), Group 2 (Version), Group 3 (Build ID), Group 4 (Suffix)
-                    # Pattern: ^([^:]+):([^/]+)/([^/]+)(/.+)$
-                    # Example: Trimble/T70/thorpe:11/RKQ1.240423.001/02.00.11...
-                    fp_pattern = re.compile(r"^([^:]+):([^/]+)/([^/]+)(/.+)$")
                     
-                    match = fp_pattern.match(fingerprint)
-                    if match:
-                        prefix = match.group(1) # e.g. Trimble/T70/thorpe
-                        # version = match.group(2) # e.g. 11
-                        # build_id = match.group(3) # e.g. RKQ1.240423.001
-                        suffix = match.group(4) # e.g. /02.00.11...
-                        
-                        # Find candidates with same Prefix (Brand/Product/Device)
-                        candidates = db.query(models.Submission).filter(
-                             models.Submission.target_fingerprint.like(f"{prefix}:%")
-                        ).order_by(desc(models.Submission.updated_at)).limit(20).all()
-                        
-                        for cand in candidates:
-                            if not cand.target_fingerprint: continue
-                            
-                            c_match = fp_pattern.match(cand.target_fingerprint)
-                            if c_match:
-                                c_prefix = c_match.group(1)
-                                c_suffix = c_match.group(4)
-                                
-                                # Match hardware/vendor parts precisely
-                                if c_prefix == prefix and c_suffix == suffix:
-                                    submission = cand
-                                    print(f"Grouped System-Replace Run ({test_run.test_suite_name}) to Submission {submission.id}")
-                                    break
-                
-                if not submission:
-                    # Create new submission
-                    prod = test_run.build_product
-                    if not prod or prod == "Unknown":
-                        # Try parsing from fingerprint (Brand/Product/Device...)
-                        parts = fingerprint.split('/')
-                        if len(parts) > 1:
-                            prod = parts[1]
-                        else:
-                            prod = "Unknown Device"
-
-                    # Default name format: [Product] - [Date]
-                    # We can refine this later or allow renaming
-                    sub_name = f"Submission {prod} - {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}"
-                    
-                    submission = models.Submission(
-                        name=sub_name,
-                        target_fingerprint=fingerprint,
-                        status="analyzing",
-                        gms_version=test_run.android_version, # Heuristic
-                        product=prod # Populate Product
-                    )
-                    db.add(submission)
-                    db.flush() # Generate ID
-                    print(f"Created new Submission ID: {submission.id} for fingerprint: {fingerprint}")
-                else:
-                    print(f"Found existing Submission ID: {submission.id} for fingerprint: {fingerprint}")
-                
                 test_run.submission_id = submission.id
             # --------------------------------------
             db.commit()
