@@ -21,6 +21,8 @@ class Submission(Base):
     lab_name = Column(String, nullable=True)
     target_fingerprint = Column(String, index=True, nullable=True) # Auto-grouping Key
     product = Column(String, index=True, nullable=True) # Product/Project Name (e.g., T70)
+    brand = Column(String, index=True, nullable=True)   # Brand Name (e.g., Trimble)
+    device = Column(String, index=True, nullable=True)  # Device Code Name (e.g., thorpe)
     is_locked = Column(Boolean, default=False) # Session Locking (Prevent Auto-Merge)
     analysis_result = Column(Text, nullable=True) # AI Analysis JSON
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -36,6 +38,8 @@ class TestRun(Base):
     device_fingerprint = Column(String)
     build_id = Column(String)
     build_product = Column(String)
+    build_brand = Column(String)
+    build_device = Column(String)
     build_model = Column(String)
     build_type = Column(String)
     security_patch = Column(String)

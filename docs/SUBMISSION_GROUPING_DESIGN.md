@@ -46,6 +46,7 @@ else:
     match = find_submission(full_fp=run.fp)
     if match: return match
 
+# Formula: [Brand] [Model] ([Device]) - [Security Patch] (Build: [Suffix])
 return create_new_submission(run.metadata)
 ```
 

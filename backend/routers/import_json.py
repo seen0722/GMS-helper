@@ -166,6 +166,7 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
                 build_product=data.metadata.build_product,
                 build_brand=data.metadata.build_brand,
                 build_model=data.metadata.build_model,
+                build_device=data.metadata.build_device,
                 security_patch=data.metadata.security_patch
             )
             test_run.submission_id = submission.id

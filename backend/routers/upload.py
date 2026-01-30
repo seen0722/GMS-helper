@@ -79,6 +79,7 @@ def process_upload_background(file_path: str, test_run_id: int):
                     build_product=test_run.build_product,
                     build_brand=test_run.build_brand,
                     build_model=test_run.build_model,
+                    build_device=test_run.build_device,
                     security_patch=test_run.security_patch
                 )
                     

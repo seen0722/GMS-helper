@@ -15,6 +15,7 @@ class SubmissionService:
         build_product: str = None,
         build_brand: str = None,
         build_model: str = None,
+        build_device: str = None,
         security_patch: str = None
     ) -> models.Submission:
         """
@@ -63,9 +64,10 @@ class SubmissionService:
 
         if not submission:
             # Create new submission with 3PL Naming Convention
-            # Formula: [Brand] [Model] - [Security Patch] (Build: [Suffix_Partial])
+            # Formula: [Brand] [Model] ([Device]) - [Security Patch] (Build: [Suffix_Partial])
             brand = build_brand or "Unknown"
             model = build_model or build_product or "Device"
+            device = build_device or "Unknown"
             patch = security_patch or "NoPatch"
             
             # Simple suffix indicator from Build ID or Fingerprint
@@ -77,14 +79,16 @@ class SubmissionService:
                 raw_suffix = m.group(4).lstrip('/')
                 suffix_label = raw_suffix.split('_')[0].split(':')[0]
             
-            sub_name = f"{brand} {model} - {patch} (Build: {suffix_label})"
+            sub_name = f"{brand} {model} ({device}) - {patch} (Build: {suffix_label})"
             
             submission = models.Submission(
                 name=sub_name,
                 target_fingerprint=fingerprint,
                 status="analyzing",
                 gms_version=android_version,
-                product=build_product
+                product=build_product,
+                brand=brand,
+                device=device
             )
             db.add(submission)
             db.flush()
