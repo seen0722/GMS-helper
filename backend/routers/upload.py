@@ -79,13 +79,16 @@ def process_upload_background(file_path: str, test_run_id: int):
                     print(f"Submission {submission.id} is LOCKED. Creating new submission for fingerprint {fingerprint}")
                     submission = None #  Force new creation
                 
-                # 2. GSI Fingerprint Match (Hardware Prefix + Vendor Suffix Match)
-                # Requirement: suite_name="CTS" AND suite_plan contains "cts-on-gsi"
-                is_gcts = (test_run.test_suite_name == "CTS" and 
-                           test_run.suite_plan and 
-                           "cts-on-gsi" in test_run.suite_plan.lower())
+                # 2. GSI / VTS Fingerprint Match (Hardware Prefix + Vendor Suffix Match)
+                # Requirement: 
+                # - suite_name="CTS" AND suite_plan contains "cts-on-gsi"
+                # - OR suite_name="VTS" AND suite_plan contains "vts"
+                is_system_replace = (
+                    (test_run.test_suite_name == "CTS" and test_run.suite_plan and "cts-on-gsi" in test_run.suite_plan.lower()) or
+                    (test_run.test_suite_name == "VTS" and test_run.suite_plan and "vts" in test_run.suite_plan.lower())
+                )
 
-                if not submission and is_gcts:
+                if not submission and is_system_replace:
                     import re
                     # Regex: Group 1 (Prefix), Group 2 (Version), Group 3 (Build ID), Group 4 (Suffix)
                     # Pattern: ^([^:]+):([^/]+)/([^/]+)(/.+)$
@@ -115,7 +118,7 @@ def process_upload_background(file_path: str, test_run_id: int):
                                 # Match hardware/vendor parts precisely
                                 if c_prefix == prefix and c_suffix == suffix:
                                     submission = cand
-                                    print(f"Grouped GSI Run to Submission {submission.id} (Hardware & Vendor Suffix Match)")
+                                    print(f"Grouped System-Replace Run ({test_run.test_suite_name}) to Submission {submission.id}")
                                     break
                 
                 if not submission:
