@@ -70,25 +70,22 @@ def regroup():
             if not run.security_patch and patch != "NoPatch":
                 run.security_patch = patch
             
-            # Migration: Update existing submission names to new format if still in default format
-            if submission.name.startswith("Submission ") or " (Build: " in submission.name:
-                s_brand = brand or "Unknown"
-                s_model = model or "Device"
-                s_device = device or "Unknown"
-                s_patch = patch
-                
-                suffix_label = "Unknown"
-                if m:
-                    raw_suffix = m.group(4).lstrip('/')
-                    suffix_label = raw_suffix.split('_')[0].split(':')[0]
-                
-                new_name = f"{s_brand} {s_model} ({s_device}) - {s_patch} (Build: {suffix_label})"
-                if submission.name != new_name:
-                    print(f"Renaming Submission {submission.id}: {submission.name} -> {new_name}")
-                    submission.name = new_name
-                    submission.brand = s_brand
-                    submission.device = s_device
-                    db.flush()
+            # Migration: Update existing submission names to new format
+            s_model = model or "Device"
+            s_device = device or "Unknown"
+            
+            suffix_label = "Unknown"
+            if m:
+                raw_suffix = m.group(4).lstrip('/')
+                suffix_label = raw_suffix.split('_')[0].split(':')[0]
+            
+            new_name = f"{s_model} ({s_device}) · {suffix_label}"
+            if submission.name != new_name:
+                print(f"Renaming Submission {submission.id}: {submission.name} -> {new_name}")
+                submission.name = new_name
+                submission.brand = brand
+                submission.device = s_device
+                db.flush()
         
         db.commit()
         print("Success: Database repair completed.")

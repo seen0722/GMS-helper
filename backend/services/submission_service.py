@@ -63,23 +63,21 @@ class SubmissionService:
                             break
 
         if not submission:
-            # Create new submission with 3PL Naming Convention
-            # Formula: [Brand] [Model] ([Device]) - [Security Patch] (Build: [Suffix_Partial])
-            brand = build_brand or "Unknown"
+            # Create new submission with Optimized Naming Convention
+            # Formula: [Model] ([Device]) · [Suffix_Partial]
             model = build_model or build_product or "Device"
             device = build_device or "Unknown"
-            patch = security_patch or "NoPatch"
             
-            # Simple suffix indicator from Build ID or Fingerprint
+            # Extract clean suffix indicator
             suffix_label = "Unknown"
             fp_pattern = re.compile(r"^([^:]+):([^/]+)/([^/]+)(/.+)$")
             m = fp_pattern.match(fingerprint)
             if m:
-                # Extract starting vendor version from suffix like /02.00.11... -> 02.00.11
                 raw_suffix = m.group(4).lstrip('/')
+                # Get the core version part before any underscores/colons
                 suffix_label = raw_suffix.split('_')[0].split(':')[0]
             
-            sub_name = f"{brand} {model} ({device}) - {patch} (Build: {suffix_label})"
+            sub_name = f"{model} ({device}) · {suffix_label}"
             
             submission = models.Submission(
                 name=sub_name,
@@ -87,7 +85,7 @@ class SubmissionService:
                 status="analyzing",
                 gms_version=android_version,
                 product=build_product,
-                brand=brand,
+                brand=build_brand,
                 device=device
             )
             db.add(submission)
