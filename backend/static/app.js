@@ -1099,14 +1099,11 @@ async function loadRunDetails(runId) {
             deviceHtml += `<span class="text-xs text-slate-500">(${product})</span>`;
         }
         
-        // Compact Fingerprint Display
-        const displayFingerprint = fingerprint.length > 60 ? fingerprint.substring(0, 50) + '...' : fingerprint;
-        
         deviceHtml += `
             <div class="flex items-center gap-2 mt-0.5 group">
-                <div class="text-[10px] text-slate-400 font-mono" title="${fingerprint}">${displayFingerprint}</div>
+                <div class="text-[10px] text-slate-400 font-mono break-all selection:bg-blue-100" title="${fingerprint}">${fingerprint}</div>
                 ${fingerprint ? `
-                <button onclick="copyToClipboard('${fingerprint}')" class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-blue-500 transition-all p-1 rounded-md hover:bg-slate-100" title="Copy Fingerprint">
+                <button onclick="copyToClipboard('${fingerprint}')" class="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-blue-500 transition-all p-1 rounded-md hover:bg-slate-100 flex-shrink-0" title="Copy Fingerprint">
                     <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                 </button>` : ''}
             </div>
