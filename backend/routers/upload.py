@@ -79,25 +79,27 @@ def process_upload_background(file_path: str, test_run_id: int):
                     print(f"Submission {submission.id} is LOCKED. Creating new submission for fingerprint {fingerprint}")
                     submission = None #  Force new creation
                 
-                # 2. GSI Fingerprint Match (Ignore Android Version part)
-                # User Requirement: 
-                # CTS: prefix:15/suffix
-                # GSI: prefix:11/suffix
-                # Logic: Match Prefix and Suffix, ignore the middle version.
-                if not submission:
+                # 2. GSI Fingerprint Match (Hardware Prefix + Vendor Suffix Match)
+                # Requirement: suite_name="CTS" AND suite_plan contains "cts-on-gsi"
+                is_gcts = (test_run.test_suite_name == "CTS" and 
+                           test_run.suite_plan and 
+                           "cts-on-gsi" in test_run.suite_plan.lower())
+
+                if not submission and is_gcts:
                     import re
-                    # Regex: Group 1 (Prefix), Group 2 (Version), Group 3 (Suffix)
-                    # Pattern: ^([^:]+):([^/]+)/(.+)$
-                    fp_pattern = re.compile(r"^([^:]+):([^/]+)/(.+)$")
+                    # Regex: Group 1 (Prefix), Group 2 (Version), Group 3 (Build ID), Group 4 (Suffix)
+                    # Pattern: ^([^:]+):([^/]+)/([^/]+)(/.+)$
+                    # Example: Trimble/T70/thorpe:11/RKQ1.240423.001/02.00.11...
+                    fp_pattern = re.compile(r"^([^:]+):([^/]+)/([^/]+)(/.+)$")
                     
                     match = fp_pattern.match(fingerprint)
                     if match:
                         prefix = match.group(1) # e.g. Trimble/T70/thorpe
                         # version = match.group(2) # e.g. 11
-                        suffix = match.group(3) # e.g. RKQ1...
+                        # build_id = match.group(3) # e.g. RKQ1.240423.001
+                        suffix = match.group(4) # e.g. /02.00.11...
                         
                         # Find candidates with same Prefix (Brand/Product/Device)
-                        # We limit to recent submissions to avoid scanning too many
                         candidates = db.query(models.Submission).filter(
                              models.Submission.target_fingerprint.like(f"{prefix}:%")
                         ).order_by(desc(models.Submission.updated_at)).limit(20).all()
@@ -108,12 +110,12 @@ def process_upload_background(file_path: str, test_run_id: int):
                             c_match = fp_pattern.match(cand.target_fingerprint)
                             if c_match:
                                 c_prefix = c_match.group(1)
-                                c_suffix = c_match.group(3)
+                                c_suffix = c_match.group(4)
                                 
-                                # We already checked prefix via SQL LIKE somewhat, but double check exact match
+                                # Match hardware/vendor parts precisely
                                 if c_prefix == prefix and c_suffix == suffix:
                                     submission = cand
-                                    print(f"Grouped by GSI Fingerprint Match to Submission {submission.id} (Ignored Version Diff)")
+                                    print(f"Grouped GSI Run to Submission {submission.id} (Hardware & Vendor Suffix Match)")
                                     break
                 
                 if not submission:
