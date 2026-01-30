@@ -64,20 +64,43 @@ class SubmissionService:
 
         if not submission:
             # Create new submission with Optimized Naming Convention
-            # Formula: [Model] ([Device]) · [Suffix_Partial]
-            model = build_model or build_product or "Device"
-            device = build_device or "Unknown"
+            # Formula: [Brand] [Model] ([Device]) · [Suffix]
             
-            # Extract clean suffix indicator
-            suffix_label = "Unknown"
+            # --- Robust Metadata Extraction from Fingerprint ---
+            extracted_brand = build_brand
+            extracted_model = build_model or build_product
+            extracted_device = build_device
+            extracted_suffix = "Unknown"
+
             fp_pattern = re.compile(r"^([^:]+):([^/]+)/([^/]+)(/.+)$")
             m = fp_pattern.match(fingerprint)
             if m:
+                # Part 1: Segment prefix (Brand/Product/Device)
+                prefix_parts = m.group(1).split('/')
+                if len(prefix_parts) >= 3:
+                    if not extracted_brand or extracted_brand == "Unknown":
+                        extracted_brand = prefix_parts[0]
+                    if not extracted_model or extracted_model == "Unknown":
+                        extracted_model = prefix_parts[1]
+                    if not extracted_device or extracted_device == "Unknown":
+                        extracted_device = prefix_parts[2]
+                elif len(prefix_parts) == 1:
+                    # Generic or GSI (e.g., "generic")
+                    if not extracted_device or extracted_device == "Unknown":
+                        extracted_device = prefix_parts[0]
+
+                # Part 2: Extract clean suffix indicator
                 raw_suffix = m.group(4).lstrip('/')
-                # Get the core version part before any underscores/colons
-                suffix_label = raw_suffix.split('_')[0].split(':')[0]
+                extracted_suffix = raw_suffix.split('_')[0].split(':')[0]
             
-            sub_name = f"{model} ({device}) · {suffix_label}"
+            # Final Fallbacks
+            brand_label = extracted_brand if extracted_brand and extracted_brand != "Unknown" else ""
+            model_label = extracted_model if extracted_model and extracted_model != "Unknown" else "Device"
+            device_label = extracted_device if extracted_device and extracted_device != "Unknown" else "Unknown"
+            
+            # Build name: [Brand] [Model] ([Device]) · [Suffix]
+            # Use strip() to handle missing brand space
+            sub_name = f"{brand_label} {model_label} ({device_label}) · {extracted_suffix}".strip()
             
             submission = models.Submission(
                 name=sub_name,
@@ -85,12 +108,12 @@ class SubmissionService:
                 status="analyzing",
                 gms_version=android_version,
                 product=build_product,
-                brand=build_brand,
-                device=device
+                brand=extracted_brand,
+                device=device_label
             )
             db.add(submission)
             db.flush()
-            print(f"Created new Submission ID: {submission.id} for fingerprint: {fingerprint}")
+            print(f"Created new Submission ID: {submission.id} with name: {sub_name}")
         else:
             print(f"Matched Submission ID: {submission.id} for fingerprint: {fingerprint}")
             
