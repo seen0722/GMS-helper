@@ -666,7 +666,13 @@ function updateDashboardStats(submissions) {
              }
         });
         const total = sFail + sPass;
-        return total > 0 ? (sPass / total) * 100 : 0;
+        let rate = total > 0 ? (sPass / total) * 100 : 0;
+        
+        // Safety: If there ARE failures, NEVER show 100.00%
+        if (sFail > 0 && rate > 99.99) {
+            rate = 99.99;
+        }
+        return rate;
     });
 
     const failuresTrend = recentSubs.map(sub => {
@@ -687,8 +693,14 @@ function updateDashboardStats(submissions) {
     // 2. Avg Pass Rate
     const statPassRate = document.getElementById('stat-avg-pass');
     if (statPassRate) {
-        const rate = totalExecuted > 0 ? ((totalPassed / totalExecuted) * 100).toFixed(2) : '0.00';
-        statPassRate.innerText = `${rate}%`;
+        let rate = totalExecuted > 0 ? (totalPassed / totalExecuted) * 100 : 0;
+        
+        // Safety: If there ARE failures, NEVER show 100.00%
+        if (totalFailures > 0 && rate > 99.99) {
+            rate = 99.99;
+        }
+        
+        statPassRate.innerText = `${rate.toFixed(2)}%`;
     }
     
     // 3. Total Failures
