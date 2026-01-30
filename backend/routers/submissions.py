@@ -117,10 +117,15 @@ def get_submissions(skip: int = 0, limit: int = 20, product_filter: Optional[str
             else:
                 summary_data = MergeService.calculate_suite_summary(db, matching_runs)
                 
+                # Robust Pass Rate Calculation (Backend side)
+                total = summary_data["total_tests"]
+                failed = summary_data["remaining"]
+                passed = total - failed
+                
                 suite_summary[suite_cfg.name] = {
-                    "status": "fail" if summary_data["remaining"] > 0 else "pass",
-                    "failed": summary_data["remaining"],
-                    "passed": summary_data["total_tests"] - summary_data["remaining"],
+                    "status": "fail" if failed > 0 else "pass",
+                    "failed": failed,
+                    "passed": passed,
                     "initial_failed": summary_data["initial"],
                     "recovered": summary_data["recovered"],
                     "run_count": len(matching_runs),
@@ -129,16 +134,18 @@ def get_submissions(skip: int = 0, limit: int = 20, product_filter: Optional[str
                     "run_ids": [r.id for r in matching_runs]
                 }
 
-        
         results.append({
             "id": sub.id,
             "name": sub.name,
             "status": sub.status,
             "gms_version": sub.gms_version,
             "target_fingerprint": sub.target_fingerprint,
+            "brand": sub.brand,
+            "model": sub.model,
+            "product": sub.product,
+            "device": sub.device,
             "created_at": sub.created_at,
             "updated_at": sub.updated_at,
-            "run_count": run_count,
             "run_count": run_count,
             "suite_summary": suite_summary,
             "cluster_count": len(json.loads(sub.analysis_result).get("analyzed_clusters", [])) if sub.analysis_result else 0

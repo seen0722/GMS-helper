@@ -824,7 +824,13 @@ function renderDashboardTable() {
         let passRateCtx = '0.00%';
         let passRateColor = 'bg-slate-100 text-slate-600';
         if (rowExecuted > 0) {
-            const rate = (rowPassed / rowExecuted) * 100;
+            let rate = (rowPassed / rowExecuted) * 100;
+            
+            // Safety: If there ARE failures, NEVER show 100.00%
+            if (rowFailures > 0 && rate > 99.99) {
+                rate = 99.99;
+            }
+            
             passRateCtx = rate.toFixed(2) + '%';
             if (rate >= 99.5) passRateColor = 'bg-green-100 text-green-700';
             else if (rate >= 90) passRateColor = 'bg-yellow-100 text-yellow-700';
