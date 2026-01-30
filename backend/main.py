@@ -6,6 +6,20 @@ from backend.routers import upload, reports, analysis, system, settings, integra
 from backend.database.database import engine, Base
 import os
 
+# Run database migrations
+try:
+    from migrate_db import migrate
+    migrate()
+except ImportError:
+    # Fallback for different execution contexts
+    import sys
+    sys.path.append(os.getcwd())
+    try:
+        from migrate_db import migrate
+        migrate()
+    except Exception as e:
+        print(f"Database migration failed to start: {e}")
+
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
