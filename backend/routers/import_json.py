@@ -155,26 +155,48 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
         # --- Submission Auto-Grouping Logic ---
         fingerprint = data.metadata.device_fingerprint
         if fingerprint and fingerprint != "Unknown":
-            # Find existing submission by fingerprint
+            # 1. Try Exact Fingerprint Match
             submission = db.query(models.Submission).filter(
                 models.Submission.target_fingerprint == fingerprint
-            ).first()
+            ).order_by(desc(models.Submission.updated_at)).first()
             
-            # Relaxed Grouping: If not found, check for active submission with same Model + SDK
-            if not submission:
-                model = data.metadata.build_model
-                sdk = data.metadata.build_version_sdk
+            # 2. GSI / VTS Fingerprint Match (Hardware Prefix + Vendor Suffix Match)
+            # Requirement: 
+            # - suite_name="CTS" AND suite_plan contains "cts-on-gsi"
+            # - OR suite_name="VTS" AND suite_plan contains "vts"
+            suite_name = data.metadata.test_suite_name
+            suite_plan = data.metadata.suite_plan
+            is_system_replace = (
+                (suite_name == "CTS" and suite_plan and "cts-on-gsi" in suite_plan.lower()) or
+                (suite_name == "VTS" and suite_plan and "vts" in suite_plan.lower())
+            )
+
+            if not submission and is_system_replace:
+                import re
+                # Regex: Group 1 (Prefix), Group 2 (Version), Group 3 (Build ID), Group 4 (Suffix)
+                fp_pattern = re.compile(r"^([^:]+):([^/]+)/([^/]+)(/.+)$")
                 
-                if model and sdk:
-                    # Find latest submission that contains a run with same Model + SDK
-                    match = db.query(models.Submission).join(models.TestRun).filter(
-                        models.TestRun.build_model == model,
-                        models.TestRun.build_version_sdk == sdk
-                    ).order_by(desc(models.Submission.updated_at)).first()
+                match = fp_pattern.match(fingerprint)
+                if match:
+                    prefix = match.group(1)
+                    suffix = match.group(4)
                     
-                    if match:
-                        submission = match
-                        print(f"Grouped by Relaxed Match (Model: {model}, SDK: {sdk}) to Submission {submission.id}")
+                    # Find candidates with same Prefix
+                    candidates = db.query(models.Submission).filter(
+                         models.Submission.target_fingerprint.like(f"{prefix}:%")
+                    ).order_by(desc(models.Submission.updated_at)).limit(20).all()
+                    
+                    for cand in candidates:
+                        if not cand.target_fingerprint: continue
+                        c_match = fp_pattern.match(cand.target_fingerprint)
+                        if c_match:
+                            c_prefix = c_match.group(1)
+                            c_suffix = c_match.group(4)
+                            
+                            if c_prefix == prefix and c_suffix == suffix:
+                                submission = cand
+                                print(f"Grouped System-Replace Run ({suite_name}) to Submission {submission.id}")
+                                break
             
             if not submission:
                 # Create new submission
@@ -185,7 +207,8 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
                     name=sub_name,
                     target_fingerprint=fingerprint,
                     status="analyzing",
-                    gms_version=data.metadata.android_version
+                    gms_version=data.metadata.android_version,
+                    product=prod
                 )
                 db.add(submission)
                 db.flush()
