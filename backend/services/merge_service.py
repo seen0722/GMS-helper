@@ -51,7 +51,7 @@ class MergeService:
         total_remaining = 0
 
         for suite_name, suite_runs in runs_by_suite.items():
-            summary_data = self.calculate_suite_summary(db, suite_runs)
+            summary_data = MergeService.calculate_suite_summary(db, suite_runs)
             
             suites_data.append({
                 "suite_name": suite_name,
