@@ -18,16 +18,41 @@ def migrate():
     cursor = conn.cursor()
     
     # 1. Check test_runs columns
+    print("Checking 'test_runs' table...")
     cursor.execute("PRAGMA table_info(test_runs)")
-    test_run_columns = [info[1] for info in cursor.fetchall()]
-    
-    if "build_version_incremental" not in test_run_columns:
-        print("Adding 'build_version_incremental' column to test_runs...")
-        try:
-            cursor.execute("ALTER TABLE test_runs ADD COLUMN build_version_incremental VARCHAR")
-            print("Added build_version_incremental.")
-        except Exception as e:
-            print(f"Migration failed: {e}")
+    current_run_columns = {info[1] for info in cursor.fetchall()}
+
+    expected_run_columns = {
+        "build_id": "VARCHAR",
+        "build_product": "VARCHAR",
+        "build_brand": "VARCHAR",
+        "build_device": "VARCHAR",
+        "build_model": "VARCHAR",
+        "build_type": "VARCHAR",
+        "security_patch": "VARCHAR",
+        "android_version": "VARCHAR",
+        "build_version_incremental": "VARCHAR",
+        "build_version_sdk": "VARCHAR",
+        "build_abis": "VARCHAR",
+        "suite_version": "VARCHAR",
+        "suite_plan": "VARCHAR",
+        "suite_build_number": "VARCHAR",
+        "host_name": "VARCHAR",
+        "start_display": "VARCHAR",
+        "end_display": "VARCHAR",
+        "submission_id": "INTEGER REFERENCES submissions(id)"
+    }
+
+    for col, dtype in expected_run_columns.items():
+        if col not in current_run_columns:
+            print(f"Adding '{col}' to test_runs...")
+            try:
+                cursor.execute(f"ALTER TABLE test_runs ADD COLUMN {col} {dtype}")
+                print(f"Added {col}.")
+            except Exception as e:
+                print(f"Failed to add {col}: {e}")
+        else:
+             print(f"Column '{col}' exists in test_runs.")
     
     # 2. Sync Submissions Table
     print("Checking 'submissions' table...")
@@ -40,7 +65,9 @@ def migrate():
         "analysis_result": "TEXT",
         "gms_version": "VARCHAR",
         "lab_name": "VARCHAR",
-        "target_fingerprint": "VARCHAR"
+        "target_fingerprint": "VARCHAR",
+        "brand": "VARCHAR",
+        "device": "VARCHAR"
     }
     
     for col, dtype in expected_columns.items():
