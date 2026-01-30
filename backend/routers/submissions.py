@@ -141,7 +141,6 @@ def get_submissions(skip: int = 0, limit: int = 20, product_filter: Optional[str
             "gms_version": sub.gms_version,
             "target_fingerprint": sub.target_fingerprint,
             "brand": sub.brand,
-            "model": sub.model,
             "product": sub.product,
             "device": sub.device,
             "created_at": sub.created_at,

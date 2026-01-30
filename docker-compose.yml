@@ -2,7 +2,7 @@ version: '3.3'
 
 services:
   gms-helper:
-    image: seen0516/gms-helper:release-1.0.6
+    image: seen0516/gms-helper:release-1.0.9
     container_name: gms-helper
     restart: unless-stopped
     ports:
