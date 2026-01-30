@@ -171,6 +171,7 @@ async function parseXMLFile(file) {
     };
 
     const failures = [];
+    const passes = [];
     
     // State tracking
     let currentModule = null;
@@ -299,8 +300,19 @@ async function parseXMLFile(file) {
                 break;
 
             case 'Test':
-                if (currentTest && currentTest.status === 'fail') {
-                    failures.push({ ...currentTest });
+                if (currentTest) {
+                    if (currentTest.status === 'fail') {
+                        failures.push({ ...currentTest });
+                    } else if (currentTest.status === 'pass') {
+                        // Only send minimal info for passes to keep payload size manageable
+                        passes.push({
+                            module_name: currentTest.module_name,
+                            module_abi: currentTest.module_abi,
+                            class_name: currentTest.class_name,
+                            method_name: currentTest.method_name,
+                            status: 'pass'
+                        });
+                    }
                 }
                 currentTest = null;
                 currentFailure = null;
@@ -373,6 +385,7 @@ async function parseXMLFile(file) {
             xml_modules_total: stats.xml_modules_total
         },
         failures: failures,
+        passes: passes,
         modules: modulesList // Add executed modules list
     };
 

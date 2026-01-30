@@ -2,7 +2,7 @@ version: '3.3'
 
 services:
   gms-helper:
-    image: seen0516/gms-helper:latest
+    image: seen0516/gms-helper:release-1.0.6
     container_name: gms-helper
     restart: unless-stopped
     ports:
@@ -12,9 +12,7 @@ services:
       - ./data:/app/data
       # Mount uploads directory
       - ./uploads:/app/uploads
-      # Mount backend code for hot-reloading
-      - ./backend:/app/backend
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
     security_opt:
       - seccomp:unconfined
     environment:

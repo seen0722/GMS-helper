@@ -60,14 +60,13 @@ class FailurePayload(BaseModel):
     error_message: Optional[str] = None
     stack_trace: Optional[str] = None
 
-class FailurePayload(BaseModel):
-    module_name: Optional[str] = None
+class PassPayload(BaseModel):
+    module_name: str
     module_abi: Optional[str] = None
-    class_name: Optional[str] = None
-    method_name: Optional[str] = None
-    status: str = "fail"
-    error_message: Optional[str] = None
-    stack_trace: Optional[str] = None
+    class_name: str
+    method_name: str
+    status: str = "pass"
+
 
 class ModuleInfo(BaseModel):
     module_name: str
@@ -77,6 +76,7 @@ class ImportPayload(BaseModel):
     metadata: MetadataPayload
     stats: StatsPayload
     failures: List[FailurePayload]
+    passes: List[PassPayload] = [] # New: Explicit passes for recovery tracking
     modules: List[ModuleInfo] = [] # Optional for backward compatibility
 
 
@@ -214,6 +214,48 @@ def import_json(data: ImportPayload, db: Session = Depends(get_db)):
             ]
             db.execute(models.TestCase.__table__.insert(), failure_records)
             db.commit()
+
+        # Insert Relevant Passes (Option A: Explicit Recovery)
+        # We only store passes that match a previous failure in the same submission
+        if test_run.submission_id and data.passes:
+            try:
+                # 1. Identify all previous failures in this submission (to filter relevant passes)
+                previous_failures = db.query(models.TestCase).join(models.TestRun).filter(
+                    models.TestRun.submission_id == test_run.submission_id,
+                    models.TestRun.id != test_run.id,
+                    models.TestCase.status == 'fail'
+                ).all()
+                
+                if previous_failures:
+                    # Create a set of keys for fast lookup
+                    fail_keys = set()
+                    for pf in previous_failures:
+                        fail_keys.add((pf.module_name, pf.module_abi, pf.class_name, pf.method_name))
+                    
+                    # 2. Filter incoming passes
+                    relevant_passes = []
+                    for ps in data.passes:
+                        key = (ps.module_name, ps.module_abi, ps.class_name, ps.method_name)
+                        if key in fail_keys:
+                            relevant_passes.append({
+                                "test_run_id": test_run.id,
+                                "module_name": ps.module_name,
+                                "module_abi": ps.module_abi,
+                                "class_name": ps.class_name,
+                                "method_name": ps.method_name,
+                                "status": "pass"
+                            })
+                    
+                    # 3. Bulk insert
+                    if relevant_passes:
+                        # Optimization: Deduplicate if the same test passed multiple times in the same XML (rare but possible)
+                        # We use a dict to keep only one per key
+                        unique_relevant = { (p["module_name"], p["module_abi"], p["class_name"], p["method_name"]): p for p in relevant_passes }
+                        db.execute(models.TestCase.__table__.insert(), list(unique_relevant.values()))
+                        db.commit()
+            except Exception as e:
+                print(f"Warning: Failed to process explicit passes: {e}")
+                db.rollback()
 
         return {
             "message": "Import successful",

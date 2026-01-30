@@ -7,6 +7,7 @@ import json
 from backend.database.database import get_db
 from backend.database import models
 from backend.services.suite_service import SuiteService
+from backend.services.merge_service import MergeService
 
 from pydantic import BaseModel
 
@@ -114,80 +115,14 @@ def get_submissions(skip: int = 0, limit: int = 20, product_filter: Optional[str
             if not matching_runs:
                 suite_summary[suite_cfg.name] = {"status": "missing", "failed": 0, "passed": 0}
             else:
-                # Calculate effective stats across all matching runs
-                # Sort by time
-                # Calculate effective stats across all matching runs using OPTIMISTIC MERGE
-                # Sort by time
-                matching_runs.sort(key=lambda x: x.start_time)
+                summary_data = MergeService.calculate_suite_summary(db, matching_runs)
                 
-                # Logic: A test case is passed if it passed in ANY run involving that module.
-                # 1. Collect all executed modules in each run -> Set[module_name]
-                # 2. Collect all failures in each run -> Set[(mod, cls, mth)]
-                
-                run_modules_map = {} # run_id -> Set[module_name]
-                run_failures_map = {} # run_id -> Set[(mod, cls, mth)]
-                
-                run_ids = [r.id for r in matching_runs]
-                
-                # Fetch Modules
-                modules_executed = db.query(models.TestRunModule).filter(models.TestRunModule.test_run_id.in_(run_ids)).all()
-                for m in modules_executed:
-                    if m.test_run_id not in run_modules_map: run_modules_map[m.test_run_id] = set()
-                    run_modules_map[m.test_run_id].add(m.module_name)
-                    
-                # Fetch Failures
-                failures = db.query(models.TestCase).filter(models.TestCase.test_run_id.in_(run_ids)).all()
-                
-                # Also track all unique failures ever seen to iterate over them
-                all_unique_failures = set()
-                
-                for f in failures:
-                    key = (f.module_name, f.class_name, f.method_name, f.module_abi or '')
-                    all_unique_failures.add(key)
-                    
-                    if f.test_run_id not in run_failures_map: run_failures_map[f.test_run_id] = set()
-                    run_failures_map[f.test_run_id].add(key)
-                
-                remaining_failures_count = 0
-                recovered_failures_count = 0
-                
-                for key in all_unique_failures:
-                    mod_name = key[0]
-                    # Check if this test case passed in ANY run
-                    # Passed = Module was Executed AND Key not in Failures
-                    is_recovered = False
-                    
-                    for run in matching_runs:
-                        rid = run.id
-                        # Check if module executed
-                        executed_mods = run_modules_map.get(rid, set())
-                        if mod_name in executed_mods:
-                            # Module ran. Did it fail?
-                            run_fails = run_failures_map.get(rid, set())
-                            if key not in run_fails:
-                                # Module Ran AND Not in Failures => PASS
-                                is_recovered = True
-                                break
-                    
-                    if is_recovered:
-                        recovered_failures_count += 1
-                    else:
-                        remaining_failures_count += 1
-                
-                # Total Tests = Max of executed tests (approximation)
-                # We exclude ignored tests to show a meaningful 'Executed' total.
-                total_tests = max([(r.passed_tests or 0) + (r.failed_tests or 0) for r in matching_runs]) if matching_runs else 0
-                
-                # Calculate passed based on effective failures
-                # If we assume 'total_tests' represents the full suite size, then:
-                passed_tests = max(0, total_tests - remaining_failures_count)
-
                 suite_summary[suite_cfg.name] = {
-                    "status": "fail" if remaining_failures_count > 0 else "pass",
-                    "failed": remaining_failures_count,
-                    "passed": passed_tests,
-                    "initial_failed": len(all_unique_failures), # Total unique failures ever seen
-                    "recovered": recovered_failures_count,
+                    "status": "fail" if summary_data["remaining"] > 0 else "pass",
+                    "failed": summary_data["remaining"],
+                    "passed": summary_data["total_tests"] - summary_data["remaining"],
+                    "initial_failed": summary_data["initial"],
+                    "recovered": summary_data["recovered"],
                     "run_count": len(matching_runs),
                     "is_merged": len(matching_runs) > 1,
                     "latest_run_id": matching_runs[-1].id,
@@ -271,57 +206,14 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
         if not matching_runs:
             suite_summary[suite_cfg.name] = {"status": "missing", "failed": 0, "passed": 0}
         else:
-            # Optimistic Merge Logic
-            matching_runs.sort(key=lambda x: x.start_time)
-            run_ids = [r.id for r in matching_runs]
-            
-            run_modules_map = {}
-            run_failures_map = {}
-            
-            # Fetch Modules
-            modules_executed = db.query(models.TestRunModule).filter(models.TestRunModule.test_run_id.in_(run_ids)).all()
-            for m in modules_executed:
-                if m.test_run_id not in run_modules_map: run_modules_map[m.test_run_id] = set()
-                run_modules_map[m.test_run_id].add(m.module_name)
-                
-            # Fetch Failures
-            failures = db.query(models.TestCase).filter(models.TestCase.test_run_id.in_(run_ids)).all()
-            
-            all_unique_failures = set()
-            for f in failures:
-                key = (f.module_name, f.class_name, f.method_name, f.module_abi or '')
-                all_unique_failures.add(key)
-                if f.test_run_id not in run_failures_map: run_failures_map[f.test_run_id] = set()
-                run_failures_map[f.test_run_id].add(key)
-            
-            remaining_failures_count = 0
-            recovered_failures_count = 0
-            
-            for key in all_unique_failures:
-                mod_name = key[0]
-                is_recovered = False
-                for run in matching_runs:
-                    rid = run.id
-                    # Pass = Module Executed AND Key not in Failures
-                    if mod_name in run_modules_map.get(rid, set()):
-                        if key not in run_failures_map.get(rid, set()):
-                            is_recovered = True
-                            break
-                
-                if is_recovered:
-                    recovered_failures_count += 1
-                else:
-                    remaining_failures_count += 1
-            
-            total_tests = max([(r.passed_tests or 0) + (r.failed_tests or 0) for r in matching_runs]) if matching_runs else 0
-            passed_tests = max(0, total_tests - remaining_failures_count)
+            summary_data = MergeService.calculate_suite_summary(db, matching_runs)
             
             suite_summary[suite_cfg.name] = {
-                "status": "fail" if remaining_failures_count > 0 else "pass",
-                "failed": remaining_failures_count,
-                "passed": passed_tests,
-                "initial_failed": len(all_unique_failures),
-                "recovered": recovered_failures_count,
+                "status": "fail" if summary_data["remaining"] > 0 else "pass",
+                "failed": summary_data["remaining"],
+                "passed": summary_data["total_tests"] - summary_data["remaining"],
+                "initial_failed": summary_data["initial"],
+                "recovered": summary_data["recovered"],
                 "run_count": len(matching_runs),
                 "is_merged": len(matching_runs) > 1,
                 "latest_run_id": matching_runs[-1].id,
