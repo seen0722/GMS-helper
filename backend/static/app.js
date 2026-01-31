@@ -2034,8 +2034,10 @@ function renderAnalysisTable(tbodyId, viewMode, filterNoRedmine) {
     // Update Header Sort Icons (Visual Feedback)
     updateSortIcons(currentSortKey, currentSortDir);
 
-    // Update Count Display
-    const countEl = document.getElementById('sub-cluster-count');
+    // Update Count Display (both Submission and Run Details pages)
+    const subCountEl = document.getElementById('sub-cluster-count');
+    const runCountEl = document.getElementById('run-cluster-count');
+    const countEl = subCountEl || runCountEl;
     console.log('[Debug] Count Element:', countEl, 'ProcessedData:', processedData.length);
     
     if (countEl) {
@@ -2043,7 +2045,6 @@ function renderAnalysisTable(tbodyId, viewMode, filterNoRedmine) {
         const unit = viewMode === 'module' ? 'Modules' : 'Clusters';
         countEl.textContent = `${count} ${unit}`;
         countEl.classList.remove('hidden');
-        // Ensure no conflicting animation classes if manually causing issues
         countEl.style.display = 'inline-block'; 
     }
 
