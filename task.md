@@ -12,6 +12,8 @@
     - [x] Verify filtering logic works for CTS/GTS <!-- id: 6 -->
     - [x] Verify Redmine sync only targets visible clusters <!-- id: 7 -->
     - [x] Verify CTSonGSI tab appears correctly for GSI runs <!-- id: 8 -->
+    - [x] **Bug Fix**: Fixed false positive "Recovered" detection in analysis logic (partial retry handling).
+    - [x] **UI Improvement**: Added "Total Clusters" count to Analysis Toolbar.
 
 # Task: Analysis UI Unification (REQ-05 Search & Sort)
 - [x] **Frontend Implementation**

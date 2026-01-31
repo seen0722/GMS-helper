@@ -1669,7 +1669,7 @@ function renderFailuresTable() {
         let badgesHtml = '';
         if (group.cluster) {
             const sev = group.cluster.severity || 'Medium';
-            const sevColor = sev === 'High' ? 'bg-red-100 text-red-700' : (sev === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700');
+            const sevColor = sev === 'High' ? 'bg-red-100 text-red-700' : (sev === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-700');
             badgesHtml += `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${sevColor} flex-shrink-0">${sev}</span>`;
 
             const cat = group.cluster.category || 'Uncategorized';
@@ -2034,6 +2034,19 @@ function renderAnalysisTable(tbodyId, viewMode, filterNoRedmine) {
     // Update Header Sort Icons (Visual Feedback)
     updateSortIcons(currentSortKey, currentSortDir);
 
+    // Update Count Display
+    const countEl = document.getElementById('sub-cluster-count');
+    console.log('[Debug] Count Element:', countEl, 'ProcessedData:', processedData.length);
+    
+    if (countEl) {
+        const count = processedData.length;
+        const unit = viewMode === 'module' ? 'Modules' : 'Clusters';
+        countEl.textContent = `${count} ${unit}`;
+        countEl.classList.remove('hidden');
+        // Ensure no conflicting animation classes if manually causing issues
+        countEl.style.display = 'inline-block'; 
+    }
+
     if (processedData.length === 0) {
          tbody.innerHTML = `<tr><td colspan="7" class="px-4 py-8 text-center text-slate-500">No matching records found.</td></tr>`;
          return;
@@ -2102,7 +2115,7 @@ function renderClusterView(tbody, clusters) {
 
         // Severity Badge
         const sev = (cluster.severity || 'Medium');
-        const sevClass = sev === 'High' ? 'bg-red-100 text-red-700' : (sev === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700');
+const sevClass = sev === 'High' ? 'bg-red-100 text-red-700' : (sev === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-700');
         const sevLabel = sev === 'High' ? 'High' : (sev === 'Medium' ? 'Med' : 'Low');
 
         // Confidence Heatmap
@@ -2349,7 +2362,7 @@ function renderModuleClusters(clusters, filterNoRedmine) {
         
         // Use fullC for rendering to ensure we have all fields like suggested_assignment etc.
         
-        const sevClass = fullC.severity === 'High' ? 'bg-red-100 text-red-700' : (fullC.severity === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700');
+const sevClass = fullC.severity === 'High' ? 'bg-red-100 text-red-700' : (fullC.severity === 'Medium' ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-700');
         const sevLabel = fullC.severity === 'High' ? 'High' : (fullC.severity === 'Medium' ? 'Med' : 'Low');
         const summaryTitle = getClusterTitle(fullC.ai_summary || fullC.description);
         

@@ -8,6 +8,7 @@ from backend.database.database import get_db
 from backend.database import models
 from backend.services.suite_service import SuiteService
 from backend.services.merge_service import MergeService
+from backend.services.analysis_service import AnalysisService
 
 from pydantic import BaseModel
 
@@ -300,6 +301,9 @@ def delete_submission(submission_id: int, db: Session = Depends(get_db)):
     
     db.delete(sub)
     db.commit()
+    
+    # Auto-cleanup orphan failure clusters
+    AnalysisService.cleanup_orphan_clusters(db)
     
     return {"message": "Submission deleted successfully"}
 

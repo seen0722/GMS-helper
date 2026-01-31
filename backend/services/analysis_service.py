@@ -81,6 +81,8 @@ class AnalysisService:
                     # So we should look at the LATEST run.
                     
                     latest_run = newer_runs[0] # Ordered by desc
+                    
+                    # 1. Get failures in latest run
                     latest_failures = db.query(models.TestCase).filter(
                         models.TestCase.test_run_id == latest_run.id,
                         models.TestCase.status == "fail"
@@ -91,14 +93,39 @@ class AnalysisService:
                         for f in latest_failures
                     )
                     
+                    # 2. Get executed tests in latest run (OPTIMIZATION: Only for relevant modules)
+                    # We can't assume "Not in Failures => Recovered" because the latest run might be partial 
+                    # and might not have executed the test at all.
+                    relevant_modules = set(f.module_name for f in failures)
+                    executed_in_latest = db.query(
+                        models.TestCase.module_name,
+                        models.TestCase.class_name,
+                        models.TestCase.method_name,
+                        models.TestCase.module_abi
+                    ).filter(
+                        models.TestCase.test_run_id == latest_run.id,
+                        models.TestCase.module_name.in_(relevant_modules)
+                    ).all()
+                    
+                    latest_executed_keys = set(
+                        (m, c, meth, abi or '') 
+                        for m, c, meth, abi in executed_in_latest
+                    )
+                    
+                    print(f"Latest run executed {len(executed_in_latest)} tests in relevant modules.")
+                    
                     for f in failures:
                         key = (f.module_name, f.class_name, f.method_name, f.module_abi or '')
+                        
                         if key in latest_fail_keys:
                             # Still failing in latest run
                             failures_to_analyze.append(f)
-                        else:
-                            # Recovered!
+                        elif key in latest_executed_keys:
+                            # Executed in latest run AND not in failures => Recovered!
                             recovered_failures.append(f)
+                        else:
+                            # Not executed in latest run => Persistent (Original failure stands)
+                            failures_to_analyze.append(f)
                             
                     print(f"Optimization: {len(recovered_failures)} failures recovered, {len(failures_to_analyze)} persistent.")
                 else:
@@ -362,3 +389,37 @@ Test Failure Details:
                 pass
         finally:
             print(f"--- Analysis Task for Run {run_id} Finished ---")
+
+    @staticmethod
+    def cleanup_orphan_clusters(db: Session):
+        """
+        Removes FailureCluster records that are not referenced by any FailureAnalysis.
+        This prevents the 'failure_clusters' table from growing indefinitely with obsolete clusters.
+        """
+        try:
+            # Find clusters with no analyses
+            # Left Outer Join FailureCluster -> FailureAnalysis, filter where Analysis ID is null
+            # Or use NOT EXISTS
+            from sqlalchemy import not_
+            
+            # Query for clusters that have 0 associated analyses
+            # Since relationship is 'analyses', we can check if it has any
+            # But faster in SQL: SELECT id FROM failure_clusters WHERE id NOT IN (SELECT distinct cluster_id FROM failure_analysis WHERE cluster_id IS NOT NULL)
+            
+            # Using SQLAlchemy:
+            # 1. Get IDs of used clusters
+            used_cluster_ids = db.query(models.FailureAnalysis.cluster_id).filter(models.FailureAnalysis.cluster_id != None).distinct()
+            
+            # 2. Delete clusters not in that list
+            deleted_count = db.query(models.FailureCluster).filter(
+                not_(models.FailureCluster.id.in_(used_cluster_ids))
+            ).delete(synchronize_session=False)
+            
+            db.commit()
+            print(f"Cleaned up {deleted_count} orphan failure clusters.")
+            return deleted_count
+            
+        except Exception as e:
+            print(f"Failed to cleanup orphan clusters: {e}")
+            db.rollback()
+            return 0

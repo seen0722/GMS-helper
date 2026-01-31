@@ -131,14 +131,19 @@ class MergeService:
             history = data["status_history"]
             
             is_initial_fail = history[0] == 'fail'
-            is_recovered = 'pass' in history
+            # Recovered means: Was failing initially AND is now passing (or passed in history)
+            is_recovered = is_initial_fail and ('pass' in history)
             
             if is_initial_fail:
                 suite_initial += 1
             
             if is_recovered:
                 suite_recovered += 1
-            else:
+            elif is_initial_fail and not is_recovered:
+                # Started failing and never recovered
+                suite_remaining += 1
+            elif 'fail' in history:
+                # Not initial fail, but failed later (Regression)
                 suite_remaining += 1
             
             # Use the last available failure for details (if persistent)
@@ -151,17 +156,19 @@ class MergeService:
             
             representative_failure = data["failures"][last_fail_idx] if last_fail_idx != -1 else data["info"]
 
-            suite_items.append({
-                "module_name": representative_failure.module_name,
-                "module_abi": representative_failure.module_abi,
-                "test_class": representative_failure.class_name,
-                "test_method": representative_failure.method_name,
-                "initial_run_id": suite_runs[0].id,
-                "final_run_id": suite_runs[-1].id,
-                "is_recovered": is_recovered,
-                "status_history": history,
-                "failure_details": representative_failure
-            })
+            # Only include items that have failed at least once (filter out purely passing items that might exist in DB)
+            if 'fail' in history:
+                suite_items.append({
+                    "module_name": representative_failure.module_name,
+                    "module_abi": representative_failure.module_abi,
+                    "test_class": representative_failure.class_name,
+                    "test_method": representative_failure.method_name,
+                    "initial_run_id": suite_runs[0].id,
+                    "final_run_id": suite_runs[-1].id,
+                    "is_recovered": is_recovered,
+                    "status_history": history,
+                    "failure_details": representative_failure
+                })
             
         # Total Tests for this suite (Executed only - aligned with UI)
         suite_total_tests = max([(r.passed_tests or 0) + (r.failed_tests or 0) for r in suite_runs]) if suite_runs else 0
