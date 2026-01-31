@@ -31,12 +31,21 @@ class MergeService:
             # Default to raw name
             suite_group = raw_name
             
-            # Detect CTSonGSI logic
+            # Detect CTSonGSI logic - PRIORITY ORDER:
+            # 1. Check suite_plan first (most reliable)
+            # 2. Check explicit suite name
+            # 3. Check fingerprint difference
             if 'CTS' in raw_name:
-                # User Requirement: 
-                # If suite_name is explicitly 'CTSONGSI', or 
-                # if it's 'CTS' but fingerprint differs from target, label as 'CTSonGSI'.
-                if raw_name == 'CTSONGSI' or (run.device_fingerprint and sub.target_fingerprint and run.device_fingerprint != sub.target_fingerprint):
+                suite_plan = (run.suite_plan or "").lower()
+                
+                # Priority 1: suite_plan contains 'gsi' or 'on-gsi'
+                if 'gsi' in suite_plan or 'on-gsi' in suite_plan:
+                    suite_group = 'CTSonGSI'
+                # Priority 2: Explicit CTSONGSI name
+                elif raw_name == 'CTSONGSI':
+                    suite_group = 'CTSonGSI'
+                # Priority 3: Fingerprint differs from target (legacy fallback)
+                elif run.device_fingerprint and sub.target_fingerprint and run.device_fingerprint != sub.target_fingerprint:
                     suite_group = 'CTSonGSI'
                 else:
                     suite_group = 'CTS'
