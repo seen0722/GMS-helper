@@ -43,7 +43,7 @@ fi
 # 4. Create docker-compose.yml
 echo "📄 Creating docker-compose.yml..."
 cat > docker-compose.yml << EOF
-version: '3.8'
+version: '3.3'
 
 services:
   gms-helper:
@@ -55,13 +55,16 @@ services:
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads
-    env_file:
-      - .env
-    # Fix for OpenBLAS threading issue on some hosts
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000
     security_opt:
       - seccomp:unconfined
     environment:
       - OPENBLAS_NUM_THREADS=1
+      - LLM_PROVIDER=\${LLM_PROVIDER:-internal}
+      - INTERNAL_LLM_URL=\${INTERNAL_LLM_URL:-https://api.cambrian.pegatroncorp.com}
+      - INTERNAL_LLM_MODEL=\${INTERNAL_LLM_MODEL:-LLAMA 3.3 70B}
+      - INTERNAL_LLM_API_KEY=\${INTERNAL_LLM_API_KEY}
+      - INTERNAL_LLM_VERIFY_SSL=\${INTERNAL_LLM_VERIFY_SSL:-0}
       - DATABASE_URL=sqlite:////app/data/gms_analysis.db
     networks:
       - default

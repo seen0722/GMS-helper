@@ -25,7 +25,7 @@ services:
       - INTERNAL_LLM_MODEL=${INTERNAL_LLM_MODEL:-LLAMA 3.3 70B}
       - INTERNAL_LLM_API_KEY=${INTERNAL_LLM_API_KEY}
       - INTERNAL_LLM_VERIFY_SSL=${INTERNAL_LLM_VERIFY_SSL:-0}
-      # Database path
+      # Database path (Absolute path inside container)
       - DATABASE_URL=sqlite:////app/data/gms_analysis.db
     networks:
       - default
