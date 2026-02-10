@@ -1,10 +1,10 @@
 {
   "module_patterns": {
     "*Media*": {
-      "redmine_user_id": null
+      "redmine_user_id": 6
     },
     "*Camera*": {
-      "redmine_user_id": null
+      "redmine_user_id": 6
     },
     "CtsWifi*": {
       "redmine_user_id": null
@@ -38,8 +38,8 @@
     }
   },
   "default_settings": {
-    "default_project_id": null,
+    "default_project_id": 1,
     "default_priority_id": 4,
-    "fallback_user_id": null
+    "fallback_user_id": 5
   }
 }

@@ -28,59 +28,37 @@ A powerful web-based tool for analyzing GMS (Google Mobile Services) certificati
 
 ## Installation
 
-### Prerequisites
-- Python 3.8+
-- pip (Python package manager)
-
-### Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone <your-repo-url>
-   cd GMS-helper
-   ```
-
-2. **Create a virtual environment**
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Run the application**
-   ```bash
-   uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
-   ```
-
-6. **Access the application**
-   Open your browser and navigate to: `http://localhost:8000`
-
-### Docker Support
-
-You can also run the application using Docker:
-
+### 🚀 Recommended: Docker One-Click (Ubuntu/Linux)
+The fastest way to get started is using our deployment script:
 ```bash
-# Pull the latest image
-docker pull seen0516/gms-helper:latest
+curl -o deploy_docker.sh https://raw.githubusercontent.com/seen0722/GMS-helper/main/deploy_docker.sh \
+&& chmod +x deploy_docker.sh \
+&& ./deploy_docker.sh
+```
 
-# Run with Docker Compose (Recommended)
+### 🐳 Standard Docker Usage
+```bash
+# Pull and run
+docker pull seen0516/gms-helper:latest
 docker-compose up -d
 ```
 
-Or manually with `docker run`:
+### 🔒 Restricted Network Deployment
+Deploying in an internal network with limited access (Docker Hub/GitHub only)?
+👉 See [Internal Deployment Guide](docs/INTERNAL_RESTRICTED_DEPLOYMENT.md)
 
-```bash
-docker run -d \
-  -p 8000:8000 \
-  -v $(pwd)/data:/app/data \
-  -v $(pwd)/uploads:/app/uploads \
-  --name gms-helper \
-  seen0516/gms-helper:latest
-```
+### 🐍 Manual Development Setup
+1. **Clone and Setup**
+   ```bash
+   git clone <your-repo-url>
+   cd GMS-helper
+   python -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+2. **Run**
+   ```bash
+   uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+   ```
 
 ## Configuration
 

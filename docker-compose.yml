@@ -2,11 +2,12 @@ version: '3.3'
 
 services:
   gms-helper:
-    image: seen0516/gms-helper:release-1.0.11
+    build: .
+    image: seen0516/gms-helper:latest
     container_name: gms-helper
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "9000:8000"
     volumes:
       # Persist SQLite database
       - ./data:/app/data
@@ -26,5 +27,11 @@ services:
       - INTERNAL_LLM_VERIFY_SSL=${INTERNAL_LLM_VERIFY_SSL:-0}
       # Database path
       - DATABASE_URL=sqlite:///./data/gms_analysis.db
+    networks:
+      - default
+      - redmine-docker_default
 
+networks:
+  redmine-docker_default:
+    external: true
 

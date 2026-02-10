@@ -80,7 +80,7 @@ class ImportPayload(BaseModel):
     modules: List[ModuleInfo] = [] # Optional for backward compatibility
 
 
-@router.post("/")
+@router.post("")
 def import_json(data: ImportPayload, db: Session = Depends(get_db)):
     """
     Import pre-parsed test results from browser.

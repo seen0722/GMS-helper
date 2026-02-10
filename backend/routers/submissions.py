@@ -99,7 +99,7 @@ def get_submissions(skip: int = 0, limit: int = 20, product_filter: Optional[str
     submissions = query.offset(skip).limit(limit).all()
     
     # Fetch configured suites
-    suites_config = db.query(models.TestSuiteConfig).filter(models.TestSuiteConfig.is_required == 1).order_by(asc(models.TestSuiteConfig.sort_order)).all()
+    suites_config = db.query(models.TestSuiteConfig).order_by(asc(models.TestSuiteConfig.sort_order)).all()
     
     results = []
     for sub in submissions:
@@ -169,7 +169,7 @@ def get_submission_details(submission_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Submission not found")
     
     # Fetch configured suites
-    suites_config = db.query(models.TestSuiteConfig).filter(models.TestSuiteConfig.is_required == 1).order_by(asc(models.TestSuiteConfig.sort_order)).all()
+    suites_config = db.query(models.TestSuiteConfig).order_by(asc(models.TestSuiteConfig.sort_order)).all()
     
     # Get associated runs
     runs = db.query(models.TestRun).filter(

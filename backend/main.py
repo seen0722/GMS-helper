@@ -23,6 +23,13 @@ except ImportError:
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+# Auto-bootstrap standard data
+try:
+    from backend.database.bootstrap import bootstrap_database
+    bootstrap_database()
+except Exception as e:
+    print(f"Failed to bootstrap database: {e}")
+
 app = FastAPI(title="CTS Insight", version="1.0.0")
 
 # CORS configuration

@@ -232,7 +232,7 @@ def process_upload_background(file_path: str, test_run_id: int):
     finally:
         db.close()
 
-@router.post("/")
+@router.post("")
 async def upload_file(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
     # 1. Validation
     ALLOWED_EXTENSIONS = {".xml"}
