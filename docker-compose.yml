@@ -26,7 +26,7 @@ services:
       - INTERNAL_LLM_API_KEY=${INTERNAL_LLM_API_KEY}
       - INTERNAL_LLM_VERIFY_SSL=${INTERNAL_LLM_VERIFY_SSL:-0}
       # Database path
-      - DATABASE_URL=sqlite:///./data/gms_analysis.db
+      - DATABASE_URL=sqlite:////app/data/gms_analysis.db
     networks:
       - default
       - redmine-docker_default

@@ -63,6 +63,13 @@ services:
     environment:
       - OPENBLAS_NUM_THREADS=1
       - DATABASE_URL=sqlite:////app/data/gms_analysis.db
+    networks:
+      - default
+      - redmine-docker_default
+
+networks:
+  redmine-docker_default:
+    external: true
 EOF
 
 # 5. Run it!

@@ -8,9 +8,10 @@ This guide is specifically for deploying GMS-helper in internal environments wit
 Ensure the target server has **Docker** and **Docker Compose** installed.
 - Check: `docker --version`
 - Check: `docker compose version` (or `docker-compose --version`)
+- **Redmine Network**: If your environment uses a shared Redmine Docker network, ensure `redmine-docker_default` exists (`docker network ls`). The deployment script currently expects this network to be present.
 
 > [!IMPORTANT]
-> Since general `apt-get` or `get.docker.com` might be blocked, ensure these are ready before proceeding or use your internal software mirror.
+> Since general `apt-get` or `get.docker.com` might be blocked, ensure these are ready before proceeding or use your internal software mirror. If the `redmine-docker_default` network is NOT needed, simply comment it out in the generated `docker-compose.yml`.
 
 ### 2. One-Click Deployment
 On the target server, run the following command to download and execute the setup script directly from GitHub:
